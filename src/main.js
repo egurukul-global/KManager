@@ -39,12 +39,18 @@ export async function handleLogin(e) {
   }
 }
 
+let isLoggingOut = false;
+
 export async function handleLogout() {
+  if (isLoggingOut) return; // Prevent double execution
+  isLoggingOut = true;
+  
   try {
     await supabaseClient.auth.signOut();
   } catch (err) {
     console.error('Logout error:', err);
   }
+  
   state.user = null;
   state.teams = [];
   state.currentTeam = null;
@@ -52,6 +58,9 @@ export async function handleLogout() {
   state.userTeamAccess = null;
 
   renderLoginScreen();
+  
+  // Reset flag after a delay
+  setTimeout(() => { isLoggingOut = false; }, 500);
 }
 
 async function checkExistingSession() {
@@ -92,24 +101,36 @@ async function initializeApp() {
     const { data: teamsData, error: teamsError } = await supabaseClient
       .rpc('get_accessible_teams', { p_user_id: state.user.id });
 
-    if (teamsError) {
-      console.warn('get_accessible_teams error:', teamsError);
-      const { data: fallbackTeams } = await supabaseClient
-        .from('user_teams')
-        .select('team_id, is_primary, access_level, teams:team_id(id, name)')
-        .eq('user_id', state.user.id);
+    let rawTeams = [];
 
-      if (fallbackTeams) {
-        state.teams = fallbackTeams.map(t => ({
-          team_id: t.team_id,
-          team_name: t.teams?.name || 'Unknown',
-          is_primary: t.is_primary,
-          access_level: t.access_level || 'member'
-        }));
-      }
-    } else {
-      state.teams = teamsData || [];
-    }
+if (teamsError) {
+  console.warn('get_accessible_teams error:', teamsError);
+  const { data: fallbackTeams } = await supabaseClient
+    .from('user_teams')
+    .select('team_id, is_primary, access_level, teams:team_id(id, name)')
+    .eq('user_id', state.user.id);
+
+  if (fallbackTeams) {
+    rawTeams = fallbackTeams.map(t => ({
+      team_id: t.team_id,
+      team_name: t.teams?.name || 'Unknown',
+      is_primary: t.is_primary,
+      access_level: t.access_level || 'member'
+    }));
+  }
+} else {
+  rawTeams = teamsData || [];
+}
+
+// Deduplicate teams by team_id
+const seenTeamIds = new Set();
+state.teams = [];
+for (const team of rawTeams) {
+  if (team && team.team_id && !seenTeamIds.has(team.team_id)) {
+    seenTeamIds.add(team.team_id);
+    state.teams.push(team);
+  }
+}
 
     if (state.teams.length === 0) {
       throw new Error('You are not assigned to any teams. Please contact an administrator.');
@@ -153,15 +174,20 @@ async function initializeApp() {
     // 11. Load initial page
     showPage('dashboard');
 
-    // 12. Setup auth state listener
-    supabaseClient.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
-        handleLogout();
-      } else if (event === 'TOKEN_REFRESHED') {
-        state.session = session;
-      }
-    });
-
+// 12. Setup auth state listener
+supabaseClient.auth.onAuthStateChange((event, session) => {
+  if (event === 'SIGNED_OUT' && !isLoggingOut) {
+    // Only handle if not already processing logout
+    state.user = null;
+    state.teams = [];
+    state.currentTeam = null;
+    state.session = null;
+    state.userTeamAccess = null;
+    renderLoginScreen();
+  } else if (event === 'TOKEN_REFRESHED') {
+    state.session = session;
+  }
+});
     // 13. Setup online/offline listeners
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
