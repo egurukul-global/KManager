@@ -1,0 +1,495 @@
+// ==================== MAIN ENTRY POINT ====================
+import './styles.css';
+import { state, computePermissions } from './state.js';
+import { supabaseClient, syncAll, pushPendingChanges, initLocalDB } from './db.js';
+import { showToast } from './components/toasts.js';
+import { getLoginPage, initLoginPage } from './pages/login.js';
+import { getDashboardPage, initDashboardPage } from './pages/dashboard.js';
+import { getBucketsPage, initBucketsPage } from './pages/buckets.js';
+import { getCategoriesPage, initCategoriesPage } from './pages/categories.js';
+import { getRatesPage, initRatesPage } from './pages/rates.js';
+
+// ==================== APP CONTAINER ====================
+const app = document.getElementById('app');
+
+// ==================== AUTH FUNCTIONS ====================
+
+export async function handleLogin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('loginBtn');
+  const errorDiv = document.getElementById('loginError');
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span>Signing in...';
+  errorDiv.classList.remove('active');
+
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    state.session = data.session;
+    await initializeApp();
+  } catch (err) {
+    console.error('Login error:', err);
+    errorDiv.textContent = err.message || 'Invalid email or password. Please try again.';
+    errorDiv.classList.add('active');
+    btn.disabled = false;
+    btn.innerHTML = 'Sign In';
+  }
+}
+
+export async function handleLogout() {
+  try {
+    await supabaseClient.auth.signOut();
+  } catch (err) {
+    console.error('Logout error:', err);
+  }
+  state.user = null;
+  state.teams = [];
+  state.currentTeam = null;
+  state.session = null;
+  state.userTeamAccess = null;
+
+  renderLoginScreen();
+}
+
+async function checkExistingSession() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (session) {
+    state.session = session;
+    await initializeApp();
+  } else {
+    renderLoginScreen();
+  }
+}
+
+// ==================== APP INITIALIZATION ====================
+
+async function initializeApp() {
+  try {
+    // 1. Get user profile
+    const { data: userData, error: userError } = await supabaseClient
+      .from('users')
+      .select('id, email, name, role, team_id, gender')
+      .eq('id', state.session.user.id)
+      .single();
+
+    if (userError) {
+      state.user = {
+        id: state.session.user.id,
+        email: state.session.user.email,
+        name: state.session.user.user_metadata?.name || state.session.user.email.split('@')[0],
+        role: 'user',
+        team_id: null,
+        gender: null
+      };
+    } else {
+      state.user = userData;
+    }
+
+    // 2. Get all teams for this user
+    const { data: teamsData, error: teamsError } = await supabaseClient
+      .rpc('get_accessible_teams', { p_user_id: state.user.id });
+
+    if (teamsError) {
+      console.warn('get_accessible_teams error:', teamsError);
+      const { data: fallbackTeams } = await supabaseClient
+        .from('user_teams')
+        .select('team_id, is_primary, access_level, teams:team_id(id, name)')
+        .eq('user_id', state.user.id);
+
+      if (fallbackTeams) {
+        state.teams = fallbackTeams.map(t => ({
+          team_id: t.team_id,
+          team_name: t.teams?.name || 'Unknown',
+          is_primary: t.is_primary,
+          access_level: t.access_level || 'member'
+        }));
+      }
+    } else {
+      state.teams = teamsData || [];
+    }
+
+    if (state.teams.length === 0) {
+      throw new Error('You are not assigned to any teams. Please contact an administrator.');
+    }
+
+    // 3. Set current team
+    const primaryTeam = state.teams.find(t => t.is_primary);
+    state.currentTeam = primaryTeam || state.teams[0];
+
+    // 4. Set access level
+    state.userTeamAccess = {
+      access_level: state.currentTeam.access_level || 'member',
+      granted_by: state.currentTeam.granted_by,
+      granted_at: state.currentTeam.granted_at
+    };
+
+    // 5. Compute permissions
+    computePermissions();
+
+    // 6. Initialize local DB
+    await initLocalDB();
+
+    // 7. Sync data
+    if (navigator.onLine) {
+      await syncAll(state.currentTeam.team_id);
+      await pushPendingChanges();
+    }
+
+    // 8. Render app shell
+    renderAppShell();
+
+    // 9. Show admin nav if applicable
+    if (['admin', 'caoh', 'oh', 'ceo'].includes(state.user.role)) {
+      const adminNav = document.getElementById('adminNav');
+      if (adminNav) adminNav.style.display = 'block';
+    }
+
+    // 10. Populate team switcher
+    populateTeamSwitcher();
+
+    // 11. Load initial page
+    showPage('dashboard');
+
+    // 12. Setup auth state listener
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        handleLogout();
+      } else if (event === 'TOKEN_REFRESHED') {
+        state.session = session;
+      }
+    });
+
+    // 13. Setup online/offline listeners
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+  } catch (err) {
+    console.error('Initialization error:', err);
+    renderLoginScreen();
+    setTimeout(() => {
+      showToast(err.message || 'Failed to initialize app', 'error');
+    }, 100);
+    await supabaseClient.auth.signOut();
+  }
+}
+
+// ==================== ONLINE/OFFLINE HANDLING ====================
+
+function handleOnline() {
+  state.isOnline = true;
+  updateSyncStatus('online');
+  showToast('Back online! Syncing data...', 'info');
+  if (state.currentTeam) {
+    syncAll(state.currentTeam.team_id);
+    pushPendingChanges().then(result => {
+      if (result.count > 0) {
+        showToast(`Synced ${result.count} pending changes`, 'success');
+      }
+    });
+  }
+}
+
+function handleOffline() {
+  state.isOnline = false;
+  updateSyncStatus('offline');
+  showToast('You are offline. Changes will sync when connection returns.', 'warning');
+}
+
+function updateSyncStatus(status) {
+  const indicator = document.getElementById('syncIndicator');
+  if (!indicator) return;
+
+  indicator.className = 'sync-status ' + status;
+  const texts = {
+    online: '🟢 Online',
+    offline: '🟡 Offline',
+    syncing: '🔵 Syncing...',
+    error: '🔴 Sync Error'
+  };
+  indicator.textContent = texts[status] || status;
+}
+
+// ==================== TEAM SWITCHER ====================
+
+function populateTeamSwitcher() {
+  const select = document.getElementById('teamSelect');
+  if (!select) return;
+  select.innerHTML = '';
+
+  state.teams.forEach(team => {
+    const option = document.createElement('option');
+    option.value = team.team_id;
+    option.textContent = team.team_name + (team.is_primary ? ' ★' : '');
+    if (team.team_id === state.currentTeam.team_id) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  });
+}
+
+export async function switchTeam(teamId) {
+  const team = state.teams.find(t => t.team_id === teamId);
+  if (!team || team.team_id === state.currentTeam?.team_id) return;
+
+  state.currentTeam = team;
+  state.userTeamAccess = {
+    access_level: team.access_level || 'member',
+    granted_by: team.granted_by,
+    granted_at: team.granted_at
+  };
+  computePermissions();
+
+  // Update access badge
+  const accessBadge = document.getElementById('userAccessLevel');
+  if (accessBadge) {
+    accessBadge.textContent = (state.userTeamAccess.access_level || 'member').toUpperCase();
+  }
+
+  // Refresh current page
+  const currentPage = document.querySelector('.nav-subitem.active')?.dataset.page || 'dashboard';
+  showPage(currentPage);
+
+  // Sync new team data
+  if (navigator.onLine) {
+    await syncAll(teamId);
+  }
+
+  // Update primary team in DB
+  try {
+    await supabaseClient
+      .from('user_teams')
+      .update({ is_primary: false })
+      .eq('user_id', state.user.id);
+
+    await supabaseClient
+      .from('user_teams')
+      .update({ is_primary: true })
+      .eq('user_id', state.user.id)
+      .eq('team_id', teamId);
+  } catch (e) {
+    console.warn('Failed to update primary team:', e);
+  }
+}
+
+// ==================== RENDERING ====================
+
+function renderLoginScreen() {
+  app.innerHTML = getLoginPage();
+  initLoginPage();
+  window.handleLogin = handleLogin;
+}
+
+function renderAppShell() {
+  app.innerHTML = `
+    <div class="mobile-header">
+      <button class="menu-toggle" onclick="window.toggleSidebar()">☰</button>
+      <h1>🔱 Kailasa Manager</h1>
+      <div style="width: 30px;"></div>
+    </div>
+
+    <div class="overlay" onclick="window.toggleSidebar()"></div>
+
+    <div class="app-shell active">
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <h1>🔱 Kailasa Manager</h1>
+          <p>Manage budgets & expenses</p>
+
+          <div class="team-switcher">
+            <label>Current Team</label>
+            <select id="teamSelect" onchange="window.switchTeam(this.value)">
+              <option value="">Loading teams...</option>
+            </select>
+          </div>
+
+          <div class="user-info">
+            <div id="userName">${state.user?.name || 'User'}</div>
+            <div id="userEmail" style="font-size: 0.85em; opacity: 0.7;">${state.user?.email || ''}</div>
+            <span id="userRole" class="role-badge">${(state.user?.role || 'user').toUpperCase()}</span>
+            <div id="userAccessLevel" class="access-badge" style="display: ${state.user?.role !== state.userTeamAccess?.access_level ? 'inline-block' : 'none'};">
+              ${(state.userTeamAccess?.access_level || 'member').toUpperCase()}
+            </div>
+          </div>
+          <button class="logout-btn" onclick="window.handleLogout()">🚪 Sign Out</button>
+        </div>
+
+        <nav class="nav-menu">
+          <div class="nav-item expanded" data-section="dashboard">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">📊</span>
+              <span>Dashboard</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem active" data-page="dashboard" onclick="window.showPage('dashboard')">Overview</div>
+            </div>
+          </div>
+
+          <div class="nav-item" data-section="setup">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">🔧</span>
+              <span>Setup</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="buckets" onclick="window.showPage('buckets')">Money Buckets</div>
+              <div class="nav-subitem" data-page="categories" onclick="window.showPage('categories')">Categories</div>
+              <div class="nav-subitem" data-page="rates" onclick="window.showPage('rates')">Exchange Rates</div>
+            </div>
+          </div>
+
+          <div class="nav-item" data-section="budgets">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">📋</span>
+              <span>Budgets</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="create-budget" onclick="window.showPage('create-budget')">Create Budget</div>
+              <div class="nav-subitem" data-page="view-budgets" onclick="window.showPage('view-budgets')">View Budgets</div>
+            </div>
+          </div>
+
+          <div class="nav-item" data-section="income">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">💰</span>
+              <span>Income</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="add-funds" onclick="window.showPage('add-funds')">Record Income</div>
+              <div class="nav-subitem" data-page="income-manager" onclick="window.showPage('income-manager')">Income Manager</div>
+              <div class="nav-subitem" data-page="transfer" onclick="window.showPage('transfer')">Transfer Funds</div>
+            </div>
+          </div>
+
+          <div class="nav-item" data-section="expense">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">💸</span>
+              <span>Expense</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="add-expense" onclick="window.showPage('add-expense')">Add Expense</div>
+              <div class="nav-subitem" data-page="expense-manager" onclick="window.showPage('expense-manager')">Expense Manager</div>
+            </div>
+          </div>
+
+          <div class="nav-item" data-section="reports">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">📈</span>
+              <span>Reports</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="expense-reports" onclick="window.showPage('expense-reports')">Reports</div>
+              <div class="nav-subitem" data-page="financial-status" onclick="window.showPage('financial-status')">Financial Status</div>
+            </div>
+          </div>
+
+          <div class="nav-item" data-section="admin" id="adminNav" style="display: none;">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">⚙️</span>
+              <span>Admin</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="user-mgmt" onclick="window.showPage('user-mgmt')">Users</div>
+              <div class="nav-subitem" data-page="team-mgmt" onclick="window.showPage('team-mgmt')">Teams</div>
+            </div>
+          </div>
+        </nav>
+      </aside>
+
+      <main class="main-content" id="mainContent">
+        <!-- Dynamic page content loads here -->
+      </main>
+    </div>
+
+    <div class="sync-status online" id="syncIndicator">🟢 Online</div>
+    <div class="toast-container" id="toastContainer"></div>
+  `;
+
+  // Expose functions to window for onclick handlers
+  window.toggleSidebar = toggleSidebar;
+  window.toggleNavItem = toggleNavItem;
+  window.showPage = showPage;
+  window.switchTeam = switchTeam;
+  window.handleLogout = handleLogout;
+}
+
+// ==================== NAVIGATION ====================
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('active');
+  document.querySelector('.overlay').classList.toggle('active');
+}
+
+function toggleNavItem(header) {
+  const navItem = header.parentElement;
+  navItem.classList.toggle('expanded');
+}
+
+export function showPage(pageName) {
+  // Update active nav state
+  document.querySelectorAll('.nav-subitem').forEach(item => {
+    item.classList.remove('active');
+    if (item.dataset.page === pageName) {
+      item.classList.add('active');
+    }
+  });
+
+  // Close mobile sidebar
+  if (window.innerWidth <= 768) {
+    toggleSidebar();
+  }
+
+  // Render page content
+  const mainContent = document.getElementById('mainContent');
+  const pages = {
+    'dashboard': { html: getDashboardPage, init: initDashboardPage },
+    'buckets': { html: getBucketsPage, init: initBucketsPage },
+    'categories': { html: getCategoriesPage, init: initCategoriesPage },
+    'rates': { html: getRatesPage, init: initRatesPage },
+    'create-budget': { html: () => placeholderPage('Create Budget', 'Session 4'), init: () => {} },
+    'view-budgets': { html: () => placeholderPage('View Budgets', 'Session 4'), init: () => {} },
+    'add-funds': { html: () => placeholderPage('Record Income', 'Session 4'), init: () => {} },
+    'income-manager': { html: () => placeholderPage('Income Manager', 'Session 4'), init: () => {} },
+    'transfer': { html: () => placeholderPage('Transfer Funds', 'Session 6'), init: () => {} },
+    'add-expense': { html: () => placeholderPage('Add Expense', 'Session 5'), init: () => {} },
+    'expense-manager': { html: () => placeholderPage('Expense Manager', 'Session 5'), init: () => {} },
+    'expense-reports': { html: () => placeholderPage('Reports', 'Session 7'), init: () => {} },
+    'financial-status': { html: () => placeholderPage('Financial Status', 'Session 6'), init: () => {} },
+    'user-mgmt': { html: () => placeholderPage('User Management', 'Session 8'), init: () => {} },
+    'team-mgmt': { html: () => placeholderPage('Team Management', 'Session 8'), init: () => {} }
+  };
+
+  const page = pages[pageName];
+  if (page) {
+    mainContent.innerHTML = page.html();
+    setTimeout(() => page.init(), 0);
+  } else {
+    mainContent.innerHTML = '<div class="card"><h2>Page not found</h2></div>';
+  }
+}
+
+function placeholderPage(title, session) {
+  return `
+    <h1 class="page-title">${title}</h1>
+    <div class="card">
+      <h2>⏳ Coming Soon</h2>
+      <p style="color: #666;">This feature will be implemented in ${session}.</p>
+      <p style="margin-top: 15px; color: #999; font-size: 0.9em;">
+        Current focus: Session 3 — Migration + Categories + Rates
+      </p>
+    </div>
+  `;
+}
+
+// ==================== BOOT ====================
+document.addEventListener('DOMContentLoaded', () => {
+  checkExistingSession();
+});
