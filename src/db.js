@@ -30,8 +30,14 @@ export async function initLocalDB() {
         if (!db.objectStoreNames.contains('transfers')) db.createObjectStore('transfers', { keyPath: 'id' });
       }
       if (oldVersion < 3) {
-        if (!db.objectStoreNames.contains('budget_categories')) {
-          db.createObjectStore('budget_categories', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('users')) {
+          db.createObjectStore('users', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('teams')) {
+          db.createObjectStore('teams', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('user_teams')) {
+          db.createObjectStore('user_teams', { keyPath: 'id' });
         }
       }
     }
@@ -212,7 +218,13 @@ export async function sbUpdate(table, data, match) {
     return { data: [data], error: null, offline: true };
   }
 
-  const result = await supabaseClient.from(table).update(data).match(match).select();
+  let query = supabaseClient.from(table).update(data);
+  if (typeof match === 'function') {
+    query = match(query);
+  } else if (match && typeof match === 'object') {
+    query = query.match(match);
+  }
+  const result = await query.select();
   if (!result.error && result.data?.[0]) {
     await localPut(table, result.data[0]);
   }
@@ -256,7 +268,7 @@ export async function sbRestore(table, id) {
       existing.deleted_at = null;
       await localPut(table, existing);
     }
-    return { data: [{ id }], error: null, offline: true };
+    return { data: [{ id }], error: null, offline:true };
   }
 
   const result = await supabaseClient.from(table).update({

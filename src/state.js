@@ -14,6 +14,9 @@ export const state = {
   canCreateBudgets: false,
   canEditBudgets: false,
   canDeleteBudgets: false,
+  // 💵 Income Module State Tracking
+  incomeRecords: [],
+  canManageIncome: false,
   showDeleted: false,
   pendingDeleteId: null,
   isOnline: navigator.onLine,
@@ -37,6 +40,7 @@ export function computePermissions() {
     state.canCreateBudgets = true;
     state.canEditBudgets = true;
     state.canDeleteBudgets = true;
+    state.canManageIncome = true;
     return;
   }
 
@@ -52,17 +56,7 @@ export function computePermissions() {
       state.canCreateBudgets = true;
       state.canEditBudgets = true;
       state.canDeleteBudgets = true;
-      break;
-    case 'oh':
-      state.canCreateBuckets = true;
-      state.canEditBuckets = true;
-      state.canDeleteBuckets = true;
-      state.canCreateCategories = true;
-      state.canEditCategories = true;
-      state.canDeleteCategories = true;
-      state.canCreateBudgets = true;
-      state.canEditBudgets = true;
-      state.canDeleteBudgets = true;
+      state.canManageIncome = true;
       break;
     case 'lead':
       state.canCreateBuckets = true;
@@ -74,6 +68,7 @@ export function computePermissions() {
       state.canCreateBudgets = true;
       state.canEditBudgets = true;
       state.canDeleteBudgets = false;
+      state.canManageIncome = true;
       break;
     case 'member':
       state.canCreateBuckets = false;
@@ -85,6 +80,7 @@ export function computePermissions() {
       state.canCreateBudgets = false;
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
+      state.canManageIncome = false;
       break;
     case 'view':
       state.canCreateBuckets = false;
@@ -96,6 +92,7 @@ export function computePermissions() {
       state.canCreateBudgets = false;
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
+      state.canManageIncome = false;
       break;
     default:
       state.canCreateBuckets = false;
@@ -107,16 +104,13 @@ export function computePermissions() {
       state.canCreateBudgets = false;
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
+      state.canManageIncome = false;
   }
 }
 
 export function hasAccess(minLevel) {
   const levels = { 'view': 1, 'member': 2, 'lead': 3, 'oh': 4, 'admin': 5 };
-  const current = levels[state.userTeamAccess?.access_level || 'view'] || 1;
-  const required = levels[minLevel] || 1;
-  return current >= required;
-}
-
-export function isAdmin() {
-  return ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role);
+  const current = levels[state.userTeamAccess?.access_level || 'member'] || 2;
+  const target = levels[minLevel] || 2;
+  return current >= target;
 }

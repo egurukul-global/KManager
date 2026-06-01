@@ -693,3 +693,48 @@ tr.selected { background: #e7f3ff !important; }
 @media (max-width: 480px) {
   .stats-grid { grid-template-columns: 1fr; }
 }
+/* ============================================
+   BUDGET ALLOCATION ROW STYLING
+   ============================================ */
+
+.income-alloc-row select,
+.income-alloc-row input[type="number"] {
+  height: 40px;           /* Match your standard input height */
+  padding: 8px 12px;      /* Match your standard padding */
+  font-size: 1rem;        /* Match your standard font size */
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.income-alloc-row select {
+  appearance: auto;       /* Ensure native dropdown styling or custom */
+  cursor: pointer;
+}
+
+/* Remove button sizing */
+.income-alloc-row .cat-remove-btn {
+  height: 40px;
+  width: 40px;
+  padding: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Heading row alignment */
+.category-row-heading {
+  display: grid;
+  grid-template-columns: 2fr 1fr 40px;
+  gap: 10px;
+  padding: 8px 0;
+  font-weight: 600;
+  font-size: 0.9em;
+  color: #4b5563;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 8px;
+}

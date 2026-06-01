@@ -1,4 +1,4 @@
-// ==================== MAIN ENTRY POINT ====================
+// ==================== MAIN ENTRY POINT =======================
 import './styles.css';
 import { state, computePermissions } from './state.js';
 import { supabaseClient, syncAll, pushPendingChanges, initLocalDB } from './db.js';
@@ -8,6 +8,19 @@ import { getDashboardPage, initDashboardPage } from './pages/dashboard.js';
 import { getBucketsPage, initBucketsPage } from './pages/buckets.js';
 import { getCategoriesPage, initCategoriesPage } from './pages/categories.js';
 import { getRatesPage, initRatesPage } from './pages/rates.js';
+import { getCreateBudgetPage, initCreateBudgetPage, getViewBudgetsPage, initViewBudgetsPage } from './pages/budgets.js';
+// ADDED: Income module imports
+import { 
+  getRecordIncomePage, 
+  initRecordIncomePage, 
+  getIncomeManagerPage, 
+  initIncomeManagerPage, 
+ } from './pages/income.js';
+
+ import {
+  getTransferFundsPage,
+  initTransferFundsPage
+} from './pages/transfer.js';
 
 // ==================== APP CONTAINER ====================
 const app = document.getElementById('app');
@@ -55,7 +68,7 @@ export async function handleLogout() {
   state.teams = [];
   state.currentTeam = null;
   state.session = null;
-  state.userTeamAccess = null;
+  state.userTeamAcess = null;
 
   renderLoginScreen();
   
@@ -73,7 +86,7 @@ async function checkExistingSession() {
   }
 }
 
-// ==================== APP INITIALIZATION ====================
+// ===================== APP INITIALIZATION ====================
 
 async function initializeApp() {
   try {
@@ -103,34 +116,34 @@ async function initializeApp() {
 
     let rawTeams = [];
 
-if (teamsError) {
-  console.warn('get_accessible_teams error:', teamsError);
-  const { data: fallbackTeams } = await supabaseClient
-    .from('user_teams')
-    .select('team_id, is_primary, access_level, teams:team_id(id, name)')
-    .eq('user_id', state.user.id);
+    if (teamsError) {
+      console.warn('get_accessible_teams error:', teamsError);
+      const { data: fallbackTeams } = await supabaseClient
+        .from('user_teams')
+        .select('team_id, is_primary, access_level, teams:team_id(id, name)')
+        .eq('user_id', state.user.id);
 
-  if (fallbackTeams) {
-    rawTeams = fallbackTeams.map(t => ({
-      team_id: t.team_id,
-      team_name: t.teams?.name || 'Unknown',
-      is_primary: t.is_primary,
-      access_level: t.access_level || 'member'
-    }));
-  }
-} else {
-  rawTeams = teamsData || [];
-}
+      if (fallbackTeams) {
+        rawTeams = fallbackTeams.map(t => ({
+          team_id: t.team_id,
+          team_name: t.teams?.name || 'Unknown',
+          is_primary: t.is_primary,
+          access_level: t.access_level || 'member'
+        }));
+      }
+    } else {
+      rawTeams = teamsData || [];
+    }
 
-// Deduplicate teams by team_id
-const seenTeamIds = new Set();
-state.teams = [];
-for (const team of rawTeams) {
-  if (team && team.team_id && !seenTeamIds.has(team.team_id)) {
-    seenTeamIds.add(team.team_id);
-    state.teams.push(team);
-  }
-}
+    // Deduplicate teams by team_id
+    const seenTeamIds = new Set();
+    state.teams = [];
+    for (const team of rawTeams) {
+      if (team && team.team_id && !seenTeamIds.has(team.team_id)) {
+        seenTeamIds.add(team.team_id);
+        state.teams.push(team);
+      }
+    }
 
     if (state.teams.length === 0) {
       throw new Error('You are not assigned to any teams. Please contact an administrator.');
@@ -174,20 +187,20 @@ for (const team of rawTeams) {
     // 11. Load initial page
     showPage('dashboard');
 
-// 12. Setup auth state listener
-supabaseClient.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_OUT' && !isLoggingOut) {
-    // Only handle if not already processing logout
-    state.user = null;
-    state.teams = [];
-    state.currentTeam = null;
-    state.session = null;
-    state.userTeamAccess = null;
-    renderLoginScreen();
-  } else if (event === 'TOKEN_REFRESHED') {
-    state.session = session;
-  }
-});
+    // 12. Setup auth state listener
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' && !isLoggingOut) {
+        state.user = null;
+        state.teams = [];
+        state.currentTeam = null;
+        state.session = null;
+        state.userTeamAccess = null;
+        renderLoginScreen();
+      } else if (event === 'TOKEN_REFRESHED') {
+        state.session = session;
+      }
+    });
+
     // 13. Setup online/offline listeners
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -431,8 +444,7 @@ function renderAppShell() {
       </aside>
 
       <main class="main-content" id="mainContent">
-        <!-- Dynamic page content loads here -->
-      </main>
+        </main>
     </div>
 
     <div class="sync-status online" id="syncIndicator">🟢 Online</div>
@@ -480,17 +492,17 @@ export function showPage(pageName) {
     'buckets': { html: getBucketsPage, init: initBucketsPage },
     'categories': { html: getCategoriesPage, init: initCategoriesPage },
     'rates': { html: getRatesPage, init: initRatesPage },
-    'create-budget': { html: () => placeholderPage('Create Budget', 'Session 4'), init: () => {} },
-    'view-budgets': { html: () => placeholderPage('View Budgets', 'Session 4'), init: () => {} },
-    'add-funds': { html: () => placeholderPage('Record Income', 'Session 4'), init: () => {} },
-    'income-manager': { html: () => placeholderPage('Income Manager', 'Session 4'), init: () => {} },
-    'transfer': { html: () => placeholderPage('Transfer Funds', 'Session 6'), init: () => {} },
+    'create-budget': { html: getCreateBudgetPage, init: initCreateBudgetPage },
+    'view-budgets': { html: getViewBudgetsPage, init: initViewBudgetsPage },
+   'add-funds': { html: getRecordIncomePage, init: initRecordIncomePage },
+    'income-manager': { html: getIncomeManagerPage, init: initIncomeManagerPage },
+    'transfer': { html: getTransferFundsPage, init: initTransferFundsPage },
     'add-expense': { html: () => placeholderPage('Add Expense', 'Session 5'), init: () => {} },
     'expense-manager': { html: () => placeholderPage('Expense Manager', 'Session 5'), init: () => {} },
     'expense-reports': { html: () => placeholderPage('Reports', 'Session 7'), init: () => {} },
     'financial-status': { html: () => placeholderPage('Financial Status', 'Session 6'), init: () => {} },
     'user-mgmt': { html: () => placeholderPage('User Management', 'Session 8'), init: () => {} },
-    'team-mgmt': { html: () => placeholderPage('Team Management', 'Session 8'), init: () => {} }
+    'team-mgmt': { html: () => placeholderPage('Team Managemet', 'Session 8'), init: () => {} }
   };
 
   const page = pages[pageName];
@@ -515,7 +527,7 @@ function placeholderPage(title, session) {
   `;
 }
 
-// ==================== BOOT ====================
+// ===================== BOOT ====================
 document.addEventListener('DOMContentLoaded', () => {
   checkExistingSession();
 });
