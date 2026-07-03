@@ -13,12 +13,13 @@ export function getRatesPage() {
     <div class="card">
       <h2>💱 Add Exchange Rate</h2>
       <form id="rateForm" onsubmit="window.addRate(event)">
-        <div class="form-grid">
+        <div class="rate-form-row">
           <div class="form-group">
-            <label>Date *</label>
+            <label for="rateDate">Date *</label>
             <input type="date" id="rateDate" required>
           </div>
           <div class="form-group">
+<<<<<<< Updated upstream
             <label>From Currency *</label>
             <select id="rateFromCurrency" required>
               <option value="">Select Currency</option>
@@ -45,7 +46,19 @@ export function getRatesPage() {
           <div class="form-group">
             <label>Rate (1 From = ? To) *</label>
             <input type="number" id="rateValue" step="0.000001" placeholder="0.001802" required>
+=======
+            <label for="rateLocalCurrency">Currency *</label>
+            <select id="rateLocalCurrency" required>
+              <option value="">—</option>
+              ${currencyOptions}
+            </select>
           </div>
+          <div class="form-group">
+            <label for="rateValue" id="rateValueLabel">Rate (1 USD = ?) *</label>
+            <input type="number" class="input-rate" id="rateValue" step="any" min="0.000001" placeholder="95.4" required>
+>>>>>>> Stashed changes
+          </div>
+          <p class="form-hint" id="rateHint">Enter how many units of local currency equal 1 USD (e.g. 95.4 for INR).</p>
         </div>
         <div class="btn-group">
           <button type="submit">Add Rate</button>

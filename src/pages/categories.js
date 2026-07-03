@@ -129,15 +129,11 @@ function openCategoryModal(categoryId = null) {
     <h2>${isEdit ? '✏️ Edit Category' : '➕ Add Category'}</h2>
     <form id="categoryForm" onsubmit="window.saveCategory(event)">
       <input type="hidden" id="categoryId" value="${categoryId || ''}">
-      <div class="form-grid" style="max-width: 500px;">
-        <div class="form-group">
-          <label>Category Name *</label>
-          <input type="text" id="categoryName" placeholder="e.g., Food, Rent, Travel, Visa" required>
+      <div class="form-stack">
+        <div class="form-grid-row form-grid-row--category">
+          <div class="form-group"><label>Category Name *</label><input type="text" id="categoryName" placeholder="Food, Rent…" required></div>
         </div>
-        <div class="form-group full-width">
-          <label>Description (Optional)</label>
-          <textarea id="categoryDescription" placeholder="Notes about this category..."></textarea>
-        </div>
+        <div class="form-group"><label>Description</label><textarea id="categoryDescription" placeholder="Optional notes…"></textarea></div>
       </div>
       <div class="btn-group">
         <button type="submit">${isEdit ? 'Save Changes' : 'Add Category'}</button>

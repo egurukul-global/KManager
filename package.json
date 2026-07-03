@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",
+    "html2canvas": "^1.4.1",
     "idb": "^8.0.0"
   },
   "devDependencies": {

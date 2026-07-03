@@ -2,6 +2,11 @@
 import { state } from '../state.js';
 import { sbInsert, sbSelect, supabaseClient } from '../db.js';
 import { showToast } from '../components/toasts.js';
+<<<<<<< Updated upstream
+=======
+import { rateForInput, getLatestUsdRate, formatRate } from '../utils/currency.js';
+import { applyDefaultsToTransferForm, loadUserTeamDefaultsForCurrentTeam } from '../utils/userTeamDefaults.js';
+>>>>>>> Stashed changes
 
 // Module-level cache
 let teamBucketsCache = [];
@@ -49,6 +54,7 @@ async function loadExchangeRates() {
   return exchangeRatesCache;
 }
 
+<<<<<<< Updated upstream
 function findExchangeRate(fromCurrency, toCurrency) {
   if (!fromCurrency || !toCurrency || fromCurrency === toCurrency) return 1;
 
@@ -84,6 +90,8 @@ function findExchangeRate(fromCurrency, toCurrency) {
   return null;
 }
 
+=======
+>>>>>>> Stashed changes
 async function auditLog(action, entityType, entityId, oldValues, newValues) {
   try {
     if (!state.user?.id) return;
@@ -124,27 +132,18 @@ export function getTransferFundsPage() {
       </p>
       
       <form id="transferFundsForm" onsubmit="window.executeFundsTransfer(event)">
-        
-        <div class="form-group">
-          <label>Transfer Date</label>
-          <input type="date" id="trDate" required>
-        </div>
-
-        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 12px;">
-          <div class="form-group">
-            <label>Source Bucket</label>
-            <select id="trSourceBucketId" required onchange="window.onTransferBucketChange()">
-              <option value="">Loading buckets...</option>
-            </select>
-            <small id="trSourceCurrency" style="color: #666;">Currency: —</small>
+        <div class="form-stack">
+          <div class="form-grid-row form-grid-row--transfer-buckets">
+            <div class="form-group"><label>Transfer Date</label><input type="date" id="trDate" required></div>
+            <div class="form-group"><label>Source Bucket</label><select id="trSourceBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trSourceCurrency">Currency: —</span></div>
+            <div class="form-group"><label>Destination Bucket</label><select id="trDestBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trDestCurrency">Currency: —</span></div>
           </div>
-          <div class="form-group">
-            <label>Destination Bucket</label>
-            <select id="trDestBucketId" required onchange="window.onTransferBucketChange()">
-              <option value="">Loading buckets...</option>
-            </select>
-            <small id="trDestCurrency" style="color: #666;">Currency: —</small>
+          <div class="form-grid-row form-grid-row--transfer-amount">
+            <div class="form-group"><label>Amount <span id="trAmountCurrencyLabel" style="font-weight:600;color:#4f46e5;">(USD)</span></label><input type="number" class="input-amount" id="trAmount" step="0.01" placeholder="0.00" required oninput="window.onTransferAmountChange()"></div>
+            <div class="form-group"><label id="trRateLabel">Rate (1 USD = ?)</label><input type="number" class="input-rate" id="trRate" step="any" min="0.000001" placeholder="95.4" oninput="window.onTransferAmountChange()"></div>
+            <div class="form-group"><label>Converted <span id="trConvertedCurrencyLabel" style="font-weight:600;color:#4f46e5;"></span></label><input type="number" class="input-amount" id="trConvertedAmount" step="0.01" readonly style="background:#f3f4f6;"><span class="form-field-hint" id="trConvertedLabel">—</span></div>
           </div>
+<<<<<<< Updated upstream
         </div>
 
         <div class="form-group" style="margin-top: 12px;">
@@ -168,6 +167,9 @@ export function getTransferFundsPage() {
         <div class="form-group" style="margin-top: 12px;">
           <label>Reference Memo / Authorization</label>
           <input type="text" id="trMemo" placeholder="e.g., ATM Cash Withdrawal, Inter-account transfer">
+=======
+          <div class="form-group"><label>Reference Memo</label><textarea id="trMemo" rows="2" placeholder="Optional"></textarea></div>
+>>>>>>> Stashed changes
         </div>
 
         <div id="trValidationError" style="color: #dc3545; font-size: 0.9em; margin-top: 12px; display: none;"></div>
@@ -206,6 +208,9 @@ export async function initTransferFundsPage() {
     });
   }
 
+  await loadUserTeamDefaultsForCurrentTeam();
+  applyDefaultsToTransferForm({ sourceSelect, destSelect });
+
   window.onTransferBucketChange();
 }
 
@@ -221,9 +226,11 @@ window.onTransferBucketChange = function() {
   const srcCurrencyEl = document.getElementById('trSourceCurrency');
   const destCurrencyEl = document.getElementById('trDestCurrency');
   const amountLabel = document.getElementById('trAmountCurrencyLabel');
+  const convertedCurrencyLabel = document.getElementById('trConvertedCurrencyLabel');
   const rateInput = document.getElementById('trRate');
   const convertedInput = document.getElementById('trConvertedAmount');
   const convertedLabel = document.getElementById('trConvertedLabel');
+  const rateLabel = document.getElementById('trRateLabel');
 
   if (srcBucket) {
     srcCurrencyEl.textContent = `Currency: ${srcBucket.currency}`;
@@ -235,16 +242,18 @@ window.onTransferBucketChange = function() {
 
   if (destBucket) {
     destCurrencyEl.textContent = `Currency: ${destBucket.currency}`;
+    if (convertedCurrencyLabel) convertedCurrencyLabel.textContent = `(${destBucket.currency})`;
   } else {
     destCurrencyEl.textContent = 'Currency: —';
+    if (convertedCurrencyLabel) convertedCurrencyLabel.textContent = '';
   }
 
-  // Compute exchange rate — only auto-populate if field is empty
   if (srcBucket && destBucket) {
     const srcCurr = srcBucket.currency || 'USD';
     const destCurr = destBucket.currency || 'USD';
 
     if (srcCurr === destCurr) {
+<<<<<<< Updated upstream
       if (rateInput && !rateInput.value) rateInput.value = '1';
       if (convertedInput) convertedInput.value = '';
       if (convertedLabel) convertedLabel.textContent = 'Same currency — no conversion needed';
@@ -252,11 +261,58 @@ window.onTransferBucketChange = function() {
       const rate = findExchangeRate(srcCurr, destCurr);
       if (rate !== null) {
         if (rateInput && !rateInput.value) rateInput.value = rate.toFixed(6);
+=======
+      if (rateInput) rateInput.value = '1';
+      if (rateLabel) rateLabel.textContent = 'Exchange Rate (1 USD = 1 USD)';
+      if (convertedInput) convertedInput.value = '';
+      if (convertedLabel) convertedLabel.textContent = 'Same currency — no conversion needed';
+    } else if (srcCurr === 'USD') {
+      const destRate = getLatestUsdRate(exchangeRatesCache, destCurr);
+      if (rateLabel) rateLabel.textContent = `Exchange Rate (1 USD = ? ${destCurr})`;
+      if (destRate !== null) {
+        if (rateInput) rateInput.value = rateForInput(destRate);
+>>>>>>> Stashed changes
         window.onTransferAmountChange();
       } else {
         if (rateInput && !rateInput.value) rateInput.value = '';
         if (convertedInput) convertedInput.value = '';
+<<<<<<< Updated upstream
         if (convertedLabel) convertedLabel.textContent = `⚠️ No exchange rate found for ${srcCurr} → ${destCurr}`;
+=======
+        if (convertedLabel) convertedLabel.textContent = `⚠️ No exchange rate found for ${destCurr}. Add a USD rate in Setup.`;
+      }
+    } else if (destCurr === 'USD') {
+      const srcRate = getLatestUsdRate(exchangeRatesCache, srcCurr);
+      if (rateLabel) rateLabel.textContent = `Exchange Rate (1 USD = ? ${srcCurr})`;
+      if (srcRate !== null) {
+        if (rateInput) rateInput.value = rateForInput(srcRate);
+        window.onTransferAmountChange();
+      } else {
+        if (rateInput) rateInput.value = '';
+        if (convertedInput) convertedInput.value = '';
+        if (convertedLabel) convertedLabel.textContent = `⚠️ No exchange rate found for ${srcCurr}. Add a USD rate in Setup.`;
+      }
+    } else {
+      const srcRate = getLatestUsdRate(exchangeRatesCache, srcCurr);
+      const destRate = getLatestUsdRate(exchangeRatesCache, destCurr);
+      if (rateLabel) rateLabel.textContent = `Exchange Rate (1 USD = ? ${srcCurr})`;
+      if (srcRate !== null) {
+        if (rateInput) rateInput.value = rateForInput(srcRate);
+      } else {
+        if (rateInput) rateInput.value = '';
+      }
+      if (destRate !== null && srcRate !== null) {
+        if (convertedLabel) {
+          convertedLabel.textContent = `Also using 1 USD = ${formatRate(destRate)} ${destCurr}`;
+        }
+        window.onTransferAmountChange();
+      } else if (!destRate) {
+        if (convertedInput) convertedInput.value = '';
+        if (convertedLabel) convertedLabel.textContent = `⚠️ No exchange rate found for ${destCurr}. Add a USD rate in Setup.`;
+      } else if (!srcRate) {
+        if (convertedInput) convertedInput.value = '';
+        if (convertedLabel) convertedLabel.textContent = `Enter source rate or add 1 USD = ? ${srcCurr} in Setup.`;
+>>>>>>> Stashed changes
       }
     }
   } else {
@@ -276,7 +332,7 @@ window.onTransferAmountChange = function() {
   const srcBucket = getBucketById(srcId);
   const destBucket = getBucketById(destId);
 
-  if (!srcBucket || !destBucket || amount <= 0 || rate <= 0) {
+  if (!srcBucket || !destBucket || amount <= 0) {
     if (convertedInput) convertedInput.value = '';
     return;
   }
@@ -284,20 +340,40 @@ window.onTransferAmountChange = function() {
   const srcCurr = srcBucket.currency || 'USD';
   const destCurr = destBucket.currency || 'USD';
 
+  if (srcCurr === destCurr) {
+    if (convertedInput) convertedInput.value = amount.toFixed(2);
+    if (convertedLabel) convertedLabel.textContent = `Destination will receive ${amount.toFixed(2)} ${destCurr}`;
+    return;
+  }
+
   if (convertedInput) {
+    let converted = null;
+
     if (srcCurr === 'USD' && destCurr !== 'USD') {
-      // USD → local: multiply
-      convertedInput.value = (amount * rate).toFixed(2);
+      if (rate <= 0) {
+        convertedInput.value = '';
+        return;
+      }
+      converted = amount * rate;
     } else if (srcCurr !== 'USD' && destCurr === 'USD') {
-      // local → USD: divide
-      convertedInput.value = (amount / rate).toFixed(2);
+      if (rate <= 0) {
+        convertedInput.value = '';
+        return;
+      }
+      converted = amount / rate;
     } else {
-      // same currency or both non-USD
-      convertedInput.value = amount.toFixed(2);
+      const srcUsdRate = rate > 0 ? rate : getLatestUsdRate(exchangeRatesCache, srcCurr);
+      const destUsdRate = getLatestUsdRate(exchangeRatesCache, destCurr);
+      if (!srcUsdRate || !destUsdRate || srcUsdRate <= 0 || destUsdRate <= 0) {
+        convertedInput.value = '';
+        return;
+      }
+      converted = (amount / srcUsdRate) * destUsdRate;
     }
 
-    if (convertedLabel && destBucket) {
-      convertedLabel.textContent = `Destination will receive ${convertedInput.value} ${destBucket.currency}`;
+    convertedInput.value = converted.toFixed(2);
+    if (convertedLabel) {
+      convertedLabel.textContent = `Destination will receive ${convertedInput.value} ${destCurr}`;
     }
   }
 };
@@ -341,10 +417,24 @@ window.executeFundsTransfer = async function(e) {
   const srcCurr = srcBucket.currency || 'USD';
   const destCurr = destBucket.currency || 'USD';
 
-  // For cross-currency, ensure we have a rate
-  if (srcCurr !== destCurr && rate <= 0) {
-    if (errorEl) { errorEl.textContent = `No valid exchange rate available for ${srcCurr} → ${destCurr}. Please add a rate first.`; errorEl.style.display = 'block'; }
-    return;
+  if (srcCurr !== destCurr) {
+    if (srcCurr !== 'USD' && destCurr !== 'USD') {
+      const destUsdRate = getLatestUsdRate(exchangeRatesCache, destCurr);
+      const srcUsdRate = rate > 0 ? rate : getLatestUsdRate(exchangeRatesCache, srcCurr);
+      if (!srcUsdRate || !destUsdRate) {
+        if (errorEl) {
+          errorEl.textContent = `No valid exchange rates for ${srcCurr} → ${destCurr}. Add USD rates for both currencies in Setup.`;
+          errorEl.style.display = 'block';
+        }
+        return;
+      }
+    } else if (rate <= 0) {
+      if (errorEl) {
+        errorEl.textContent = `No valid exchange rate available for ${srcCurr} → ${destCurr}. Please add a rate first.`;
+        errorEl.style.display = 'block';
+      }
+      return;
+    }
   }
 
   if (errorEl) errorEl.style.display = 'none';

@@ -8,13 +8,27 @@ export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ==================== INDEXEDDB SETUP ====================
 let db = null;
+const LOCAL_DB_VERSION = 5;
+
+function ensureAllObjectStores(idb) {
+  const required = [
+    'buckets', 'categories', 'budget_plans', 'exchange_rates',
+    'pending_changes', 'sync_meta', 'income', 'expenses', 'transfers',
+    'users', 'teams', 'user_teams', 'expense_receipts'
+  ];
+  return required.every(name => idb.objectStoreNames.contains(name));
+}
 
 export async function initLocalDB() {
-  if (db) return db;
-
   const { openDB } = await import('idb');
 
-  db = await openDB('kailasa-manager', 3, {
+  if (db && ensureAllObjectStores(db)) return db;
+  if (db) {
+    db.close();
+    db = null;
+  }
+
+  db = await openDB('kailasa-manager', LOCAL_DB_VERSION, {
     upgrade(db, oldVersion) {
       if (oldVersion < 1) {
         db.createObjectStore('buckets', { keyPath: 'id' });
@@ -30,15 +44,13 @@ export async function initLocalDB() {
         if (!db.objectStoreNames.contains('transfers')) db.createObjectStore('transfers', { keyPath: 'id' });
       }
       if (oldVersion < 3) {
-        if (!db.objectStoreNames.contains('users')) {
-          db.createObjectStore('users', { keyPath: 'id' });
-        }
-        if (!db.objectStoreNames.contains('teams')) {
-          db.createObjectStore('teams', { keyPath: 'id' });
-        }
-        if (!db.objectStoreNames.contains('user_teams')) {
-          db.createObjectStore('user_teams', { keyPath: 'id' });
-        }
+        if (!db.objectStoreNames.contains('users')) db.createObjectStore('users', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('teams')) db.createObjectStore('teams', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('user_teams')) db.createObjectStore('user_teams', { keyPath: 'id' });
+      }
+      // v4 added expense_receipts; v5 re-runs if store was missing at v4
+      if (!db.objectStoreNames.contains('expense_receipts')) {
+        db.createObjectStore('expense_receipts', { keyPath: 'id' });
       }
     }
   });
@@ -142,7 +154,7 @@ export async function syncTable(tableName, teamId, options = {}) {
 }
 
 export async function syncAll(teamId) {
-  const tables = ['buckets', 'categories', 'budget_plans', 'exchange_rates'];
+  const tables = ['buckets', 'categories', 'budget_plans', 'exchange_rates', 'expenses', 'expense_receipts'];
   const results = {};
 
   for (const table of tables) {
@@ -211,7 +223,18 @@ export async function sbInsert(table, data) {
   return result;
 }
 
-export async function sbUpdate(table, data, match) {
+export async function sbUpdate(table, arg2, arg3) {
+  let data;
+  let match;
+
+  if (typeof arg2 === 'string' && arg3 && typeof arg3 === 'object') {
+    match = { id: arg2 };
+    data = { ...arg3, id: arg2 };
+  } else {
+    data = arg2;
+    match = arg3;
+  }
+
   if (!navigator.onLine) {
     await queueChange(table, 'update', data);
     await localPut(table, data);
@@ -222,7 +245,9 @@ export async function sbUpdate(table, data, match) {
   if (typeof match === 'function') {
     query = match(query);
   } else if (match && typeof match === 'object') {
-    query = query.match(match);
+    for (const [key, value] of Object.entries(match)) {
+      query = query.eq(key, value);
+    }
   }
   const result = await query.select();
   if (!result.error && result.data?.[0]) {

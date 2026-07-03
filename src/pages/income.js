@@ -2,6 +2,23 @@
 import { state } from '../state.js';
 import { localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete, sbSelect, supabaseClient } from '../db.js';
 import { showToast } from '../components/toasts.js';
+<<<<<<< Updated upstream
+=======
+import {
+  getLatestUsdRate,
+  calcUsdFromBucketAmount,
+  splitIncomeAmounts,
+  bucketAmountForEdit,
+  rateDisplayLabel,
+  normalizeUsdMultiplierRate,
+  rateForInput,
+  roundUsd,
+  formatUsdDisplay,
+  allocationsExceedIncome,
+  ALLOCATION_TOLERANCE
+} from '../utils/currency.js';
+import { applyDefaultsToIncomeForm, loadUserTeamDefaultsForCurrentTeam } from '../utils/userTeamDefaults.js';
+>>>>>>> Stashed changes
 
 // ==========================================
 // MODULE-LEVEL CACHE (team-scoped)
@@ -127,7 +144,7 @@ async function auditLog(action, entityType, entityId, oldValues, newValues) {
 export function getRecordIncomePage() {
   if (!state.canManageIncome) {
     return `
-      <h1 class="page-title">Record Income</h1>
+      <h1 class="page-title">Add Income</h1>
       <div class="card">
         <h2>⛔ Access Denied</h2>
         <p>You do not have administrative permission to record financial inflows.</p>
@@ -136,21 +153,23 @@ export function getRecordIncomePage() {
   }
 
   return `
-    <h1 class="page-title">Record Income</h1>
+    <h1 class="page-title">Add Income</h1>
     <div class="card">
       <h2>💵 Register New Funds Entry</h2>
       <form id="recordIncomeForm" onsubmit="window.createIncomeRecord(event)">
-        <div class="form-grid" style="max-width: 900px;">
-          
-          <!-- Row 1 -->
-          <div class="form-group">
-            <label>Date</label>
-            <input type="date" id="incDate" required>
+        <div class="form-stack">
+          <div class="form-grid-row form-grid-row--income-record-main">
+            <div class="form-group"><label class="required">Payment From</label><input type="text" id="incPaymentFrom" placeholder="KMOF" required></div>
+            <div class="form-group"><label class="required">Amount <span id="incCurrencyLabel" style="font-weight:600;color:#4f46e5;">(USD)</span></label><input type="number" class="input-amount" id="incAmount" step="0.01" placeholder="0.00" required oninput="window.onIncomeMathFieldsChange()"></div>
+            <div class="form-group"><label class="required">Payment Bucket</label><select id="incBucketId" required onchange="window.onIncomeBucketChange(this)"><option value="">Loading…</option></select></div>
           </div>
-          <div class="form-group">
-            <label>Payment From</label>
-            <input type="text" id="incPaymentFrom" placeholder="e.g., Grant, Donation, Client" required>
+          <div class="form-grid-row form-grid-row--income-record-secondary">
+            <div class="form-group"><label>Date</label><input type="date" id="incDate" required></div>
+            <div class="form-group"><label>Currency</label><input type="text" id="incCurrencyDisplay" readonly value="USD" style="background:#f3f4f6;"></div>
+            <div class="form-group"><label class="required" id="incExchangeRateLabel">Exchange Rate (1 USD = ?)</label><input type="number" class="input-rate" id="incExchangeRate" step="any" min="0.000001" placeholder="95.4" required oninput="window.onIncomeMathFieldsChange()"></div>
+            <div class="form-group"><label id="incUsdEquivalentLabel">USD Equivalent</label><input type="number" class="input-amount" id="incLocalAmount" step="0.01" readonly style="background:#f3f4f6;"></div>
           </div>
+<<<<<<< Updated upstream
           <div class="form-group">
             <label>Payment Bucket</label>
             <select id="incBucketId" required onchange="window.onIncomeBucketChange(this)">
@@ -180,6 +199,9 @@ export function getRecordIncomePage() {
             <textarea id="incDescription" rows="2" placeholder="Optional notes..."></textarea>
           </div>
 
+=======
+          <div class="form-group"><label>Description / Notes</label><textarea id="incDescription" rows="2" placeholder="Optional notes…"></textarea></div>
+>>>>>>> Stashed changes
         </div>
 
         <h3 style="margin-top: 30px;">Budget Allocations (USD)</h3>
@@ -239,6 +261,18 @@ export async function initRecordIncomePage() {
 
   // Default math state
   window.onIncomeMathFieldsChange();
+
+  await loadUserTeamDefaultsForCurrentTeam();
+  const defaultBudgetId = applyDefaultsToIncomeForm({
+    bucketSelect,
+    paymentFromEl: document.getElementById('incPaymentFrom')
+  });
+  if (defaultBudgetId) {
+    await window.addIncomeAllocationRow({ budget_id: defaultBudgetId });
+  }
+
+  const paymentFromEl = document.getElementById('incPaymentFrom');
+  if (paymentFromEl) setTimeout(() => paymentFromEl.focus(), 100);
 }
 
 /**
@@ -345,7 +379,7 @@ window.addIncomeAllocationRow = async function(data = null) {
     <select class="alloc-budget-select" required data-selected="${defaultBudget}">
       <option value="">Select Budget Plan</option>
     </select>
-    <input type="number" class="alloc-usd-input" step="0.01" placeholder="USD" value="${defaultAmount}" required oninput="window.onAllocationRowAmountInput()">
+    <input type="number" class="alloc-usd-input input-amount" step="0.01" placeholder="1245.50" value="${defaultAmount}" required oninput="window.onAllocationRowAmountInput()">
     <button type="button" class="cat-remove-btn" onclick="this.closest('.income-alloc-row').remove(); window.onAllocationRowAmountInput();" style="margin: 0; padding: 4px;">×</button>
   `;
 
@@ -379,6 +413,12 @@ window.onAllocationRowAmountInput = function() {
 window.createIncomeRecord = async function(e) {
   e.preventDefault();
 
+  const paymentFrom = document.getElementById('incPaymentFrom').value.trim();
+  if (!paymentFrom) {
+    showToast('Please enter who the payment is from.', 'error');
+    return;
+  }
+
   const bucketId = document.getElementById('incBucketId').value;
   if (!bucketId) {
     showToast('Please select a payment bucket.', 'error');
@@ -397,6 +437,20 @@ window.createIncomeRecord = async function(e) {
     return;
   }
 
+<<<<<<< Updated upstream
+=======
+  const currency = bucket.currency || 'USD';
+  const rate = normalizeUsdMultiplierRate(
+    parseFloat(document.getElementById('incExchangeRate').value) || 0,
+    currency
+  );
+  if (rate <= 0) {
+    showToast('Please enter a valid exchange rate.', 'error');
+    return;
+  }
+  const { amount_usd, local_amount } = splitIncomeAmounts(totalIncome, currency, rate);
+
+>>>>>>> Stashed changes
   const allocRows = document.querySelectorAll('#incomeAllocationsContainer .income-alloc-row');
   let allocations = [];
   let totalAllocated = 0;
@@ -485,6 +539,7 @@ export function getIncomeManagerPage() {
     <h1 class="page-title">Income Manager</h1>
     <div class="card">
       <h2>🔍 Filter Transactions</h2>
+<<<<<<< Updated upstream
       <div class="form-grid">
         <div class="form-group">
           <label>Storage Account / Bucket</label>
@@ -496,6 +551,19 @@ export function getIncomeManagerPage() {
         <div class="form-group">
           <label>Origin Search</label>
           <input type="text" id="filterIncFrom" placeholder="Search sender names..." oninput="window.initIncomeManagerPage()">
+=======
+      <div class="filter-section">
+        <div class="form-stack">
+          <div class="form-grid-row form-grid-row--filter-main">
+            <div class="form-group"><label>Bucket</label><select id="filterIncBucket" onchange="window.initIncomeManagerPage()"><option value="all">All Accounts</option></select></div>
+            <div class="form-group"><label>Budget</label><select id="filterIncBudget" onchange="window.initIncomeManagerPage()"><option value="all">All Budgets</option></select></div>
+            <div class="form-group"><label>Received From</label><input type="text" id="filterIncFrom" placeholder="Search…" oninput="window.initIncomeManagerPage()"></div>
+          </div>
+          <div class="form-grid-row form-grid-row--filter-dates">
+            <div class="form-group"><label>From</label><input type="date" id="filterIncDateFrom" onchange="window.initIncomeManagerPage()"></div>
+            <div class="form-group"><label>To</label><input type="date" id="filterIncDateTo" onchange="window.initIncomeManagerPage()"></div>
+          </div>
+>>>>>>> Stashed changes
         </div>
       </div>
     </div>
@@ -527,11 +595,13 @@ export function getIncomeManagerPage() {
         <form id="editIncomeForm" onsubmit="window.saveEditedIncomeRecord(event)">
           <input type="hidden" id="editIncId">
           
-          <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
-            <div class="form-group">
-              <label>Date</label>
-              <input type="date" id="editIncDate" required>
+          <div class="form-stack">
+            <div class="form-grid-row form-grid-row--income-edit-main">
+              <div class="form-group"><label class="required">Payment From</label><input type="text" id="editIncPaymentFrom" required></div>
+              <div class="form-group"><label class="required">Amount <span id="editIncCurrencyLabel" style="font-weight:600;color:#4f46e5;">(USD)</span></label><input type="number" class="input-amount" id="editIncAmount" step="0.01" required oninput="window.onEditIncomeMathChange()"></div>
+              <div class="form-group"><label class="required">Bucket</label><select id="editIncBucketId" required onchange="window.onEditIncomeBucketChange(this)"><option value="">Loading…</option></select></div>
             </div>
+<<<<<<< Updated upstream
             <div class="form-group">
               <label>Payment From</label>
               <input type="text" id="editIncPaymentFrom" required>
@@ -564,7 +634,15 @@ export function getIncomeManagerPage() {
             <div class="form-group">
               <label>Description</label>
               <input type="text" id="editIncDescription">
+=======
+            <div class="form-grid-row form-grid-row--income-edit-meta">
+              <div class="form-group"><label>Date</label><input type="date" id="editIncDate" required></div>
+              <div class="form-group"><label>Currency</label><input type="text" id="editIncCurrencyDisplay" readonly style="background:#f3f4f6;"></div>
+              <div class="form-group"><label class="required" id="editIncExchangeRateLabel">Rate (1 USD = ?)</label><input type="number" class="input-rate" id="editIncExchangeRate" step="any" min="0.000001" required oninput="window.onEditIncomeMathChange()"></div>
+              <div class="form-group"><label id="editIncUsdEquivalentLabel">USD Equivalent</label><input type="number" class="input-amount" id="editIncLocalAmount" step="0.01" readonly style="background:#f3f4f6;"></div>
+>>>>>>> Stashed changes
             </div>
+            <div class="form-group"><label>Description</label><textarea id="editIncDescription" rows="2"></textarea></div>
           </div>
 
           <h3 style="margin-top: 20px;">Split Allocations</h3>
@@ -738,6 +816,7 @@ window.onEditIncomeBucketChange = function(selectEl) {
   const currency = bucket.currency || 'USD';
   if (currencyDisplay) currencyDisplay.value = currency;
 
+<<<<<<< Updated upstream
   // Only auto-populate rate if field is empty
   if (currency === 'USD') {
     if (rateInput && !rateInput.value) rateInput.value = '1';
@@ -746,6 +825,21 @@ window.onEditIncomeBucketChange = function(selectEl) {
     if (rateInput && !rateInput.value && rate !== null) {
       rateInput.value = rate.toFixed(6);
     }
+=======
+  if (!preserveRate) {
+    if (currency === 'USD') {
+      if (rateInput) rateInput.value = '1';
+      if (rateLabel) rateLabel.textContent = 'Rate (1 USD = 1 USD)';
+    } else {
+      const rate = getLatestUsdRate(exchangeRatesCache, currency);
+      if (rateInput) rateInput.value = rate !== null ? rateForInput(rate) : '';
+      if (rateLabel) rateLabel.textContent = `Rate (1 USD = ? ${currency})`;
+    }
+  } else if (rateLabel) {
+    rateLabel.textContent = currency === 'USD'
+      ? 'Rate (1 USD = 1 USD)'
+      : `Rate (1 USD = ? ${currency})`;
+>>>>>>> Stashed changes
   }
 
   window.onEditIncomeMathChange();
@@ -766,7 +860,7 @@ window.addEditIncomeAllocationRow = async function(data = null) {
     <select class="edit-alloc-budget-select" required>
       <option value="">Select Budget</option>
     </select>
-    <input type="number" class="edit-alloc-usd-input" step="0.01" placeholder="USD" value="${defaultAmount}" required oninput="window.onEditIncomeMathChange()">
+    <input type="number" class="edit-alloc-usd-input" step="0.01" placeholder="1245.50" value="${defaultAmount}" required oninput="window.onEditIncomeMathChange()">
     <button type="button" class="cat-remove-btn" onclick="this.closest('.income-alloc-row').remove(); window.onEditIncomeMathChange();" style="margin:0; padding:4px;">×</button>
   `;
   container.appendChild(row);
@@ -812,9 +906,25 @@ window.saveEditedIncomeRecord = async function(e) {
   e.preventDefault();
 
   const id = document.getElementById('editIncId').value;
+  const paymentFrom = document.getElementById('editIncPaymentFrom').value.trim();
+  if (!paymentFrom) {
+    showToast('Please enter who the payment is from.', 'error');
+    return;
+  }
+
   const bucketId = document.getElementById('editIncBucketId').value;
+<<<<<<< Updated upstream
   const amount = parseFloat(document.getElementById('editIncAmount').value) || 0;
   const rate = parseFloat(document.getElementById('editIncExchangeRate').value) || 1;
+=======
+  const bucketAmount = parseFloat(document.getElementById('editIncAmount').value) || 0;
+  const bucket = getBucketById(bucketId);
+  const currency = bucket ? bucket.currency : 'USD';
+  const rate = normalizeUsdMultiplierRate(
+    parseFloat(document.getElementById('editIncExchangeRate').value) || 0,
+    currency
+  );
+>>>>>>> Stashed changes
 
   if (!bucketId) {
     showToast('Please select a payment bucket.', 'error');
@@ -822,6 +932,10 @@ window.saveEditedIncomeRecord = async function(e) {
   }
   if (amount <= 0) {
     showToast('Amount must be greater than zero.', 'error');
+    return;
+  }
+  if (rate <= 0) {
+    showToast('Please enter a valid exchange rate.', 'error');
     return;
   }
 

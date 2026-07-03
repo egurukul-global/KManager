@@ -17,11 +17,15 @@ export const state = {
   // 💵 Income Module State Tracking
   incomeRecords: [],
   canManageIncome: false,
+  canManageExpenses: false,
+  canViewAllExpenses: false,
   showDeleted: false,
   pendingDeleteId: null,
   isOnline: navigator.onLine,
   syncInProgress: false,
-  lastSync: null
+  lastSync: null,
+  teamDefaults: null,
+  teamDefaultsTeamId: null
 };
 
 // ==================== PERMISSIONS ====================
@@ -41,8 +45,13 @@ export function computePermissions() {
     state.canEditBudgets = true;
     state.canDeleteBudgets = true;
     state.canManageIncome = true;
+    state.canManageExpenses = true;
+    state.canViewAllExpenses = true;
     return;
   }
+
+  state.canManageExpenses = level !== 'view';
+  state.canViewAllExpenses = level === 'admin' || level === 'lead';
 
   // Team-level permissions based on access_level
   switch (level) {

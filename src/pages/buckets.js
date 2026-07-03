@@ -24,7 +24,17 @@ export function getBucketsPage() {
         Showing buckets for <strong>${state.currentTeam?.team_name || 'current team'}</strong>.
         <span id="bucketAccessNote" style="color: #999; font-size: 0.9em;"></span>
       </p>
-      <div id="bucketsList">Loading buckets...</div>
+      <div id="teamBucketsList">Loading buckets...</div>
+    </div>
+
+    <div class="card" id="personalBucketsCard">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+        <h2>👤 Personal Buckets</h2>
+      </div>
+      <p style="color: #666; margin-bottom: 20px;">
+        Personal funds owned by team members. Each bucket name must be unique across the team.
+      </p>
+      <div id="personalBucketsList">Loading buckets...</div>
     </div>
   `;
 }
@@ -60,8 +70,10 @@ export async function initBucketsPage() {
 }
 
 async function loadBuckets() {
-  const container = document.getElementById('bucketsList');
-  container.innerHTML = '<div class="empty-state">Loading buckets...</div>';
+  const teamContainer = document.getElementById('teamBucketsList');
+  const personalContainer = document.getElementById('personalBucketsList');
+  if (teamContainer) teamContainer.innerHTML = '<div class="empty-state">Loading buckets...</div>';
+  if (personalContainer) personalContainer.innerHTML = '<div class="empty-state">Loading buckets...</div>';
 
   try {
     const { data: buckets, error } = await sbSelect('buckets', {
@@ -78,31 +90,35 @@ async function loadBuckets() {
 
   } catch (err) {
     console.error('Load buckets error:', err);
-    container.innerHTML = `<div class="empty-state" style="color: #dc3545;">Error loading buckets: ${err.message}</div>`;
+    const errHtml = `<div class="empty-state" style="color: #dc3545;">Error loading buckets: ${err.message}</div>`;
+    if (teamContainer) teamContainer.innerHTML = errHtml;
+    if (personalContainer) personalContainer.innerHTML = errHtml;
     showToast('Failed to load buckets', 'error');
   }
 }
 
-function renderBuckets() {
-  const container = document.getElementById('bucketsList');
+function normalizeBucketName(name) {
+  return (name || '').trim().toLowerCase();
+}
 
-  if (allBuckets.length === 0) {
-    container.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">💰</div>
-        <h3>No buckets yet</h3>
-        <p>${state.showDeleted ? 'No deleted buckets found.' : 'Create your first money bucket to get started.'}</p>
-        ${!state.showDeleted && state.canCreateBuckets ? '<button class="success" onclick="window.openBucketModal()" style="margin-top: 15px;">+ Create Bucket</button>' : ''}
-      </div>
-    `;
-    return;
-  }
+function isDuplicateBucketName(name, excludeId = null) {
+  const key = normalizeBucketName(name);
+  if (!key) return false;
+  return allBuckets.some(b =>
+    !b.is_deleted &&
+    b.id !== excludeId &&
+    normalizeBucketName(b.name) === key
+  );
+}
+
+function renderBucketGrid(buckets) {
+  if (buckets.length === 0) return '';
 
   let html = '<div class="bucket-grid">';
 
-  allBuckets.forEach(bucket => {
+  buckets.forEach(bucket => {
     const typeEmoji = {
-      'cash': '💵', 'bank': '🏦', 'mobile_money': '📱', 
+      'cash': '💵', 'bank': '🏦', 'mobile_money': '📱',
       'crypto': '₿', 'other': '📦'
     }[bucket.type] || '💰';
 
@@ -111,6 +127,8 @@ function renderBuckets() {
     const canEdit = state.canEditBuckets && !isDeleted;
     const canDelete = state.canDeleteBuckets && !isDeleted;
     const canRestore = state.canDeleteBuckets && isDeleted;
+    const isPersonal = !!bucket.owner_user_id;
+    const safeName = (bucket.name || '').replace(/'/g, "\\'");
 
     html += `
       <div class="bucket-card ${isDeleted ? 'deleted' : ''}">
@@ -118,7 +136,7 @@ function renderBuckets() {
         <div class="bucket-header">
           <div>
             <div class="bucket-name">${typeEmoji} ${bucket.name}</div>
-            <div class="bucket-type">${bucket.type?.replace(/_/g, ' ') || 'Other'}</div>
+            <div class="bucket-type">${bucket.type?.replace(/_/g, ' ') || 'Other'}${isPersonal ? ' · Personal' : ''}</div>
           </div>
           <span class="badge badge-info">${bucket.currency}</span>
         </div>
@@ -131,7 +149,7 @@ function renderBuckets() {
         </div>
         <div class="bucket-actions">
           ${canEdit ? `<button class="info small" onclick="window.loadBucketForEdit('${bucket.id}')">Edit</button>` : ''}
-          ${canDelete ? `<button class="danger small" onclick="window.confirmDeleteBucket('${bucket.id}', '${bucket.name}')">Delete</button>` : ''}
+          ${canDelete ? `<button class="danger small" onclick="window.confirmDeleteBucket('${bucket.id}', '${safeName}')">Delete</button>` : ''}
           ${canRestore ? `<button class="success small" onclick="window.restoreBucket('${bucket.id}')">Restore</button>` : ''}
         </div>
       </div>
@@ -139,7 +157,48 @@ function renderBuckets() {
   });
 
   html += '</div>';
-  container.innerHTML = html;
+  return html;
+}
+
+function renderBuckets() {
+  const teamContainer = document.getElementById('teamBucketsList');
+  const personalContainer = document.getElementById('personalBucketsList');
+  const personalCard = document.getElementById('personalBucketsCard');
+  if (!teamContainer || !personalContainer) return;
+
+  const teamBuckets = allBuckets.filter(b => !b.owner_user_id);
+  const personalBuckets = allBuckets.filter(b => !!b.owner_user_id);
+
+  if (allBuckets.length === 0) {
+    const emptyHtml = `
+      <div class="empty-state">
+        <div class="icon">💰</div>
+        <h3>No buckets yet</h3>
+        <p>${state.showDeleted ? 'No deleted buckets found.' : 'Create your first money bucket to get started.'}</p>
+        ${!state.showDeleted && state.canCreateBuckets ? '<button class="success" onclick="window.openBucketModal()" style="margin-top: 15px;">+ Create Bucket</button>' : ''}
+      </div>
+    `;
+    teamContainer.innerHTML = emptyHtml;
+    personalContainer.innerHTML = state.showDeleted
+      ? '<div class="empty-state"><p>No deleted personal buckets.</p></div>'
+      : '<div class="empty-state"><p>No personal buckets yet.</p></div>';
+    if (personalCard) personalCard.style.display = '';
+    return;
+  }
+
+  if (teamBuckets.length === 0) {
+    teamContainer.innerHTML = '<div class="empty-state"><p>No team buckets yet.</p></div>';
+  } else {
+    teamContainer.innerHTML = renderBucketGrid(teamBuckets);
+  }
+
+  if (personalBuckets.length === 0) {
+    personalContainer.innerHTML = '<div class="empty-state"><p>No personal buckets yet.</p></div>';
+  } else {
+    personalContainer.innerHTML = renderBucketGrid(personalBuckets);
+  }
+
+  if (personalCard) personalCard.style.display = '';
 }
 
 // ==================== MODAL FUNCTIONS ====================
@@ -152,37 +211,18 @@ export function openBucketModal(bucketId = null) {
     <h2>${isEdit ? '✏️ Edit Bucket' : '➕ Add New Bucket'}</h2>
     <form id="bucketForm" onsubmit="window.saveBucket(event)">
       <input type="hidden" id="bucketId" value="${bucketId || ''}">
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Bucket Name *</label>
-          <input type="text" id="bucketName" placeholder="e.g., Operations Cash, Bank Account" required>
+      <div class="form-stack">
+        <div class="form-grid-row form-grid-row--bucket">
+          <div class="form-group"><label>Bucket Name *</label><input type="text" id="bucketName" placeholder="Operations Cash" required></div>
+          <div class="form-group"><label>Bucket Type *</label><select id="bucketType" required><option value="">Type</option><option value="cash">💵 Cash</option><option value="bank">🏦 Bank</option><option value="mobile_money">📱 Mobile</option><option value="crypto">₿ Crypto</option><option value="other">📦 Other</option></select></div>
+          <div class="form-group"><label>Currency *</label><select id="bucketCurrency" required><option value="">—</option><option value="USD">USD</option><option value="XOF">XOF</option><option value="AED">AED</option><option value="INR">INR</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select></div>
+          <div class="form-group"><label>Balance *</label><input type="number" class="input-amount" id="bucketBalance" step="0.01" placeholder="0.00" required></div>
         </div>
-        <div class="form-group">
-          <label>Bucket Type *</label>
-          <select id="bucketType" required>
-            <option value="">Select Type</option>
-            <option value="cash">💵 Cash on Hand</option>
-            <option value="bank">🏦 Bank Account</option>
-            <option value="mobile_money">📱 Mobile Money</option>
-            <option value="crypto">₿ Cryptocurrency</option>
-            <option value="other">📦 Other</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Currency *</label>
-          <select id="bucketCurrency" required>
-            <option value="">Select Currency</option>
-            <option value="USD">USD - US Dollar</option>
-            <option value="XOF">XOF - West African CFA</option>
-            <option value="AED">AED - UAE Dirham</option>
-            <option value="INR">INR - Indian Rupee</option>
-            <option value="EUR">EUR - Euro</option>
-            <option value="GBP">GBP - British Pound</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Starting Balance *</label>
-          <input type="number" id="bucketBalance" step="0.01" placeholder="0.00" required>
+        <div class="form-group form-group--checkbox">
+          <label class="checkbox-inline" for="bucketPersonal">
+            <input type="checkbox" id="bucketPersonal">
+            <span>Personal bucket (owned by me)</span>
+          </label>
         </div>
       </div>
       <div class="btn-group">
@@ -212,6 +252,10 @@ async function loadBucketData(bucketId) {
     document.getElementById('bucketType').value = bucket.type;
     document.getElementById('bucketCurrency').value = bucket.currency;
     document.getElementById('bucketBalance').value = bucket.balance;
+    const personalEl = document.getElementById('bucketPersonal');
+    if (personalEl) {
+      personalEl.checked = bucket.owner_user_id === state.user?.id;
+    }
   } catch (err) {
     console.error('Load bucket for edit error:', err);
     showToast('Failed to load bucket details', 'error');
@@ -234,15 +278,22 @@ export async function saveBucket(e) {
     return;
   }
 
+  const isPersonal = document.getElementById('bucketPersonal')?.checked;
   const bucketData = {
     name: document.getElementById('bucketName').value.trim(),
     type: document.getElementById('bucketType').value,
     currency: document.getElementById('bucketCurrency').value,
-    balance: parseFloat(document.getElementById('bucketBalance').value) || 0
+    balance: parseFloat(document.getElementById('bucketBalance').value) || 0,
+    owner_user_id: isPersonal ? state.user?.id : null
   };
 
   if (!bucketData.name) {
     showToast('Bucket name is required', 'error');
+    return;
+  }
+
+  if (isDuplicateBucketName(bucketData.name, isEdit ? bucketId : null)) {
+    showToast(`A bucket named "${bucketData.name}" already exists. Names must be unique.`, 'error');
     return;
   }
 
@@ -268,7 +319,12 @@ export async function saveBucket(e) {
 
   } catch (err) {
     console.error('Save bucket error:', err);
-    showToast('Failed to save bucket: ' + err.message, 'error');
+    const msg = err.message || '';
+    if (msg.includes('idx_buckets_team_name_unique') || msg.includes('duplicate key')) {
+      showToast(`A bucket named "${bucketData.name}" already exists. Names must be unique.`, 'error');
+    } else {
+      showToast('Failed to save bucket: ' + msg, 'error');
+    }
   }
 }
 

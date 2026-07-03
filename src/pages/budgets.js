@@ -2,6 +2,77 @@
 import { state } from '../state.js';
 import { supabaseClient, localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete } from '../db.js';
 import { showToast } from '../components/toasts.js';
+<<<<<<< Updated upstream
+=======
+import { getLatestUsdRate, getLocalCurrenciesFromRates, usdToLocal, rateForInput } from '../utils/currency.js';
+import { loadCategoryMasterLines, normalizeBudgetCategory } from '../utils/categoryMaster.js';
+import { formatDisplayDate } from '../utils/budgetCalendar.js';
+
+let calendarEntriesCache = [];
+let editTemplateRowKeys = null;
+
+async function ensureEditTemplateRowKeys() {
+  if (editTemplateRowKeys) return editTemplateRowKeys;
+  const lines = await loadCategoryMasterLines();
+  editTemplateRowKeys = new Set(lines.map(l => `${l.category}|${l.subcategory || ''}`));
+  return editTemplateRowKeys;
+}
+
+function isTemplateBudgetRow(category, subcategory) {
+  if (!editTemplateRowKeys) return false;
+  return editTemplateRowKeys.has(`${category}|${subcategory || ''}`);
+}
+
+function escapeHtmlAttr(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
+function getEditRowCategoryName(row) {
+  const hidden = row.querySelector('.edit-budget-cat-name-value');
+  if (hidden?.value) return hidden.value.trim();
+  const input = row.querySelector('.edit-budget-cat-name-input');
+  if (input?.value) return input.value.trim();
+  const sel = row.querySelector('.edit-budget-cat-name');
+  if (sel) return (sel.value || sel.getAttribute('data-selected') || '').trim();
+  return '';
+}
+
+function formatLocalInput(value) {
+  const n = parseFloat(value);
+  if (Number.isNaN(n)) return '';
+  return n.toFixed(2);
+}
+
+function parseBudgetCategories(raw) {
+  if (!raw) return [];
+  let cats = raw;
+  if (typeof cats === 'string') {
+    try {
+      cats = JSON.parse(cats);
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(cats) ? cats : [];
+}
+
+function normalizeBudgetPlan(budget) {
+  return budget ? { ...budget, categories: parseBudgetCategories(budget.categories) } : budget;
+}
+
+async function ensureExchangeRatesLoaded() {
+  if (!state.currentTeam?.team_id) return;
+  const result = await sbSelect('exchange_rates', {
+    teamId: state.currentTeam.team_id,
+    orderBy: 'date',
+    ascending: false
+  });
+  state.exchangeRates = (result.data || []).filter(r => !r.is_deleted);
+}
+>>>>>>> Stashed changes
 
 // ========== CREATE BUDGET ==========
 export function getCreateBudgetPage() {
@@ -20,6 +91,7 @@ export function getCreateBudgetPage() {
     <div class="card">
       <h2>➕ New Budget Plan</h2>
       <form id="createBudgetForm" onsubmit="window.createBudget(event)">
+<<<<<<< Updated upstream
         <div class="form-grid" style="max-width: 500px;">
           <div class="form-group">
             <label>Budget Name</label>
@@ -33,11 +105,48 @@ export function getCreateBudgetPage() {
               <option value="archive">Archive</option>
             </select>
           </div>
+=======
+        <div class="form-stack">
+          <div class="form-grid-row form-grid-row--budget-a">
+            <div class="form-group" id="monthlyCalendarGroup">
+              <label>Budget Period Date</label>
+              <select id="newBudgetCalendarEntry" required><option value="">Select date…</option></select>
+            </div>
+            <div class="form-group" id="adhocDateGroup" style="display:none;">
+              <label>Budget Period Date</label>
+              <input type="date" id="newBudgetAdhocDate">
+            </div>
+            <div class="form-group">
+              <label>Budget Name</label>
+              <input type="text" id="newBudgetName" placeholder="March 2026, Dubai Trip" required onblur="window.validateBudgetName(this)">
+            </div>
+          </div>
+          <div class="form-grid-row form-grid-row--budget-b">
+            <div class="form-group">
+              <label>Budget Type</label>
+              <select id="newBudgetType" required onchange="window.onBudgetTypeChange()"><option value="monthly" selected>Monthly</option><option value="adhoc">Adhoc</option></select>
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="newBudgetStatus" required><option value="draft" selected>Draft</option><option value="current">Current</option><option value="archive">Archive</option></select>
+            </div>
+            <div class="form-group">
+              <label>Currency</label>
+              <select id="newBudgetCurrency" required onchange="window.onCreateBudgetCurrencyChange()"><option value="">—</option></select>
+            </div>
+            <div class="form-group">
+              <label>Exch Rate</label>
+              <input type="number" class="input-rate" id="newBudgetRate" step="any" placeholder="Rate" required oninput="window.onCreateBudgetRateChange()">
+            </div>
+          </div>
+          <p class="form-hint">1 USD = X local currency</p>
+>>>>>>> Stashed changes
         </div>
 
         <h3 style="margin-top: 25px;">Categories & Amounts</h3>
         <p style="margin-bottom: 15px; color: #666;">Enter USD amounts (primary). Select currency to auto-fill rate. Local amount auto-calculates.</p>
 
+<<<<<<< Updated upstream
         <div class="category-row-heading">
           <span>Category</span>
           <span>USD Amount</span>
@@ -58,6 +167,21 @@ export function getCreateBudgetPage() {
             <input type="number" class="budget-cat-rate" step="0.000001" placeholder="Rate" oninput="window.onBudgetRateChange(this)">
             <input type="number" class="budget-cat-local" step="0.01" placeholder="Local" readonly>
             <button type="button" class="cat-remove-btn" onclick="window.removeCategoryRow(this)">×</button>
+=======
+        <div class="budget-categories-table budget-categories-table--compact">
+          <div class="budget-categories-table-heading budget-categories-table-heading--compact">
+            <span>Line item</span>
+            <span>USD</span>
+            <span>Local</span>
+            <span aria-hidden="true"></span>
+          </div>
+          <div id="budgetCategoriesContainer"></div>
+          <div class="budget-grand-total">
+            <span>Total Amounts</span>
+            <span id="createBudgetTotalUsd">0.00</span>
+            <span id="createBudgetTotalLocal">0.00</span>
+            <span aria-hidden="true"></span>
+>>>>>>> Stashed changes
           </div>
         </div>
 
@@ -325,21 +449,21 @@ export function getViewBudgetsPage() {
 
     <div class="card">
       <h2>🔍 Filter Budgets</h2>
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Status</label>
-          <select id="budgetFilterStatus" onchange="window.initViewBudgetsPage()">
-            <option value="current">Current</option>
-            <option value="all">All</option>
-            <option value="draft" selected>Draft</option>
-            <option value="archive">Archive</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Budget Name</label>
-          <select id="budgetFilterName" onchange="window.initViewBudgetsPage()">
-            <option value="">All Budgets</option>
-          </select>
+      <div class="form-stack">
+        <div class="form-grid-row form-grid-row--filter-simple">
+          <div class="form-group">
+            <label>Status</label>
+            <select id="budgetFilterStatus" onchange="window.initViewBudgetsPage()">
+              <option value="current" selected>Current</option>
+              <option value="all">All</option>
+              <option value="draft">Draft</option>
+              <option value="archive">Archive</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Budget Name</label>
+            <select id="budgetFilterName" onchange="window.initViewBudgetsPage()"><option value="">All Budgets</option></select>
+          </div>
         </div>
       </div>
     </div>
@@ -352,21 +476,29 @@ export function getViewBudgetsPage() {
         <h2>Edit Budget</h2>
         <form id="editBudgetForm" onsubmit="window.saveEditedBudget(); return false;">
           <input type="hidden" id="editBudgetId">
-          <div class="form-group" style="max-width: 500px;">
-            <label>Budget Name</label>
-            <input type="text" id="editBudgetName" required onblur="window.validateEditBudgetName(this)">
-          </div>
-          <div class="form-group" style="max-width: 500px;">
-            <label>Status</label>
-            <select id="editBudgetStatus" required>
-              <option value="draft" selected>Draft</option>
-              <option value="current">Current</option>
-              <option value="archive">Archive</option>
-            </select>
+          <div class="form-grid-row form-grid-row--meta edit-budget-meta">
+            <div class="form-group">
+              <label>Budget Name</label>
+              <input type="text" id="editBudgetName" required onblur="window.validateEditBudgetName(this)">
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="editBudgetStatus" required>
+                <option value="draft">Draft</option>
+                <option value="current">Current</option>
+                <option value="archive">Archive</option>
+              </select>
+            </div>
           </div>
           <h3 style="margin-top: 25px;">Categories & Amounts</h3>
+<<<<<<< Updated upstream
           <p id="editBudgetRateNote" style="margin-bottom: 15px; color: #666;">USD amounts are primary. Select currency to auto-fill rate. Local amount auto-calculates.</p>
           <div class="category-row-heading">
+=======
+          <p id="editBudgetRateNote" style="margin-bottom: 15px; color: #666;">USD amounts are primary. Select currency to auto-fill rate (1 USD = X local). Local amount = USD × rate.</p>
+          <div class="budget-categories-table budget-categories-table--edit">
+          <div class="budget-categories-table-heading">
+>>>>>>> Stashed changes
             <span>Category</span>
             <span>USD Amount</span>
             <span>Currency</span>
@@ -403,7 +535,7 @@ export async function initViewBudgetsPage() {
   if (!state.budgetPlans || state.budgetPlans.length === 0) {
     try {
       const localBudgets = await localGetAll('budget_plans');
-      state.budgetPlans = localBudgets.filter(b => b.team_id === teamId && !b.is_deleted);
+      state.budgetPlans = localBudgets.filter(b => b.team_id === teamId && !b.is_deleted).map(normalizeBudgetPlan);
     } catch (e) {
       console.warn('Failed to load budgets from local DB:', e);
     }
@@ -661,7 +793,7 @@ window.editBudgetPlan = async function(id) {
   }
 
   const allBudgets = state.budgetPlans || state._budgets || [];
-  const budget = allBudgets.find(b => b.id === id);
+  const budget = normalizeBudgetPlan(allBudgets.find(b => b.id === id));
   if (!budget) {
     showToast('Budget not found', 'error');
     return;
@@ -675,40 +807,57 @@ window.editBudgetPlan = async function(id) {
   const container = document.getElementById('editBudgetCategoriesContainer');
   container.innerHTML = '';
 
-  const cats = budget.categories || [];
+  const cats = (budget.categories || []).map(normalizeBudgetCategory);
   cats.forEach(cat => {
     if (typeof window.addEditCategoryRow === 'function') {
-      window.addEditCategoryRow(cat);
+      window.addEditCategoryRow(cat, { deferPopulate: true });
     }
   });
 
-  if (typeof populateEditBudgetRows === 'function') {
-    populateEditBudgetRows();
-  }
+  await populateEditBudgetRows();
 
   const rows = container.querySelectorAll('.category-row');
   rows.forEach((row, idx) => {
     const cat = cats[idx];
     if (!cat) return;
 
-    const catName = cat.name || '';
     const catCurrency = cat.currency || '';
-    const catUsd = cat.usd_amount || cat.usdAmount || '';
-    const catLocal = cat.local_amount || cat.localAmount || '';
+    const catUsd = cat.usd_amount ?? cat.usdAmount ?? '';
+    const catLocal = cat.local_amount ?? cat.localAmount ?? '';
     const catRate = cat.rate || '';
 
+<<<<<<< Updated upstream
     row.querySelector('.edit-budget-cat-name').value = catName;
     row.querySelector('.edit-budget-cat-currency').value = catCurrency;
     row.querySelector('.edit-budget-cat-usd').value = catUsd;
     row.querySelector('.edit-budget-cat-local').value = catLocal;
     row.querySelector('.edit-budget-cat-rate').value = catRate;
+=======
+    const currSelect = row.querySelector('.edit-budget-cat-currency');
+    if (currSelect && catCurrency) currSelect.value = catCurrency;
+    const usdEl = row.querySelector('.edit-budget-cat-usd');
+    if (usdEl) usdEl.value = catUsd;
+    const localEl = row.querySelector('.edit-budget-cat-local');
+    if (localEl) localEl.value = formatLocalInput(catLocal);
+    const rateEl = row.querySelector('.edit-budget-cat-rate');
+    if (rateEl) rateEl.value = catRate;
+>>>>>>> Stashed changes
   });
 
   const isDraft = (budget.status || 'current') === 'draft';
   rows.forEach(row => {
     row.querySelector('.edit-budget-cat-rate').readOnly = !isDraft;
     row.querySelector('.edit-budget-cat-currency').disabled = !isDraft;
+<<<<<<< Updated upstream
     row.querySelector('.edit-budget-cat-name').disabled = !isDraft;
+=======
+    const nameInput = row.querySelector('.edit-budget-cat-name-input');
+    if (nameInput) nameInput.readOnly = !isDraft;
+    if (!isDraft) {
+      const removeBtn = row.querySelector('.cat-remove-btn');
+      if (removeBtn) removeBtn.style.display = 'none';
+    }
+>>>>>>> Stashed changes
   });
 
   const addBtn = document.getElementById('addEditCatBtn');
@@ -737,52 +886,43 @@ async function populateEditBudgetRows() {
   
   const rows = container.querySelectorAll('.category-row');
 
-  let cats = state.categories || [];
-  if (cats.length === 0 && state.currentTeam) {
-    const allCats = await localGetAll('categories');
-    cats = allCats.filter(c => c.team_id === state.currentTeam.team_id && !c.is_deleted);
-    state.categories = cats;
-  }
-
   rows.forEach(row => {
-    const nameSelect = row.querySelector('.edit-budget-cat-name');
     const currSelect = row.querySelector('.edit-budget-cat-currency');
-
-    const currentName = nameSelect ? (nameSelect.getAttribute('data-selected') || nameSelect.value) : '';
     const currentCurr = currSelect ? (currSelect.getAttribute('data-selected') || currSelect.value) : '';
-
-    if (nameSelect) {
-      nameSelect.innerHTML = '<option value="">Select Category</option>';
-      cats.forEach(cat => {
-        const isSelected = (cat.name === currentName || cat.id === currentName) ? 'selected' : '';
-        nameSelect.innerHTML += `<option value="${cat.name}" ${isSelected}>${cat.name}</option>`;
-      });
-      if (currentName) nameSelect.value = currentName;
-    }
 
     if (currSelect) {
       currSelect.innerHTML = '<option value="">Currency</option>';
+<<<<<<< Updated upstream
       
       const rates = state.exchangeRates || state._exchangeRates || [];
       const uniqueCurrencies = [...new Set(rates.map(r => r.currency).filter(Boolean))];
       
+=======
+      const uniqueCurrencies = getLocalCurrenciesFromRates(state.exchangeRates || []);
+>>>>>>> Stashed changes
       uniqueCurrencies.forEach(c => {
         const isSelected = c === currentCurr ? 'selected' : '';
         currSelect.innerHTML += `<option value="${c}" ${isSelected}>${c}</option>`;
       });
+<<<<<<< Updated upstream
       
       if (!uniqueCurrencies.includes('USD')) {
         const isUsdSelected = currentCurr === 'USD' ? 'selected' : '';
         currSelect.innerHTML += `<option value="USD" ${isUsdSelected}>USD</option>`;
       }
+=======
+      const isUsdSelected = currentCurr === 'USD' ? 'selected' : '';
+      currSelect.innerHTML += `<option value="USD" ${isUsdSelected}>USD</option>`;
+>>>>>>> Stashed changes
       if (currentCurr) currSelect.value = currentCurr;
     }
   });
 }
 
-window.addEditCategoryRow = function(categoryData = null) {
+window.addEditCategoryRow = function(categoryData = null, options = {}) {
   const container = document.getElementById('editBudgetCategoriesContainer');
   if (!container) return;
+<<<<<<< Updated upstream
   
   const row = document.createElement('div');
   row.className = 'category-row';
@@ -792,13 +932,43 @@ window.addEditCategoryRow = function(categoryData = null) {
   const catCurrency = categoryData ? (categoryData.currency || '') : '';
   const catRate = categoryData ? (categoryData.rate || '') : '';
   const catLocal = categoryData ? (categoryData.local_amount || categoryData.localAmount || '') : '';
+=======
+
+  const normalized = categoryData ? normalizeBudgetCategory(categoryData) : null;
+  const isTemplate = normalized ? isTemplateBudgetRow(normalized.category, normalized.subcategory) : false;
+  const isCustom = !categoryData || (!isTemplate && !normalized?.category);
+
+  const displayName = normalized ? normalized.name : (categoryData?.name || '');
+  const catUsd = categoryData ? (categoryData.usd_amount ?? categoryData.usdAmount ?? '') : '';
+  const catCurrency = categoryData ? (categoryData.currency || '') : '';
+  const catRate = categoryData ? (categoryData.rate || '') : '';
+  const catLocal = categoryData ? formatLocalInput(categoryData.local_amount ?? categoryData.localAmount ?? '') : '';
+
+  const removeHtml = isTemplate
+    ? '<span class="budget-cat-no-remove" aria-hidden="true"></span>'
+    : '<button type="button" class="cat-remove-btn" onclick="window.removeEditCategoryRow(this)" title="Remove">×</button>';
+>>>>>>> Stashed changes
+
+  let nameCell;
+  if (isTemplate || (normalized && normalized.category && !isCustom)) {
+    nameCell = `
+      <input type="hidden" class="edit-budget-cat-category" value="${escapeHtmlAttr(normalized?.category || '')}">
+      <input type="hidden" class="edit-budget-cat-subcategory" value="${escapeHtmlAttr(normalized?.subcategory || '')}">
+      <input type="hidden" class="edit-budget-cat-name-value" value="${escapeHtmlAttr(displayName)}">
+      <span class="budget-cat-label ${normalized?.subcategory ? 'budget-cat-label--sub' : ''}">${escapeHtmlAttr(displayName)}</span>`;
+  } else {
+    nameCell = `<input type="text" class="edit-budget-cat-name-input" value="${escapeHtmlAttr(displayName)}" required placeholder="Category name">`;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'category-row';
+  if (isTemplate) row.dataset.template = 'true';
+  if (isCustom && categoryData) row.dataset.custom = 'true';
 
   row.innerHTML = `
-    <select class="edit-budget-cat-name" required data-selected="${catName}">
-      <option value="">Select Category</option>
-    </select>
+    <div class="edit-budget-cat-name-cell">${nameCell}</div>
     <input type="number" class="edit-budget-cat-usd" step="0.01" placeholder="USD" value="${catUsd}" required oninput="window.onEditBudgetUSDChange(this)">
-    <select class="edit-budget-cat-currency" required onchange="window.onEditBudgetCurrencyChange(this)" data-selected="${catCurrency}">
+    <select class="edit-budget-cat-currency" required onchange="window.onEditBudgetCurrencyChange(this)" data-selected="${escapeHtmlAttr(catCurrency)}">
       <option value="">Currency</option>
     </select>
     <input type="number" class="edit-budget-cat-rate" step="0.000001" placeholder="Rate" value="${catRate}" oninput="window.onEditBudgetRateChange(this)">
@@ -806,8 +976,13 @@ window.addEditCategoryRow = function(categoryData = null) {
     <button type="button" class="cat-remove-btn" onclick="window.removeEditCategoryRow(this)">×</button>
   `;
   container.appendChild(row);
+<<<<<<< Updated upstream
   
   if (typeof populateEditBudgetRows === 'function') {
+=======
+
+  if (!options.deferPopulate && typeof populateEditBudgetRows === 'function') {
+>>>>>>> Stashed changes
     populateEditBudgetRows();
   }
 };
@@ -916,25 +1091,31 @@ window.saveEditedBudget = async function() {
   const rows = document.querySelectorAll('#editBudgetCategoriesContainer .category-row');
 
   rows.forEach(row => {
-    const nameSelect = row.querySelector('.edit-budget-cat-name');
-    const usdStr = row.querySelector('.edit-budget-cat-usd').value;
-    const localStr = row.querySelector('.edit-budget-cat-local').value;
+    const catName = getEditRowCategoryName(row);
+    const usdStr = row.querySelector('.edit-budget-cat-usd')?.value;
+    const localStr = row.querySelector('.edit-budget-cat-local')?.value;
     const currSelect = row.querySelector('.edit-budget-cat-currency');
-    const rateStr = row.querySelector('.edit-budget-cat-rate').value;
+    const rateStr = row.querySelector('.edit-budget-cat-rate')?.value;
 
-    // Use current attributes as fallback if the row fields are disabled or locked
-    const catName = nameSelect ? (nameSelect.value || nameSelect.getAttribute('data-selected')) : '';
     const currency = currSelect ? (currSelect.value || currSelect.getAttribute('data-selected')) : '';
     const usdAmount = parseFloat(usdStr) || 0;
     const rate = parseFloat(rateStr) || 0;
     const localAmount = parseFloat(localStr) || 0;
 
-    if (catName && usdAmount && currency) {
+    if (catName && currency) {
       categories.push({
         name: catName,
+<<<<<<< Updated upstream
         usdAmount: usdAmount,
         localAmount: localAmount || (currency === 'USD' ? usdAmount : usdAmount / (rate || 1)),
         currency: currency,
+=======
+        category: row.querySelector('.edit-budget-cat-category')?.value || undefined,
+        subcategory: row.querySelector('.edit-budget-cat-subcategory')?.value || null,
+        usdAmount,
+        localAmount: localAmount || (currency === 'USD' ? usdAmount : usdToLocal(usdAmount, rate || 1)),
+        currency,
+>>>>>>> Stashed changes
         rate: rate || (currency === 'USD' ? 1 : 0)
       });
     }

@@ -21,6 +21,16 @@ import {
   getTransferFundsPage,
   initTransferFundsPage
 } from './pages/transfer.js';
+<<<<<<< Updated upstream
+=======
+import { getBudgetCalendarPage, initBudgetCalendarPage } from './pages/budget-calendar.js';
+import { getCategoryMasterPage, initCategoryMasterPage } from './pages/category-master.js';
+import { getFinancialStatusPage, initFinancialStatusPage } from './pages/financial-status.js';
+import { getExpenseReportsPage, initExpenseReportsPage } from './pages/expense-reports.js';
+import { getAddExpensePage, initAddExpensePage, getExpenseManagerPage, initExpenseManagerPage } from './pages/expenses.js';
+import { getGenerateReceiptPage, initGenerateReceiptPage } from './pages/generate-receipt.js';
+import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js';
+>>>>>>> Stashed changes
 
 // ==================== APP CONTAINER ====================
 const app = document.getElementById('app');
@@ -163,6 +173,8 @@ async function initializeApp() {
     // 5. Compute permissions
     computePermissions();
 
+    await loadUserTeamDefaultsForCurrentTeam();
+
     // 6. Initialize local DB
     await initLocalDB();
 
@@ -280,6 +292,8 @@ export async function switchTeam(teamId) {
     granted_at: team.granted_at
   };
   computePermissions();
+
+  await loadUserTeamDefaultsForCurrentTeam();
 
   // Update access badge
   const accessBadge = document.getElementById('userAccessLevel');
@@ -399,7 +413,7 @@ function renderAppShell() {
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
-              <div class="nav-subitem" data-page="add-funds" onclick="window.showPage('add-funds')">Record Income</div>
+              <div class="nav-subitem" data-page="add-funds" onclick="window.showPage('add-funds')">Add Income</div>
               <div class="nav-subitem" data-page="income-manager" onclick="window.showPage('income-manager')">Income Manager</div>
               <div class="nav-subitem" data-page="transfer" onclick="window.showPage('transfer')">Transfer Funds</div>
             </div>
@@ -414,6 +428,7 @@ function renderAppShell() {
             <div class="nav-subitems">
               <div class="nav-subitem" data-page="add-expense" onclick="window.showPage('add-expense')">Add Expense</div>
               <div class="nav-subitem" data-page="expense-manager" onclick="window.showPage('expense-manager')">Expense Manager</div>
+              <div class="nav-subitem" data-page="generate-receipt" onclick="window.showPage('generate-receipt')">Generate Receipt</div>
             </div>
           </div>
 
@@ -471,6 +486,48 @@ function toggleNavItem(header) {
   navItem.classList.toggle('expanded');
 }
 
+<<<<<<< Updated upstream
+=======
+/** Bottom nav tab → default page (mobile-first shortcuts) */
+const TAB_DEFAULT_PAGES = {
+  dashboard: 'dashboard',
+  budgets: 'view-budgets',
+  expenses: 'expense-manager',
+  reports: 'expense-reports'
+};
+
+/** Map any page to its bottom-nav tab for active highlighting */
+const PAGE_TO_TAB = {
+  dashboard: 'dashboard',
+  'view-budgets': 'budgets',
+  'create-budget': 'budgets',
+  'add-expense': 'expenses',
+  'expense-manager': 'expenses',
+  'generate-receipt': 'expenses',
+  'expense-reports': 'reports',
+  'financial-status': 'reports'
+};
+
+function updateBottomNavActive(pageName) {
+  const tab = PAGE_TO_TAB[pageName] || null;
+  document.querySelectorAll('.bottom-nav-item').forEach(btn => {
+    btn.classList.toggle('active', tab && btn.dataset.tab === tab);
+  });
+}
+
+export function navToTab(tab) {
+  if (tab === 'more') {
+    toggleSidebar();
+    document.querySelectorAll('.bottom-nav-item').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === 'more');
+    });
+    return;
+  }
+  const page = TAB_DEFAULT_PAGES[tab];
+  if (page) showPage(page);
+}
+
+>>>>>>> Stashed changes
 export function showPage(pageName) {
   // Update active nav state
   document.querySelectorAll('.nav-subitem').forEach(item => {
@@ -497,10 +554,20 @@ export function showPage(pageName) {
    'add-funds': { html: getRecordIncomePage, init: initRecordIncomePage },
     'income-manager': { html: getIncomeManagerPage, init: initIncomeManagerPage },
     'transfer': { html: getTransferFundsPage, init: initTransferFundsPage },
+<<<<<<< Updated upstream
     'add-expense': { html: () => placeholderPage('Add Expense', 'Session 5'), init: () => {} },
     'expense-manager': { html: () => placeholderPage('Expense Manager', 'Session 5'), init: () => {} },
     'expense-reports': { html: () => placeholderPage('Reports', 'Session 7'), init: () => {} },
     'financial-status': { html: () => placeholderPage('Financial Status', 'Session 6'), init: () => {} },
+=======
+    'add-expense': { html: getAddExpensePage, init: initAddExpensePage },
+    'expense-manager': { html: getExpenseManagerPage, init: initExpenseManagerPage },
+    'generate-receipt': { html: getGenerateReceiptPage, init: initGenerateReceiptPage },
+    'expense-reports': { html: getExpenseReportsPage, init: initExpenseReportsPage },
+    'financial-status': { html: getFinancialStatusPage, init: initFinancialStatusPage },
+    'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
+    'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
+>>>>>>> Stashed changes
     'user-mgmt': { html: () => placeholderPage('User Management', 'Session 8'), init: () => {} },
     'team-mgmt': { html: () => placeholderPage('Team Managemet', 'Session 8'), init: () => {} }
   };
