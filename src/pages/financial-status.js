@@ -89,6 +89,7 @@ export function getFinancialStatusPage() {
           </tbody>
         </table>
       </div>
+      <div id="reconHistoryDetail" style="display:none; margin-top:20px;"></div>
     </div>
   `;
 }
@@ -101,6 +102,8 @@ export async function initFinancialStatusPage() {
   window.hideReconcilePanel = hideReconcilePanel;
   window.submitReconciliation = submitReconciliation;
   window.onReconcileActualInput = onReconcileActualInput;
+  window.viewReconciliationHistory = viewReconciliationHistory;
+  window.hideReconciliationHistory = hideReconciliationHistory;
 
   const teamId = state.currentTeam?.team_id;
   if (!teamId) return;
@@ -495,7 +498,7 @@ async function loadReconciliationHistory() {
     tbody.innerHTML = data.map(r => {
       const lineCount = r.reconciliation_lines?.length || 0;
       return `
-        <tr>
+        <tr class="row-clickable" data-recon-id="${r.id}" onclick="window.viewReconciliationHistory('${r.id}')">
           <td>${formatDisplayDate(r.reconciliation_date)}</td>
           <td>${lineCount} bucket${lineCount === 1 ? '' : 's'}</td>
           <td>${new Date(r.created_at).toLocaleString()}</td>
@@ -505,4 +508,142 @@ async function loadReconciliationHistory() {
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="color:#dc3545;">${err.message}</td></tr>`;
   }
+}
+
+function formatStoredDifference(line) {
+  const { text, level } = formatDifference(line.actual_balance, line.closing_balance, line.currency);
+  return { text, level };
+}
+
+function getBucketScopeLabel(bucketId) {
+  const bucket = cachedBuckets.find(b => b.id === bucketId);
+  return bucket ? bucketScopeLabel(bucket) : 'Team';
+}
+
+async function viewReconciliationHistory(submissionId) {
+  const detail = document.getElementById('reconHistoryDetail');
+  if (!detail) return;
+
+  document.querySelectorAll('#reconHistoryList tr').forEach(row => {
+    row.classList.toggle('selected', row.dataset.reconId === submissionId);
+  });
+
+  detail.style.display = '';
+  detail.innerHTML = '<p class="empty-state">Loading stored reconciliation…</p>';
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('reconciliation_submissions')
+      .select(`
+        id, reconciliation_date, created_at,
+        reconciliation_lines (
+          bucket_id, bucket_name, currency,
+          opening_balance, income_amount, transfers_in,
+          expenses_amount, transfers_out, closing_balance,
+          actual_balance, difference, usd_equivalent, comments
+        )
+      `)
+      .eq('id', submissionId)
+      .eq('is_deleted', false)
+      .single();
+
+    if (error) throw error;
+
+    const lines = [...(data.reconciliation_lines || [])].sort((a, b) =>
+      (a.bucket_name || '').localeCompare(b.bucket_name || '')
+    );
+
+    if (!lines.length) {
+      detail.innerHTML = `
+        <div class="recon-history-detail">
+          <div class="btn-group" style="margin-bottom:12px;">
+            <button type="button" class="secondary" onclick="window.hideReconciliationHistory()">Close</button>
+          </div>
+          <p class="empty-state">No bucket lines stored for this reconciliation.</p>
+        </div>
+      `;
+      return;
+    }
+
+    let grandUsd = 0;
+    let rowsHtml = '';
+
+    lines.forEach(line => {
+      if (line.usd_equivalent !== null && line.usd_equivalent !== undefined) {
+        grandUsd += parseFloat(line.usd_equivalent) || 0;
+      }
+      const scopeLabel = getBucketScopeLabel(line.bucket_id);
+      const typeBadge = scopeLabel === 'Personal' ? 'warning' : 'info';
+      const { text: diffText, level: diffLevel } = formatStoredDifference(line);
+      const fmt = (n) => (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      rowsHtml += `
+        <tr>
+          <td><span class="badge badge-${typeBadge}">${scopeLabel}</span></td>
+          <td><strong>${line.bucket_name}</strong></td>
+          <td>${line.currency}</td>
+          <td>${fmt(line.opening_balance)}</td>
+          <td class="positive">+${fmt(line.income_amount)}</td>
+          <td class="positive">+${fmt(line.transfers_in)}</td>
+          <td class="negative">-${fmt(line.expenses_amount)}</td>
+          <td class="negative">-${fmt(line.transfers_out)}</td>
+          <td><strong>${fmt(line.closing_balance)}</strong></td>
+          <td><strong>${fmt(line.actual_balance)}</strong></td>
+          <td class="currency-display ${diffLevel}">${diffText}</td>
+          <td style="color:#667eea;">${line.usd_equivalent !== null && line.usd_equivalent !== undefined ? `$${fmt(line.usd_equivalent)}` : '—'}</td>
+          <td>${line.comments || '—'}</td>
+        </tr>
+      `;
+    });
+
+    detail.innerHTML = `
+      <div class="recon-history-detail">
+        <div class="btn-group" style="margin-bottom:12px;">
+          <button type="button" class="secondary" onclick="window.hideReconciliationHistory()">Close</button>
+        </div>
+        <h3>Reconciliation — ${formatDisplayDate(data.reconciliation_date)}</h3>
+        <p style="color:var(--text-secondary); font-size:0.9em; margin-bottom:12px;">
+          Submitted ${new Date(data.created_at).toLocaleString()} (read-only)
+        </p>
+        <div class="table-container">
+          <table class="status-table recon-table">
+            <thead>
+              <tr>
+                <th>Type</th><th>Bucket</th><th>Currency</th><th>Opening</th><th>+ Income</th><th>+ Transfers In</th>
+                <th>- Expenses</th><th>- Transfers Out</th><th>Closing</th><th>Actual</th>
+                <th>Difference</th><th>USD Equiv</th><th>Comments</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+              <tr class="status-total">
+                <td colspan="11" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
+                <td style="color:#667eea;"><strong>$${grandUsd.toFixed(2)}</strong></td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    console.error('View reconciliation history error:', err);
+    detail.innerHTML = `
+      <div class="recon-history-detail">
+        <div class="btn-group" style="margin-bottom:12px;">
+          <button type="button" class="secondary" onclick="window.hideReconciliationHistory()">Close</button>
+        </div>
+        <p class="empty-state" style="color:#dc3545;">${err.message}</p>
+      </div>
+    `;
+  }
+}
+
+function hideReconciliationHistory() {
+  const detail = document.getElementById('reconHistoryDetail');
+  if (detail) {
+    detail.style.display = 'none';
+    detail.innerHTML = '';
+  }
+  document.querySelectorAll('#reconHistoryList tr.selected').forEach(row => row.classList.remove('selected'));
 }
