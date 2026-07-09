@@ -2,8 +2,6 @@
 import { state } from '../state.js';
 import { supabaseClient, localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete } from '../db.js';
 import { showToast } from '../components/toasts.js';
-<<<<<<< Updated upstream
-=======
 import { getLatestUsdRate, getLocalCurrenciesFromRates, usdToLocal, rateForInput } from '../utils/currency.js';
 import { loadCategoryMasterLines, normalizeBudgetCategory } from '../utils/categoryMaster.js';
 import { formatDisplayDate } from '../utils/budgetCalendar.js';
@@ -72,7 +70,6 @@ async function ensureExchangeRatesLoaded() {
   });
   state.exchangeRates = (result.data || []).filter(r => !r.is_deleted);
 }
->>>>>>> Stashed changes
 
 // ========== CREATE BUDGET ==========
 export function getCreateBudgetPage() {
@@ -91,21 +88,6 @@ export function getCreateBudgetPage() {
     <div class="card">
       <h2>➕ New Budget Plan</h2>
       <form id="createBudgetForm" onsubmit="window.createBudget(event)">
-<<<<<<< Updated upstream
-        <div class="form-grid" style="max-width: 500px;">
-          <div class="form-group">
-            <label>Budget Name</label>
-            <input type="text" id="newBudgetName" placeholder="e.g., March 2026, Dubai Trip" required onblur="window.validateBudgetName(this)">
-          </div>
-          <div class="form-group">
-            <label>Status</label>
-            <select id="newBudgetStatus" required>
-              <option value="draft" selected>Draft</option>
-              <option value="current">Current</option>
-              <option value="archive">Archive</option>
-            </select>
-          </div>
-=======
         <div class="form-stack">
           <div class="form-grid-row form-grid-row--budget-a">
             <div class="form-group" id="monthlyCalendarGroup">
@@ -140,34 +122,11 @@ export function getCreateBudgetPage() {
             </div>
           </div>
           <p class="form-hint">1 USD = X local currency</p>
->>>>>>> Stashed changes
         </div>
 
         <h3 style="margin-top: 25px;">Categories & Amounts</h3>
         <p style="margin-bottom: 15px; color: #666;">Enter USD amounts (primary). Select currency to auto-fill rate. Local amount auto-calculates.</p>
 
-<<<<<<< Updated upstream
-        <div class="category-row-heading">
-          <span>Category</span>
-          <span>USD Amount</span>
-          <span>Currency</span>
-          <span>Exch Rate</span>
-          <span>Local Amt</span>
-          <span></span>
-        </div>
-        <div id="budgetCategoriesContainer">
-          <div class="category-row">
-            <select class="budget-cat-name" required>
-              <option value="">Select Category</option>
-            </select>
-            <input type="number" class="budget-cat-usd" step="0.01" placeholder="USD" required oninput="window.onBudgetUSDChange(this)">
-            <select class="budget-cat-currency" required onchange="window.onBudgetCurrencyChange(this)">
-              <option value="">Currency</option>
-            </select>
-            <input type="number" class="budget-cat-rate" step="0.000001" placeholder="Rate" oninput="window.onBudgetRateChange(this)">
-            <input type="number" class="budget-cat-local" step="0.01" placeholder="Local" readonly>
-            <button type="button" class="cat-remove-btn" onclick="window.removeCategoryRow(this)">×</button>
-=======
         <div class="budget-categories-table budget-categories-table--compact">
           <div class="budget-categories-table-heading budget-categories-table-heading--compact">
             <span>Line item</span>
@@ -181,7 +140,6 @@ export function getCreateBudgetPage() {
             <span id="createBudgetTotalUsd">0.00</span>
             <span id="createBudgetTotalLocal">0.00</span>
             <span aria-hidden="true"></span>
->>>>>>> Stashed changes
           </div>
         </div>
 
@@ -491,14 +449,9 @@ export function getViewBudgetsPage() {
             </div>
           </div>
           <h3 style="margin-top: 25px;">Categories & Amounts</h3>
-<<<<<<< Updated upstream
-          <p id="editBudgetRateNote" style="margin-bottom: 15px; color: #666;">USD amounts are primary. Select currency to auto-fill rate. Local amount auto-calculates.</p>
-          <div class="category-row-heading">
-=======
           <p id="editBudgetRateNote" style="margin-bottom: 15px; color: #666;">USD amounts are primary. Select currency to auto-fill rate (1 USD = X local). Local amount = USD × rate.</p>
           <div class="budget-categories-table budget-categories-table--edit">
           <div class="budget-categories-table-heading">
->>>>>>> Stashed changes
             <span>Category</span>
             <span>USD Amount</span>
             <span>Currency</span>
@@ -826,13 +779,6 @@ window.editBudgetPlan = async function(id) {
     const catLocal = cat.local_amount ?? cat.localAmount ?? '';
     const catRate = cat.rate || '';
 
-<<<<<<< Updated upstream
-    row.querySelector('.edit-budget-cat-name').value = catName;
-    row.querySelector('.edit-budget-cat-currency').value = catCurrency;
-    row.querySelector('.edit-budget-cat-usd').value = catUsd;
-    row.querySelector('.edit-budget-cat-local').value = catLocal;
-    row.querySelector('.edit-budget-cat-rate').value = catRate;
-=======
     const currSelect = row.querySelector('.edit-budget-cat-currency');
     if (currSelect && catCurrency) currSelect.value = catCurrency;
     const usdEl = row.querySelector('.edit-budget-cat-usd');
@@ -841,23 +787,18 @@ window.editBudgetPlan = async function(id) {
     if (localEl) localEl.value = formatLocalInput(catLocal);
     const rateEl = row.querySelector('.edit-budget-cat-rate');
     if (rateEl) rateEl.value = catRate;
->>>>>>> Stashed changes
   });
 
   const isDraft = (budget.status || 'current') === 'draft';
   rows.forEach(row => {
     row.querySelector('.edit-budget-cat-rate').readOnly = !isDraft;
     row.querySelector('.edit-budget-cat-currency').disabled = !isDraft;
-<<<<<<< Updated upstream
-    row.querySelector('.edit-budget-cat-name').disabled = !isDraft;
-=======
     const nameInput = row.querySelector('.edit-budget-cat-name-input');
     if (nameInput) nameInput.readOnly = !isDraft;
     if (!isDraft) {
       const removeBtn = row.querySelector('.cat-remove-btn');
       if (removeBtn) removeBtn.style.display = 'none';
     }
->>>>>>> Stashed changes
   });
 
   const addBtn = document.getElementById('addEditCatBtn');
@@ -892,28 +833,13 @@ async function populateEditBudgetRows() {
 
     if (currSelect) {
       currSelect.innerHTML = '<option value="">Currency</option>';
-<<<<<<< Updated upstream
-      
-      const rates = state.exchangeRates || state._exchangeRates || [];
-      const uniqueCurrencies = [...new Set(rates.map(r => r.currency).filter(Boolean))];
-      
-=======
       const uniqueCurrencies = getLocalCurrenciesFromRates(state.exchangeRates || []);
->>>>>>> Stashed changes
       uniqueCurrencies.forEach(c => {
         const isSelected = c === currentCurr ? 'selected' : '';
         currSelect.innerHTML += `<option value="${c}" ${isSelected}>${c}</option>`;
       });
-<<<<<<< Updated upstream
-      
-      if (!uniqueCurrencies.includes('USD')) {
-        const isUsdSelected = currentCurr === 'USD' ? 'selected' : '';
-        currSelect.innerHTML += `<option value="USD" ${isUsdSelected}>USD</option>`;
-      }
-=======
       const isUsdSelected = currentCurr === 'USD' ? 'selected' : '';
       currSelect.innerHTML += `<option value="USD" ${isUsdSelected}>USD</option>`;
->>>>>>> Stashed changes
       if (currentCurr) currSelect.value = currentCurr;
     }
   });
@@ -922,17 +848,6 @@ async function populateEditBudgetRows() {
 window.addEditCategoryRow = function(categoryData = null, options = {}) {
   const container = document.getElementById('editBudgetCategoriesContainer');
   if (!container) return;
-<<<<<<< Updated upstream
-  
-  const row = document.createElement('div');
-  row.className = 'category-row';
-  
-  const catName = categoryData ? (categoryData.name || '') : '';
-  const catUsd = categoryData ? (categoryData.usd_amount || categoryData.usdAmount || '') : '';
-  const catCurrency = categoryData ? (categoryData.currency || '') : '';
-  const catRate = categoryData ? (categoryData.rate || '') : '';
-  const catLocal = categoryData ? (categoryData.local_amount || categoryData.localAmount || '') : '';
-=======
 
   const normalized = categoryData ? normalizeBudgetCategory(categoryData) : null;
   const isTemplate = normalized ? isTemplateBudgetRow(normalized.category, normalized.subcategory) : false;
@@ -947,7 +862,6 @@ window.addEditCategoryRow = function(categoryData = null, options = {}) {
   const removeHtml = isTemplate
     ? '<span class="budget-cat-no-remove" aria-hidden="true"></span>'
     : '<button type="button" class="cat-remove-btn" onclick="window.removeEditCategoryRow(this)" title="Remove">×</button>';
->>>>>>> Stashed changes
 
   let nameCell;
   if (isTemplate || (normalized && normalized.category && !isCustom)) {
@@ -976,13 +890,8 @@ window.addEditCategoryRow = function(categoryData = null, options = {}) {
     <button type="button" class="cat-remove-btn" onclick="window.removeEditCategoryRow(this)">×</button>
   `;
   container.appendChild(row);
-<<<<<<< Updated upstream
-  
-  if (typeof populateEditBudgetRows === 'function') {
-=======
 
   if (!options.deferPopulate && typeof populateEditBudgetRows === 'function') {
->>>>>>> Stashed changes
     populateEditBudgetRows();
   }
 };
@@ -1105,17 +1014,11 @@ window.saveEditedBudget = async function() {
     if (catName && currency) {
       categories.push({
         name: catName,
-<<<<<<< Updated upstream
-        usdAmount: usdAmount,
-        localAmount: localAmount || (currency === 'USD' ? usdAmount : usdAmount / (rate || 1)),
-        currency: currency,
-=======
         category: row.querySelector('.edit-budget-cat-category')?.value || undefined,
         subcategory: row.querySelector('.edit-budget-cat-subcategory')?.value || null,
         usdAmount,
         localAmount: localAmount || (currency === 'USD' ? usdAmount : usdToLocal(usdAmount, rate || 1)),
         currency,
->>>>>>> Stashed changes
         rate: rate || (currency === 'USD' ? 1 : 0)
       });
     }

@@ -2,11 +2,8 @@
 import { state } from '../state.js';
 import { sbInsert, sbSelect, supabaseClient } from '../db.js';
 import { showToast } from '../components/toasts.js';
-<<<<<<< Updated upstream
-=======
 import { rateForInput, getLatestUsdRate, formatRate } from '../utils/currency.js';
 import { applyDefaultsToTransferForm, loadUserTeamDefaultsForCurrentTeam } from '../utils/userTeamDefaults.js';
->>>>>>> Stashed changes
 
 // Module-level cache
 let teamBucketsCache = [];
@@ -54,44 +51,6 @@ async function loadExchangeRates() {
   return exchangeRatesCache;
 }
 
-<<<<<<< Updated upstream
-function findExchangeRate(fromCurrency, toCurrency) {
-  if (!fromCurrency || !toCurrency || fromCurrency === toCurrency) return 1;
-
-  // USD-Multiplier convention: rate is always "1 USD = X local"
-  // We ONLY look for rates where from_currency = 'USD' and to_currency = local currency
-  // Never invert. If not found, return null and let user enter manually.
-
-  if (fromCurrency === 'USD') {
-    // USD → local: look for USD → local rate directly
-    const direct = exchangeRatesCache.find(r =>
-      r.from_currency === 'USD' && 
-      r.to_currency === toCurrency &&
-      !r.is_deleted
-    );
-    if (direct) return parseFloat(direct.rate);
-    return null;
-  }
-
-  if (toCurrency === 'USD') {
-    // local → USD: we still need the USD → local rate (e.g., 3.67)
-    // Because the formula is: local_amount = usd_amount * rate
-    // So rate should still be 3.67, not 0.2724
-    const direct = exchangeRatesCache.find(r =>
-      r.from_currency === 'USD' && 
-      r.to_currency === fromCurrency &&
-      !r.is_deleted
-    );
-    if (direct) return parseFloat(direct.rate);
-    return null;
-  }
-
-  // Cross-local transfer (non-USD to non-USD): not supported by this convention
-  return null;
-}
-
-=======
->>>>>>> Stashed changes
 async function auditLog(action, entityType, entityId, oldValues, newValues) {
   try {
     if (!state.user?.id) return;
@@ -143,33 +102,7 @@ export function getTransferFundsPage() {
             <div class="form-group"><label id="trRateLabel">Rate (1 USD = ?)</label><input type="number" class="input-rate" id="trRate" step="any" min="0.000001" placeholder="95.4" oninput="window.onTransferAmountChange()"></div>
             <div class="form-group"><label>Converted <span id="trConvertedCurrencyLabel" style="font-weight:600;color:#4f46e5;"></span></label><input type="number" class="input-amount" id="trConvertedAmount" step="0.01" readonly style="background:#f3f4f6;"><span class="form-field-hint" id="trConvertedLabel">—</span></div>
           </div>
-<<<<<<< Updated upstream
-        </div>
-
-        <div class="form-group" style="margin-top: 12px;">
-          <label>Amount <span id="trAmountCurrencyLabel" style="font-weight:600; color:#4f46e5;">(USD)</span></label>
-          <input type="number" id="trAmount" step="0.01" placeholder="0.00" required oninput="window.onTransferAmountChange()">
-        </div>
-
-        <div class="form-grid" style="grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 12px;">
-          <div class="form-group">
-            <label>Exchange Rate</label>
-            <input type="number" id="trRate" step="0.000001" placeholder="1.000000" oninput="window.onTransferAmountChange()">
-            <small style="color: #666;">Auto-populated from exchange_rates table</small>
-          </div>
-          <div class="form-group">
-            <label>Converted Amount</label>
-            <input type="number" id="trConvertedAmount" step="0.01" placeholder="—" readonly style="background:#f3f4f6;">
-            <small id="trConvertedLabel" style="color: #666;">—</small>
-          </div>
-        </div>
-
-        <div class="form-group" style="margin-top: 12px;">
-          <label>Reference Memo / Authorization</label>
-          <input type="text" id="trMemo" placeholder="e.g., ATM Cash Withdrawal, Inter-account transfer">
-=======
           <div class="form-group"><label>Reference Memo</label><textarea id="trMemo" rows="2" placeholder="Optional"></textarea></div>
->>>>>>> Stashed changes
         </div>
 
         <div id="trValidationError" style="color: #dc3545; font-size: 0.9em; margin-top: 12px; display: none;"></div>
@@ -253,15 +186,6 @@ window.onTransferBucketChange = function() {
     const destCurr = destBucket.currency || 'USD';
 
     if (srcCurr === destCurr) {
-<<<<<<< Updated upstream
-      if (rateInput && !rateInput.value) rateInput.value = '1';
-      if (convertedInput) convertedInput.value = '';
-      if (convertedLabel) convertedLabel.textContent = 'Same currency — no conversion needed';
-    } else {
-      const rate = findExchangeRate(srcCurr, destCurr);
-      if (rate !== null) {
-        if (rateInput && !rateInput.value) rateInput.value = rate.toFixed(6);
-=======
       if (rateInput) rateInput.value = '1';
       if (rateLabel) rateLabel.textContent = 'Exchange Rate (1 USD = 1 USD)';
       if (convertedInput) convertedInput.value = '';
@@ -271,14 +195,10 @@ window.onTransferBucketChange = function() {
       if (rateLabel) rateLabel.textContent = `Exchange Rate (1 USD = ? ${destCurr})`;
       if (destRate !== null) {
         if (rateInput) rateInput.value = rateForInput(destRate);
->>>>>>> Stashed changes
         window.onTransferAmountChange();
       } else {
         if (rateInput && !rateInput.value) rateInput.value = '';
         if (convertedInput) convertedInput.value = '';
-<<<<<<< Updated upstream
-        if (convertedLabel) convertedLabel.textContent = `⚠️ No exchange rate found for ${srcCurr} → ${destCurr}`;
-=======
         if (convertedLabel) convertedLabel.textContent = `⚠️ No exchange rate found for ${destCurr}. Add a USD rate in Setup.`;
       }
     } else if (destCurr === 'USD') {
@@ -312,7 +232,6 @@ window.onTransferBucketChange = function() {
       } else if (!srcRate) {
         if (convertedInput) convertedInput.value = '';
         if (convertedLabel) convertedLabel.textContent = `Enter source rate or add 1 USD = ? ${srcCurr} in Setup.`;
->>>>>>> Stashed changes
       }
     }
   } else {

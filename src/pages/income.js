@@ -2,8 +2,6 @@
 import { state } from '../state.js';
 import { localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete, sbSelect, supabaseClient } from '../db.js';
 import { showToast } from '../components/toasts.js';
-<<<<<<< Updated upstream
-=======
 import {
   getLatestUsdRate,
   calcUsdFromBucketAmount,
@@ -18,7 +16,6 @@ import {
   ALLOCATION_TOLERANCE
 } from '../utils/currency.js';
 import { applyDefaultsToIncomeForm, loadUserTeamDefaultsForCurrentTeam } from '../utils/userTeamDefaults.js';
->>>>>>> Stashed changes
 
 // ==========================================
 // MODULE-LEVEL CACHE (team-scoped)
@@ -169,39 +166,7 @@ export function getRecordIncomePage() {
             <div class="form-group"><label class="required" id="incExchangeRateLabel">Exchange Rate (1 USD = ?)</label><input type="number" class="input-rate" id="incExchangeRate" step="any" min="0.000001" placeholder="95.4" required oninput="window.onIncomeMathFieldsChange()"></div>
             <div class="form-group"><label id="incUsdEquivalentLabel">USD Equivalent</label><input type="number" class="input-amount" id="incLocalAmount" step="0.01" readonly style="background:#f3f4f6;"></div>
           </div>
-<<<<<<< Updated upstream
-          <div class="form-group">
-            <label>Payment Bucket</label>
-            <select id="incBucketId" required onchange="window.onIncomeBucketChange(this)">
-              <option value="">Loading buckets...</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Amount <span id="incCurrencyLabel" style="font-weight:600; color:#4f46e5;">(USD)</span></label>
-            <input type="number" id="incAmount" step="0.01" placeholder="0.00" required oninput="window.onIncomeMathFieldsChange()">
-          </div>
-
-          <!-- Row 2 -->
-          <div class="form-group">
-            <label>Currency</label>
-            <input type="text" id="incCurrencyDisplay" readonly value="USD" style="background:#f3f4f6;">
-          </div>
-          <div class="form-group">
-            <label>Exchange Rate</label>
-            <input type="number" id="incExchangeRate" step="0.000001" placeholder="1.00" required oninput="window.onIncomeMathFieldsChange()">
-          </div>
-          <div class="form-group">
-            <label>Local Amount <small>(auto-calculated)</small></label>
-            <input type="number" id="incLocalAmount" step="0.01" placeholder="Auto-calculated" readonly style="background:#f3f4f6;">
-          </div>
-          <div class="form-group">
-            <label>Description / Notes</label>
-            <textarea id="incDescription" rows="2" placeholder="Optional notes..."></textarea>
-          </div>
-
-=======
           <div class="form-group"><label>Description / Notes</label><textarea id="incDescription" rows="2" placeholder="Optional notes…"></textarea></div>
->>>>>>> Stashed changes
         </div>
 
         <h3 style="margin-top: 30px;">Budget Allocations (USD)</h3>
@@ -437,8 +402,6 @@ window.createIncomeRecord = async function(e) {
     return;
   }
 
-<<<<<<< Updated upstream
-=======
   const currency = bucket.currency || 'USD';
   const rate = normalizeUsdMultiplierRate(
     parseFloat(document.getElementById('incExchangeRate').value) || 0,
@@ -450,7 +413,6 @@ window.createIncomeRecord = async function(e) {
   }
   const { amount_usd, local_amount } = splitIncomeAmounts(totalIncome, currency, rate);
 
->>>>>>> Stashed changes
   const allocRows = document.querySelectorAll('#incomeAllocationsContainer .income-alloc-row');
   let allocations = [];
   let totalAllocated = 0;
@@ -470,21 +432,19 @@ window.createIncomeRecord = async function(e) {
   }
 
   const teamId = state.currentTeam?.team_id;
-  const rate = parseFloat(document.getElementById('incExchangeRate').value) || 1;
-  const localAmount = rate > 0 ? totalIncome / rate : totalIncome;
 
   const incomePayload = {
     team_id: teamId,
-    date: document.getElementById('incDate').value,
-    payment_from: document.getElementById('incPaymentFrom').value.trim(),
+    date: document.getElementById("incDate").value,
+    payment_from: document.getElementById("incPaymentFrom").value.trim(),
     // Architect decision: migrate to bucket_id (UUID). payment_bucket kept for transition.
     bucket_id: bucketId,
     payment_bucket: bucket.name,
-    amount_usd: totalIncome,
-    currency: bucket.currency || 'USD',
+    amount_usd: amount_usd,
+    currency: bucket.currency || "USD",
     exchange_rate: rate,
-    local_amount: localAmount,
-    description: document.getElementById('incDescription').value.trim(),
+    local_amount: local_amount,
+ description: document.getElementById('incDescription').value.trim(),
     budget_allocations: allocations,
     created_by: state.user?.id,
     is_deleted: false,
@@ -539,19 +499,6 @@ export function getIncomeManagerPage() {
     <h1 class="page-title">Income Manager</h1>
     <div class="card">
       <h2>🔍 Filter Transactions</h2>
-<<<<<<< Updated upstream
-      <div class="form-grid">
-        <div class="form-group">
-          <label>Storage Account / Bucket</label>
-          <select id="filterIncBucket" onchange="window.initIncomeManagerPage()">
-            <option value="all">All Accounts</option>
-            <!-- Populated dynamically -->
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Origin Search</label>
-          <input type="text" id="filterIncFrom" placeholder="Search sender names..." oninput="window.initIncomeManagerPage()">
-=======
       <div class="filter-section">
         <div class="form-stack">
           <div class="form-grid-row form-grid-row--filter-main">
@@ -563,7 +510,6 @@ export function getIncomeManagerPage() {
             <div class="form-group"><label>From</label><input type="date" id="filterIncDateFrom" onchange="window.initIncomeManagerPage()"></div>
             <div class="form-group"><label>To</label><input type="date" id="filterIncDateTo" onchange="window.initIncomeManagerPage()"></div>
           </div>
->>>>>>> Stashed changes
         </div>
       </div>
     </div>
@@ -601,46 +547,11 @@ export function getIncomeManagerPage() {
               <div class="form-group"><label class="required">Amount <span id="editIncCurrencyLabel" style="font-weight:600;color:#4f46e5;">(USD)</span></label><input type="number" class="input-amount" id="editIncAmount" step="0.01" required oninput="window.onEditIncomeMathChange()"></div>
               <div class="form-group"><label class="required">Bucket</label><select id="editIncBucketId" required onchange="window.onEditIncomeBucketChange(this)"><option value="">Loading…</option></select></div>
             </div>
-<<<<<<< Updated upstream
-            <div class="form-group">
-              <label>Payment From</label>
-              <input type="text" id="editIncPaymentFrom" required>
-            </div>
-            <div class="form-group">
-              <label>Payment Bucket</label>
-              <select id="editIncBucketId" required onchange="window.onEditIncomeBucketChange(this)">
-                <option value="">Loading...</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Amount <span id="editIncCurrencyLabel" style="font-weight:600; color:#4f46e5;">(USD)</span></label>
-              <input type="number" id="editIncAmount" step="0.01" required oninput="window.onEditIncomeMathChange()">
-            </div>
-          </div>
-
-          <div class="form-grid" style="grid-template-columns: 1fr 1fr; margin-top: 10px;">
-            <div class="form-group">
-              <label>Currency</label>
-              <input type="text" id="editIncCurrencyDisplay" readonly style="background:#f3f4f6;">
-            </div>
-            <div class="form-group">
-              <label>Exchange Rate</label>
-              <input type="number" id="editIncExchangeRate" step="0.000001" required oninput="window.onEditIncomeMathChange()">
-            </div>
-            <div class="form-group">
-              <label>Local Amount</label>
-              <input type="number" id="editIncLocalAmount" step="0.01" readonly style="background:#f3f4f6;">
-            </div>
-            <div class="form-group">
-              <label>Description</label>
-              <input type="text" id="editIncDescription">
-=======
             <div class="form-grid-row form-grid-row--income-edit-meta">
               <div class="form-group"><label>Date</label><input type="date" id="editIncDate" required></div>
               <div class="form-group"><label>Currency</label><input type="text" id="editIncCurrencyDisplay" readonly style="background:#f3f4f6;"></div>
               <div class="form-group"><label class="required" id="editIncExchangeRateLabel">Rate (1 USD = ?)</label><input type="number" class="input-rate" id="editIncExchangeRate" step="any" min="0.000001" required oninput="window.onEditIncomeMathChange()"></div>
               <div class="form-group"><label id="editIncUsdEquivalentLabel">USD Equivalent</label><input type="number" class="input-amount" id="editIncLocalAmount" step="0.01" readonly style="background:#f3f4f6;"></div>
->>>>>>> Stashed changes
             </div>
             <div class="form-group"><label>Description</label><textarea id="editIncDescription" rows="2"></textarea></div>
           </div>
@@ -816,16 +727,6 @@ window.onEditIncomeBucketChange = function(selectEl) {
   const currency = bucket.currency || 'USD';
   if (currencyDisplay) currencyDisplay.value = currency;
 
-<<<<<<< Updated upstream
-  // Only auto-populate rate if field is empty
-  if (currency === 'USD') {
-    if (rateInput && !rateInput.value) rateInput.value = '1';
-  } else {
-    const rate = findExchangeRate(currency, 'USD');
-    if (rateInput && !rateInput.value && rate !== null) {
-      rateInput.value = rate.toFixed(6);
-    }
-=======
   if (!preserveRate) {
     if (currency === 'USD') {
       if (rateInput) rateInput.value = '1';
@@ -839,7 +740,6 @@ window.onEditIncomeBucketChange = function(selectEl) {
     rateLabel.textContent = currency === 'USD'
       ? 'Rate (1 USD = 1 USD)'
       : `Rate (1 USD = ? ${currency})`;
->>>>>>> Stashed changes
   }
 
   window.onEditIncomeMathChange();
@@ -906,40 +806,26 @@ window.saveEditedIncomeRecord = async function(e) {
   e.preventDefault();
 
   const id = document.getElementById('editIncId').value;
-  const paymentFrom = document.getElementById('editIncPaymentFrom').value.trim();
-  if (!paymentFrom) {
-    showToast('Please enter who the payment is from.', 'error');
-    return;
-  }
-
   const bucketId = document.getElementById('editIncBucketId').value;
-<<<<<<< Updated upstream
-  const amount = parseFloat(document.getElementById('editIncAmount').value) || 0;
-  const rate = parseFloat(document.getElementById('editIncExchangeRate').value) || 1;
-=======
   const bucketAmount = parseFloat(document.getElementById('editIncAmount').value) || 0;
   const bucket = getBucketById(bucketId);
   const currency = bucket ? bucket.currency : 'USD';
   const rate = normalizeUsdMultiplierRate(
-    parseFloat(document.getElementById('editIncExchangeRate').value) || 0,
+    parseFloat(document.getElementById('editIncExchangeRate').value) || 1,
     currency
   );
->>>>>>> Stashed changes
 
   if (!bucketId) {
     showToast('Please select a payment bucket.', 'error');
     return;
   }
-  if (amount <= 0) {
+  if (bucketAmount <= 0) {
     showToast('Amount must be greater than zero.', 'error');
     return;
   }
-  if (rate <= 0) {
-    showToast('Please enter a valid exchange rate.', 'error');
-    return;
-  }
 
-  const bucket = getBucketById(bucketId);
+  const { amount_usd, local_amount } = splitIncomeAmounts(bucketAmount, currency, rate);
+
   const rows = document.querySelectorAll('#editIncomeAllocationsContainer .income-alloc-row');
 
   let allocations = [];
@@ -953,14 +839,13 @@ window.saveEditedIncomeRecord = async function(e) {
     }
   });
 
-  if (totalAllocated > amount) {
+  if (allocationsExceedIncome(totalAllocated, amount_usd)) {
     showToast('Allocations exceed total income value!', 'error');
     return;
   }
 
   const teamId = state.currentTeam?.team_id;
   const existing = state.incomeRecords.find(r => r.id === id) || {};
-  const localAmount = rate > 0 ? amount / rate : amount;
 
   const updatedRecord = {
     ...existing,
@@ -968,10 +853,10 @@ window.saveEditedIncomeRecord = async function(e) {
     payment_from: document.getElementById('editIncPaymentFrom').value.trim(),
     bucket_id: bucketId,
     payment_bucket: bucket ? bucket.name : (existing.payment_bucket || ''),
-    amount_usd: amount,
-    currency: bucket ? bucket.currency : (existing.currency || 'USD'),
+    amount_usd,
+    currency,
     exchange_rate: rate,
-    local_amount: localAmount,
+    local_amount,
     description: document.getElementById('editIncDescription').value.trim(),
     budget_allocations: allocations,
     updated_at: new Date().toISOString()

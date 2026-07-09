@@ -1,12 +1,17 @@
 // ==================== EXCHANGE RATES PAGE ====================
 import { state } from '../state.js';
-import { sbSelect, sbInsert, sbUpdate, sbSoftDelete } from '../db.js';
+import { sbSelect, sbInsert, sbSoftDelete } from '../db.js';
 import { showToast } from '../components/toasts.js';
-import { createModal, openModal, closeModal } from '../components/modals.js';
+import { LOCAL_CURRENCIES, rateDisplayLabel, normalizeRateRecord } from '../utils/currency.js';
 
 let allRates = [];
 
+function currencyOptionsHtml() {
+  return LOCAL_CURRENCIES.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
 export function getRatesPage() {
+  const currencyOptions = currencyOptionsHtml();
   return `
     <h1 class="page-title">Exchange Rates</h1>
 
@@ -19,34 +24,6 @@ export function getRatesPage() {
             <input type="date" id="rateDate" required>
           </div>
           <div class="form-group">
-<<<<<<< Updated upstream
-            <label>From Currency *</label>
-            <select id="rateFromCurrency" required>
-              <option value="">Select Currency</option>
-              <option value="USD">USD</option>
-              <option value="XOF">XOF</option>
-              <option value="AED">AED</option>
-              <option value="INR">INR</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>To Currency *</label>
-            <select id="rateToCurrency" required>
-              <option value="">Select Currency</option>
-              <option value="USD" selected>USD</option>
-              <option value="XOF">XOF</option>
-              <option value="AED">AED</option>
-              <option value="INR">INR</option>
-              <option value="EUR">EUR</option>
-              <option value="GBP">GBP</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Rate (1 From = ? To) *</label>
-            <input type="number" id="rateValue" step="0.000001" placeholder="0.001802" required>
-=======
             <label for="rateLocalCurrency">Currency *</label>
             <select id="rateLocalCurrency" required>
               <option value="">—</option>
@@ -56,7 +33,6 @@ export function getRatesPage() {
           <div class="form-group">
             <label for="rateValue" id="rateValueLabel">Rate (1 USD = ?) *</label>
             <input type="number" class="input-rate" id="rateValue" step="any" min="0.000001" placeholder="95.4" required>
->>>>>>> Stashed changes
           </div>
           <p class="form-hint" id="rateHint">Enter how many units of local currency equal 1 USD (e.g. 95.4 for INR).</p>
         </div>
@@ -73,8 +49,7 @@ export function getRatesPage() {
           <thead>
             <tr>
               <th>Date</th>
-              <th>From</th>
-              <th>To</th>
+              <th>Currency</th>
               <th>Rate</th>
               <th>Actions</th>
             </tr>
@@ -97,7 +72,7 @@ export async function initRatesPage() {
 
 async function loadRates() {
   const tbody = document.getElementById('ratesList');
-  tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading rates...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Loading rates...</td></tr>';
 
   try {
     const { data: rates, error } = await sbSelect('exchange_rates', {
@@ -113,7 +88,7 @@ async function loadRates() {
 
   } catch (err) {
     console.error('Load rates error:', err);
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state" style="color: #dc3545;">Error: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-state" style="color: #dc3545;">Error: ${err.message}</td></tr>`;
     showToast('Failed to load rates', 'error');
   }
 }
@@ -122,18 +97,20 @@ function renderRates() {
   const tbody = document.getElementById('ratesList');
 
   if (allRates.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No exchange rates set for this team yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No exchange rates set for this team yet.</td></tr>';
     return;
   }
 
   let html = '';
   allRates.forEach(rate => {
+    const normalized = normalizeRateRecord(rate);
+    const currency = normalized?.currency || rate.from_currency || '—';
+    const displayRate = normalized?.rate ?? rate.rate;
     html += `
       <tr>
         <td>${rate.date}</td>
-        <td><span class="badge badge-info">${rate.from_currency}</span></td>
-        <td><span class="badge badge-info">${rate.to_currency}</span></td>
-        <td class="currency-display">${rate.rate}</td>
+        <td><span class="badge badge-info">${currency}</span></td>
+        <td class="currency-display">${rateDisplayLabel(currency, displayRate)}</td>
         <td>
           <button class="danger small" onclick="window.deleteRate('${rate.id}')">Delete</button>
         </td>
@@ -147,11 +124,14 @@ function renderRates() {
 async function addRate(e) {
   e.preventDefault();
 
+  const currency = document.getElementById('rateLocalCurrency').value;
+  const rateValue = parseFloat(document.getElementById('rateValue').value);
+
   const rateData = {
     date: document.getElementById('rateDate').value,
-    from_currency: document.getElementById('rateFromCurrency').value,
-    to_currency: document.getElementById('rateToCurrency').value,
-    rate: parseFloat(document.getElementById('rateValue').value),
+    from_currency: 'USD',
+    to_currency: currency,
+    rate: rateValue,
     team_id: state.currentTeam.team_id,
     created_by: state.user.id,
     id: crypto.randomUUID(),
@@ -159,7 +139,11 @@ async function addRate(e) {
     is_deleted: false
   };
 
-  if (!rateData.rate || rateData.rate <= 0) {
+  if (!currency) {
+    showToast('Please select a currency', 'error');
+    return;
+  }
+  if (!rateValue || rateValue <= 0) {
     showToast('Please enter a valid rate', 'error');
     return;
   }
@@ -168,10 +152,9 @@ async function addRate(e) {
     const { error } = await sbInsert('exchange_rates', rateData);
     if (error) throw error;
 
-    showToast(`Rate added: 1 ${rateData.from_currency} = ${rateData.rate} ${rateData.to_currency}`, 'success');
+    showToast(`Rate added: ${rateDisplayLabel(currency, rateValue)}`, 'success');
     document.getElementById('rateForm').reset();
     document.getElementById('rateDate').valueAsDate = new Date();
-    document.getElementById('rateToCurrency').value = 'USD';
     await loadRates();
 
   } catch (err) {

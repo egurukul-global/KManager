@@ -17,12 +17,10 @@ import {
   initIncomeManagerPage, 
  } from './pages/income.js';
 
- import {
+import {
   getTransferFundsPage,
   initTransferFundsPage
 } from './pages/transfer.js';
-<<<<<<< Updated upstream
-=======
 import { getBudgetCalendarPage, initBudgetCalendarPage } from './pages/budget-calendar.js';
 import { getCategoryMasterPage, initCategoryMasterPage } from './pages/category-master.js';
 import { getFinancialStatusPage, initFinancialStatusPage } from './pages/financial-status.js';
@@ -30,7 +28,6 @@ import { getExpenseReportsPage, initExpenseReportsPage } from './pages/expense-r
 import { getAddExpensePage, initAddExpensePage, getExpenseManagerPage, initExpenseManagerPage } from './pages/expenses.js';
 import { getGenerateReceiptPage, initGenerateReceiptPage } from './pages/generate-receipt.js';
 import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js';
->>>>>>> Stashed changes
 
 // ==================== APP CONTAINER ====================
 const app = document.getElementById('app');
@@ -486,8 +483,6 @@ function toggleNavItem(header) {
   navItem.classList.toggle('expanded');
 }
 
-<<<<<<< Updated upstream
-=======
 /** Bottom nav tab → default page (mobile-first shortcuts) */
 const TAB_DEFAULT_PAGES = {
   dashboard: 'dashboard',
@@ -527,7 +522,6 @@ export function navToTab(tab) {
   if (page) showPage(page);
 }
 
->>>>>>> Stashed changes
 export function showPage(pageName) {
   // Update active nav state
   document.querySelectorAll('.nav-subitem').forEach(item => {
@@ -554,12 +548,6 @@ export function showPage(pageName) {
    'add-funds': { html: getRecordIncomePage, init: initRecordIncomePage },
     'income-manager': { html: getIncomeManagerPage, init: initIncomeManagerPage },
     'transfer': { html: getTransferFundsPage, init: initTransferFundsPage },
-<<<<<<< Updated upstream
-    'add-expense': { html: () => placeholderPage('Add Expense', 'Session 5'), init: () => {} },
-    'expense-manager': { html: () => placeholderPage('Expense Manager', 'Session 5'), init: () => {} },
-    'expense-reports': { html: () => placeholderPage('Reports', 'Session 7'), init: () => {} },
-    'financial-status': { html: () => placeholderPage('Financial Status', 'Session 6'), init: () => {} },
-=======
     'add-expense': { html: getAddExpensePage, init: initAddExpensePage },
     'expense-manager': { html: getExpenseManagerPage, init: initExpenseManagerPage },
     'generate-receipt': { html: getGenerateReceiptPage, init: initGenerateReceiptPage },
@@ -567,10 +555,11 @@ export function showPage(pageName) {
     'financial-status': { html: getFinancialStatusPage, init: initFinancialStatusPage },
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
->>>>>>> Stashed changes
     'user-mgmt': { html: () => placeholderPage('User Management', 'Session 8'), init: () => {} },
     'team-mgmt': { html: () => placeholderPage('Team Managemet', 'Session 8'), init: () => {} }
   };
+
+  updateBottomNavActive(pageName);
 
   const page = pages[pageName];
   if (page) {
