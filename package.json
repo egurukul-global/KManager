@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node node_modules/vite/bin/vite.js",
-    "build": "node node_modules/vite/bin/vite.js build",
-    "preview": "node node_modules/vite/bin/vite.js preview"
+    "build": "node scripts/build.mjs",
+    "preview": "node node_modules/vite/bin/vite.js preview",
+    "postinstall": "node scripts/fix-bin-perms.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",
