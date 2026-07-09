@@ -136,6 +136,27 @@ function getSelectedScope() {
   return document.getElementById('statusScope')?.value || 'all';
 }
 
+function truncateText(text, maxLen) {
+  const s = String(text || '');
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, maxLen - 1)}…`;
+}
+
+function escapeAttr(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
+}
+
+function formatReconAmount(amount) {
+  const n = parseFloat(amount) || 0;
+  return truncateText(
+    n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    15
+  );
+}
+
 function onStatusScopeChange() {
   populateSourceSelect();
   const results = document.getElementById('financialStatusResults');
@@ -278,12 +299,18 @@ function showReconcilePanel() {
   }
 
   let html = `
-    <div class="table-container">
+    <div class="table-container recon-table-wrap">
       <table class="status-table recon-table">
         <thead>
           <tr>
-            <th>Type</th><th>Bucket</th><th>Currency</th><th>Closing</th><th>Actual</th>
-            <th>Difference</th><th>USD Equiv</th><th>Comments</th>
+            <th class="col-type">Type</th>
+            <th class="col-bucket">Bucket</th>
+            <th class="col-currency">Currency</th>
+            <th class="col-balance">Balance</th>
+            <th class="col-actual">Actual</th>
+            <th class="col-difference">Difference</th>
+            <th class="col-usd">USD Equiv</th>
+            <th class="col-comments">Comments</th>
           </tr>
         </thead>
         <tbody>
@@ -291,20 +318,23 @@ function showReconcilePanel() {
 
   rows.forEach((row, index) => {
     const typeBadge = row.scopeLabel === 'Personal' ? 'warning' : 'info';
+    const bucketLabel = truncateText(row.bucketName, 25);
     html += `
       <tr data-recon-index="${index}">
-        <td><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
-        <td><strong>${row.bucketName}</strong></td>
-        <td>${row.currency}</td>
-        <td id="reconClosing_${index}">${row.closing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td>
-          <input type="number" id="reconActual_${index}" step="0.01" placeholder="Count"
+        <td class="col-type"><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
+        <td class="col-bucket recon-cell-truncate" title="${escapeAttr(row.bucketName)}"><strong>${bucketLabel}</strong></td>
+        <td class="col-currency">${row.currency}</td>
+        <td class="col-balance" id="reconClosing_${index}">${formatReconAmount(row.closing)}</td>
+        <td class="col-actual">
+          <input type="number" id="reconActual_${index}" step="0.01" placeholder="Amount"
             class="recon-actual-input" data-index="${index}" data-closing="${row.closing}" data-currency="${row.currency}"
             oninput="window.onReconcileActualInput(${index})">
         </td>
-        <td id="reconDiff_${index}" class="currency-display">—</td>
-        <td id="reconUsd_${index}">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
-        <td><input type="text" id="reconComments_${index}" placeholder="Reason for discrepancy" class="recon-comments-input"></td>
+        <td class="col-difference currency-display" id="reconDiff_${index}">—</td>
+        <td class="col-usd" id="reconUsd_${index}">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
+        <td class="col-comments">
+          <textarea id="reconComments_${index}" rows="2" placeholder="Reason" class="recon-comments-input"></textarea>
+        </td>
       </tr>
     `;
   });
@@ -331,13 +361,15 @@ function onReconcileActualInput(index) {
 
   if (Number.isNaN(actual)) {
     diffCell.textContent = '—';
-    diffCell.className = 'currency-display';
+    diffCell.className = 'col-difference currency-display';
+    diffCell.title = '';
     return;
   }
 
   const { text, level } = formatDifference(actual, closing, currency);
-  diffCell.textContent = text;
-  diffCell.className = `currency-display ${level}`;
+  diffCell.textContent = truncateText(text, 15);
+  diffCell.title = text;
+  diffCell.className = `col-difference currency-display ${level}`;
 }
 
 async function submitReconciliation() {

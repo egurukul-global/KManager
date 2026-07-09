@@ -1145,15 +1145,61 @@ tr.selected { background: #e7f3ff !important; }
   font-size: 0.9em;
 }
 
+.recon-table-wrap.table-container {
+  overflow-x: hidden;
+  margin-top: 0;
+}
+
+.recon-table {
+  table-layout: fixed;
+  width: 100%;
+  max-width: 100%;
+}
+
+.recon-table .col-type { width: 10ch; max-width: 10ch; }
+.recon-table .col-bucket { width: 25ch; max-width: 25ch; }
+.recon-table .col-currency { width: 3ch; max-width: 3ch; }
+.recon-table .col-balance,
+.recon-table .col-actual,
+.recon-table .col-difference,
+.recon-table .col-usd { width: 15ch; max-width: 15ch; }
+.recon-table .col-comments { width: 20ch; max-width: 20ch; }
+
+.recon-table .col-type,
+.recon-table .col-bucket,
+.recon-table .col-currency,
+.recon-table .col-balance,
+.recon-table .col-actual,
+.recon-table .col-difference,
+.recon-table .col-usd,
+.recon-table .col-comments {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recon-table .col-comments {
+  white-space: normal;
+  vertical-align: top;
+}
+
 .recon-actual-input {
-  width: 100px;
+  width: 100%;
+  max-width: 15ch;
   padding: 6px;
+  box-sizing: border-box;
 }
 
 .recon-comments-input {
   width: 100%;
-  min-width: 140px;
+  max-width: 20ch;
+  min-height: 2.5em;
+  max-height: 4.5em;
   padding: 6px;
+  box-sizing: border-box;
+  resize: none;
+  overflow: auto;
+  white-space: normal;
 }
 
 .dash-alert--neutral {
