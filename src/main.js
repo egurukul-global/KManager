@@ -28,6 +28,8 @@ import { getExpenseReportsPage, initExpenseReportsPage } from './pages/expense-r
 import { getAddExpensePage, initAddExpensePage, getExpenseManagerPage, initExpenseManagerPage } from './pages/expenses.js';
 import { getGenerateReceiptPage, initGenerateReceiptPage } from './pages/generate-receipt.js';
 import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js';
+import { getDisplayName } from './utils/displayName.js';
+import swamijiImg from './Swamiji.png';
 
 // ==================== APP CONTAINER ====================
 const app = document.getElementById('app');
@@ -333,37 +335,28 @@ function renderLoginScreen() {
 }
 
 function renderAppShell() {
+  const displayName = getDisplayName(state.user);
   app.innerHTML = `
     <div class="mobile-header">
       <button class="menu-toggle" onclick="window.toggleSidebar()">☰</button>
-      <h1>🔱 Kailasa Manager</h1>
-      <div style="width: 30px;"></div>
+      <h1>Kailasa Manager</h1>
+      <img src="${swamijiImg}" alt="" class="header-logo" width="36" height="36">
     </div>
 
     <div class="overlay" onclick="window.toggleSidebar()"></div>
 
     <div class="app-shell active">
       <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-          <h1>🔱 Kailasa Manager</h1>
-          <p>Manage budgets & expenses</p>
+        <div class="sidebar-user">
+          <img src="${swamijiImg}" alt="" class="sidebar-avatar" width="40" height="40">
+          <span id="userDisplayName" class="sidebar-display-name" title="${state.user?.name || ''}">${displayName}</span>
+        </div>
 
-          <div class="team-switcher">
-            <label>Current Team</label>
-            <select id="teamSelect" onchange="window.switchTeam(this.value)">
-              <option value="">Loading teams...</option>
-            </select>
-          </div>
-
-          <div class="user-info">
-            <div id="userName">${state.user?.name || 'User'}</div>
-            <div id="userEmail" style="font-size: 0.85em; opacity: 0.7;">${state.user?.email || ''}</div>
-            <span id="userRole" class="role-badge">${(state.user?.role || 'user').toUpperCase()}</span>
-            <div id="userAccessLevel" class="access-badge" style="display: ${state.user?.role !== state.userTeamAccess?.access_level ? 'inline-block' : 'none'};">
-              ${(state.userTeamAccess?.access_level || 'member').toUpperCase()}
-            </div>
-          </div>
-          <button class="logout-btn" onclick="window.handleLogout()">🚪 Sign Out</button>
+        <div class="team-switcher">
+          <label>Current Team</label>
+          <select id="teamSelect" onchange="window.switchTeam(this.value)">
+            <option value="">Loading teams...</option>
+          </select>
         </div>
 
         <nav class="nav-menu">
@@ -453,10 +446,20 @@ function renderAppShell() {
             </div>
           </div>
         </nav>
+
+        <div class="sidebar-footer">
+          <button type="button" class="sidebar-signout" onclick="window.handleLogout()">Sign Out</button>
+        </div>
       </aside>
 
-      <main class="main-content" id="mainContent">
+      <div class="main-area">
+        <header class="app-topbar">
+          <span class="app-topbar-title">Kailasa Manager</span>
+          <img src="${swamijiImg}" alt="" class="app-topbar-logo" width="40" height="40">
+        </header>
+        <main class="main-content" id="mainContent">
         </main>
+      </div>
     </div>
 
     <div class="sync-status online" id="syncIndicator">🟢 Online</div>

@@ -136,25 +136,9 @@ function getSelectedScope() {
   return document.getElementById('statusScope')?.value || 'all';
 }
 
-function truncateText(text, maxLen) {
-  const s = String(text || '');
-  if (s.length <= maxLen) return s;
-  return `${s.slice(0, maxLen - 1)}…`;
-}
-
-function escapeAttr(text) {
-  return String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;');
-}
-
 function formatReconAmount(amount) {
   const n = parseFloat(amount) || 0;
-  return truncateText(
-    n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-    15
-  );
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function onStatusScopeChange() {
@@ -318,11 +302,10 @@ function showReconcilePanel() {
 
   rows.forEach((row, index) => {
     const typeBadge = row.scopeLabel === 'Personal' ? 'warning' : 'info';
-    const bucketLabel = truncateText(row.bucketName, 25);
     html += `
       <tr data-recon-index="${index}">
         <td class="col-type"><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
-        <td class="col-bucket recon-cell-truncate" title="${escapeAttr(row.bucketName)}"><strong>${bucketLabel}</strong></td>
+        <td class="col-bucket"><strong>${row.bucketName}</strong></td>
         <td class="col-currency">${row.currency}</td>
         <td class="col-balance" id="reconClosing_${index}">${formatReconAmount(row.closing)}</td>
         <td class="col-actual">
@@ -367,7 +350,7 @@ function onReconcileActualInput(index) {
   }
 
   const { text, level } = formatDifference(actual, closing, currency);
-  diffCell.textContent = truncateText(text, 15);
+  diffCell.textContent = text;
   diffCell.title = text;
   diffCell.className = `col-difference currency-display ${level}`;
 }
