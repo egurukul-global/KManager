@@ -1,6 +1,6 @@
 /* ========== BUDGET PLANS CRUD ========== */
 import { state } from '../state.js';
-import { supabaseClient, localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete } from '../db.js';
+import { supabaseClient, localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete, sbSelect } from '../db.js';
 import { showToast } from '../components/toasts.js';
 import { getLatestUsdRate, getLocalCurrenciesFromRates, usdToLocal, rateForInput } from '../utils/currency.js';
 import { loadCategoryMasterLines, normalizeBudgetCategory } from '../utils/categoryMaster.js';
