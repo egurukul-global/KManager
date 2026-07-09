@@ -182,7 +182,7 @@ export function getRecordIncomePage() {
         <div id="incomeAllocationsContainer" style="max-width: 600px; margin-bottom: 15px;"></div>
 
         <div style="max-width: 600px; margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-          <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 0.95em;">
+          <div class="income-totals-bar" style="display: flex; justify-content: space-between; font-weight: bold; font-size: 0.95em;">
             <span>Total Income: $<span id="lblTotalIncomeDisplay">0.00</span></span>
             <span>Allocated: $<span id="lblTotalAllocatedDisplay">0.00</span></span>
             <span style="color: #4f46e5;">Unallocated: $<span id="lblUnallocatedDisplay">0.00</span></span>
@@ -516,7 +516,7 @@ export function getIncomeManagerPage() {
 
     <div class="card">
       <h2>📊 Historical Inflow Ledger</h2>
-      <div class="table-container">
+      <div class="table-container show-desktop">
         <table>
           <thead>
             <tr>
@@ -532,6 +532,7 @@ export function getIncomeManagerPage() {
           <tbody id="incomeLedgerBody"></tbody>
         </table>
       </div>
+      <div id="incomeMobileList" class="show-mobile data-card-list"></div>
     </div>
 
     <div id="editIncomeModal" class="modal">
@@ -559,7 +560,7 @@ export function getIncomeManagerPage() {
           <h3 style="margin-top: 20px;">Split Allocations</h3>
           <div id="editIncomeAllocationsContainer" style="margin-bottom: 15px;"></div>
           
-          <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 15px; display: flex; justify-content: space-between; font-weight: bold; font-size: 0.9em;">
+          <div class="income-totals-bar" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 15px; display: flex; justify-content: space-between; font-weight: bold; font-size: 0.9em;">
             <span>Total Income: $<span id="lblEditTotalIncome">0.00</span></span>
             <span>Allocated: $<span id="lblEditAllocated">0.00</span></span>
             <span>Unallocated: $<span id="lblEditUnallocated">0.00</span></span>
@@ -580,6 +581,7 @@ export async function initIncomeManagerPage() {
   if (!state.canManageIncome) return;
 
   const tbody = document.getElementById('incomeLedgerBody');
+  const mobile = document.getElementById('incomeMobileList');
   if (!tbody) return;
 
   const teamId = state.currentTeam?.team_id;
@@ -630,10 +632,13 @@ export async function initIncomeManagerPage() {
 
   if (records.length === 0) {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #888; padding: 20px;">No matching transactional inflows found.</td></tr>`;
+    if (mobile) mobile.innerHTML = '<p class="empty-state">No matching transactional inflows found.</p>';
     return;
   }
 
-  tbody.innerHTML = '';
+  let tableHtml = '';
+  let mobileHtml = '';
+
   records.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(rec => {
     const allocs = rec.budget_allocations || [];
     let allocSummaryText = allocs.length === 0
@@ -655,21 +660,48 @@ export async function initIncomeManagerPage() {
       ? `${(rec.local_amount || 0).toLocaleString()} ${rec.currency} (@ ${rec.exchange_rate})`
       : '-';
 
-    tbody.innerHTML += `
+    const allocPlain = allocs.length === 0
+      ? 'Unallocated'
+      : allocs.map(a => {
+          const targetPlan = plans.find(p => p.id === a.budget_id);
+          const name = targetPlan ? targetPlan.name : 'Unknown Plan';
+          return `${name}: $${(a.amount_usd || 0).toFixed(2)}`;
+        }).join(' · ');
+
+    tableHtml += `
       <tr>
-        <td><strong>${rec.date}</strong></td>
-        <td>${rec.payment_from || 'Unknown'}</td>
-        <td><span class="badge badge-info">${bucketName}</span></td>
-        <td><strong>$${(rec.amount_usd || 0).toFixed(2)}</strong></td>
-        <td style="font-size: 0.85em; color: #555;">${valDisplay}</td>
-        <td>${allocSummaryText}</td>
-        <td class="action-buttons">
+        <td data-label="Date"><strong>${rec.date}</strong></td>
+        <td data-label="From">${rec.payment_from || 'Unknown'}</td>
+        <td data-label="Bucket"><span class="badge badge-info">${bucketName}</span></td>
+        <td data-label="USD"><strong>$${(rec.amount_usd || 0).toFixed(2)}</strong></td>
+        <td data-label="Foreign">${valDisplay}</td>
+        <td data-label="Allocations">${allocSummaryText}</td>
+        <td data-label="Actions" class="action-buttons">
           <button class="info small" onclick="window.openEditIncomeRecord('${rec.id}')">Edit</button>
           <button class="danger small" onclick="window.deleteIncomeRecord('${rec.id}')">Delete</button>
         </td>
       </tr>
     `;
+
+    mobileHtml += `
+      <article class="data-card data-card--compact">
+        <div class="data-card-top">
+          <span class="data-card-title">${rec.payment_from || 'Unknown'}</span>
+          <span class="data-card-badges">$${(rec.amount_usd || 0).toFixed(2)}</span>
+        </div>
+        <div class="data-card-summary">${rec.date} · ${bucketName} (${bucketCurrency})</div>
+        <div class="data-card-summary">${allocPlain}</div>
+        ${valDisplay !== '-' ? `<div class="data-card-sub">${valDisplay}</div>` : ''}
+        <div class="data-card-actions">
+          <button class="info small" onclick="window.openEditIncomeRecord('${rec.id}')">Edit</button>
+          <button class="danger small" onclick="window.deleteIncomeRecord('${rec.id}')">Delete</button>
+        </div>
+      </article>
+    `;
   });
+
+  tbody.innerHTML = tableHtml;
+  if (mobile) mobile.innerHTML = mobileHtml;
 }
 window.initIncomeManagerPage = initIncomeManagerPage;
 

@@ -238,7 +238,7 @@ function renderAllBudgetsReport(filtered, totalUSD) {
   html += `
     <h3>Expense Details</h3>
     <div class="table-container">
-      <table>
+      <table class="table-stack-mobile">
         <thead>
           <tr>
             <th>Date</th><th>Item</th><th>Budget</th><th>Category</th><th>Source</th>
@@ -254,15 +254,15 @@ function renderAllBudgetsReport(filtered, totalUSD) {
       : '—';
     html += `
       <tr>
-        <td>${exp.date}</td>
-        <td>${exp.item || '—'}</td>
-        <td>${getBudgetName(exp.budget_id)}</td>
-        <td>${getExpenseCategoryLabel(exp, teamCategories)}</td>
-        <td>${getBucketName(exp.bucket_id)}</td>
-        <td>${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
-        <td>${exp.exchange_rate ?? '—'}</td>
-        <td>$${(exp.usd_amount || 0).toFixed(2)}</td>
-        <td>${receiptLink}</td>
+        <td data-label="Date">${exp.date}</td>
+        <td data-label="Item">${exp.item || '—'}</td>
+        <td data-label="Budget">${getBudgetName(exp.budget_id)}</td>
+        <td data-label="Category">${getExpenseCategoryLabel(exp, teamCategories)}</td>
+        <td data-label="Source">${getBucketName(exp.bucket_id)}</td>
+        <td data-label="Local">${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
+        <td data-label="Rate">${exp.exchange_rate ?? '—'}</td>
+        <td data-label="USD">$${(exp.usd_amount || 0).toFixed(2)}</td>
+        <td data-label="Receipt">${receiptLink}</td>
       </tr>
     `;
   });
@@ -272,7 +272,7 @@ function renderAllBudgetsReport(filtered, totalUSD) {
   html += '<h3 style="margin-top:30px;">Budget vs Actual</h3>';
   html += `
     <div class="table-container">
-      <table>
+      <table class="table-stack-mobile">
         <thead>
           <tr><th>Budget</th><th>Budgeted (USD)</th><th>Actual (USD)</th><th>Balance (USD)</th><th>Status</th></tr>
         </thead>
@@ -303,11 +303,11 @@ function renderAllBudgetsReport(filtered, totalUSD) {
     const over = balance < 0;
     html += `
       <tr>
-        <td><strong>${budget.name}</strong></td>
-        <td>$${budgeted.toFixed(2)}</td>
-        <td>$${actual.toFixed(2)}</td>
-        <td class="${over ? 'negative' : 'positive'}" style="font-weight:bold;">$${balance.toFixed(2)}</td>
-        <td><span class="badge badge-${over ? 'danger' : 'success'}">${over ? 'Over Budget' : 'On Track'}</span></td>
+        <td data-label="Budget"><strong>${budget.name}</strong></td>
+        <td data-label="Budgeted">$${budgeted.toFixed(2)}</td>
+        <td data-label="Actual">$${actual.toFixed(2)}</td>
+        <td data-label="Balance" class="${over ? 'negative' : 'positive'}" style="font-weight:bold;">$${balance.toFixed(2)}</td>
+        <td data-label="Status"><span class="badge badge-${over ? 'danger' : 'success'}">${over ? 'Over Budget' : 'On Track'}</span></td>
       </tr>
     `;
   });
@@ -315,11 +315,11 @@ function renderAllBudgetsReport(filtered, totalUSD) {
   const grandOver = grandBalance < 0;
   html += `
       <tr class="status-total">
-        <td><strong>GRAND TOTAL</strong></td>
-        <td><strong>$${grandBudgeted.toFixed(2)}</strong></td>
-        <td><strong>$${grandActual.toFixed(2)}</strong></td>
-        <td class="${grandOver ? 'negative' : 'positive'}"><strong>$${grandBalance.toFixed(2)}</strong></td>
-        <td><span class="badge badge-${grandOver ? 'danger' : 'success'}">${grandOver ? 'Over Budget' : 'On Track'}</span></td>
+        <td data-label="Total"><strong>GRAND TOTAL</strong></td>
+        <td data-label="Budgeted"><strong>$${grandBudgeted.toFixed(2)}</strong></td>
+        <td data-label="Actual"><strong>$${grandActual.toFixed(2)}</strong></td>
+        <td data-label="Balance" class="${grandOver ? 'negative' : 'positive'}"><strong>$${grandBalance.toFixed(2)}</strong></td>
+        <td data-label="Status"><span class="badge badge-${grandOver ? 'danger' : 'success'}">${grandOver ? 'Over Budget' : 'On Track'}</span></td>
       </tr>
     </tbody></table></div>
   `;
@@ -344,7 +344,7 @@ function renderSingleBudgetReport(filtered, budget) {
   html += `
     <h3>By Category</h3>
     <div class="table-container">
-      <table>
+      <table class="table-stack-mobile">
         <thead>
           <tr><th>Category</th><th>Budgeted (USD)</th><th>Actual (USD)</th><th>Balance</th></tr>
         </thead>
@@ -359,10 +359,10 @@ function renderSingleBudgetReport(filtered, budget) {
     const catBalance = catBudgeted - catActual;
     html += `
       <tr>
-        <td>${catName}${cat.subcategory ? ` / ${cat.subcategory}` : ''}</td>
-        <td>$${catBudgeted.toFixed(2)}</td>
-        <td>$${catActual.toFixed(2)}</td>
-        <td class="${catBalance < 0 ? 'negative' : 'positive'}">$${catBalance.toFixed(2)}</td>
+        <td data-label="Category">${catName}${cat.subcategory ? ` / ${cat.subcategory}` : ''}</td>
+        <td data-label="Budgeted">$${catBudgeted.toFixed(2)}</td>
+        <td data-label="Actual">$${catActual.toFixed(2)}</td>
+        <td data-label="Balance" class="${catBalance < 0 ? 'negative' : 'positive'}">$${catBalance.toFixed(2)}</td>
       </tr>
     `;
   });
@@ -373,7 +373,7 @@ function renderSingleBudgetReport(filtered, budget) {
     html += `
       <h3 style="margin-top:24px;">Transactions</h3>
       <div class="table-container">
-        <table>
+        <table class="table-stack-mobile">
           <thead>
             <tr><th>Date</th><th>Item</th><th>Category</th><th>Source</th><th>Local</th><th>USD</th></tr>
           </thead>
@@ -382,12 +382,12 @@ function renderSingleBudgetReport(filtered, budget) {
     [...filtered].sort((a, b) => b.date.localeCompare(a.date)).forEach(exp => {
       html += `
         <tr>
-          <td>${exp.date}</td>
-          <td>${exp.item || '—'}</td>
-          <td>${getExpenseCategoryLabel(exp, teamCategories)}</td>
-          <td>${getBucketName(exp.bucket_id)}</td>
-          <td>${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
-          <td>$${(exp.usd_amount || 0).toFixed(2)}</td>
+          <td data-label="Date">${exp.date}</td>
+          <td data-label="Item">${exp.item || '—'}</td>
+          <td data-label="Category">${getExpenseCategoryLabel(exp, teamCategories)}</td>
+          <td data-label="Source">${getBucketName(exp.bucket_id)}</td>
+          <td data-label="Local">${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
+          <td data-label="USD">$${(exp.usd_amount || 0).toFixed(2)}</td>
         </tr>
       `;
     });

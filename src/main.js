@@ -464,6 +464,29 @@ function renderAppShell() {
 
     <div class="sync-status online" id="syncIndicator">🟢 Online</div>
     <div class="toast-container" id="toastContainer"></div>
+
+    <nav class="bottom-nav" aria-label="Main navigation">
+      <button type="button" class="bottom-nav-item active" data-tab="dashboard" onclick="window.navToTab('dashboard')">
+        <span class="bottom-nav-icon">📊</span>
+        <span class="bottom-nav-label">Home</span>
+      </button>
+      <button type="button" class="bottom-nav-item" data-tab="budgets" onclick="window.navToTab('budgets')">
+        <span class="bottom-nav-icon">📋</span>
+        <span class="bottom-nav-label">Budgets</span>
+      </button>
+      <button type="button" class="bottom-nav-item" data-tab="expenses" onclick="window.navToTab('expenses')">
+        <span class="bottom-nav-icon">💸</span>
+        <span class="bottom-nav-label">Expenses</span>
+      </button>
+      <button type="button" class="bottom-nav-item" data-tab="reports" onclick="window.navToTab('reports')">
+        <span class="bottom-nav-icon">📈</span>
+        <span class="bottom-nav-label">Reports</span>
+      </button>
+      <button type="button" class="bottom-nav-item" data-tab="more" onclick="window.navToTab('more')">
+        <span class="bottom-nav-icon">☰</span>
+        <span class="bottom-nav-label">Menu</span>
+      </button>
+    </nav>
   `;
 
   // Expose functions to window for onclick handlers
@@ -472,6 +495,7 @@ function renderAppShell() {
   window.showPage = showPage;
   window.switchTeam = switchTeam;
   window.handleLogout = handleLogout;
+  window.navToTab = navToTab;
 }
 
 // ==================== NAVIGATION ====================

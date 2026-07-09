@@ -45,7 +45,7 @@ export function getRatesPage() {
     <div class="card">
       <h2>📋 Exchange Rate History</h2>
       <div class="table-container">
-        <table>
+        <table class="table-stack-mobile">
           <thead>
             <tr>
               <th>Date</th>
@@ -108,10 +108,10 @@ function renderRates() {
     const displayRate = normalized?.rate ?? rate.rate;
     html += `
       <tr>
-        <td>${rate.date}</td>
-        <td><span class="badge badge-info">${currency}</span></td>
-        <td class="currency-display">${rateDisplayLabel(currency, displayRate)}</td>
-        <td>
+        <td data-label="Date">${rate.date}</td>
+        <td data-label="Currency"><span class="badge badge-info">${currency}</span></td>
+        <td data-label="Rate" class="currency-display">${rateDisplayLabel(currency, displayRate)}</td>
+        <td data-label="Actions">
           <button class="danger small" onclick="window.deleteRate('${rate.id}')">Delete</button>
         </td>
       </tr>

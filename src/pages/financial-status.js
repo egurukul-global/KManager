@@ -193,7 +193,7 @@ function generateFinancialStatus() {
   let html = `
     <h3 style="margin-top:16px;">Financial Status as of ${asOfDate}</h3>
     <div class="table-container">
-      <table class="status-table">
+      <table class="status-table table-stack-mobile">
         <thead>
           <tr>
             <th>Type</th><th>Source</th><th>Currency</th><th>Opening</th><th>+ Income</th><th>+ Transfers In</th>
@@ -209,24 +209,24 @@ function generateFinancialStatus() {
     const typeBadge = row.scopeLabel === 'Personal' ? 'warning' : 'info';
     html += `
       <tr>
-        <td><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
-        <td><strong>${row.bucketName}</strong></td>
-        <td><span class="badge badge-info">${row.currency}</span></td>
-        <td>${row.opening.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td class="positive">+${row.income.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td class="positive">+${row.transfersIn.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td class="negative">-${row.expenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td class="negative">-${row.transfersOut.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td class="${closingClass}"><strong>${row.closing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
-        <td style="color:#667eea;">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
+        <td data-label="Type"><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
+        <td data-label="Source"><strong>${row.bucketName}</strong></td>
+        <td data-label="Currency"><span class="badge badge-info">${row.currency}</span></td>
+        <td data-label="Opening">${row.opening.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td data-label="+ Income" class="positive">+${row.income.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td data-label="+ Transfers In" class="positive">+${row.transfersIn.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td data-label="- Expenses" class="negative">-${row.expenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td data-label="- Transfers Out" class="negative">-${row.transfersOut.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td data-label="Closing" class="${closingClass}"><strong>${row.closing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
+        <td data-label="USD Equiv" style="color:#667eea;">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
       </tr>
     `;
   });
 
   html += `
       <tr class="status-total">
-        <td colspan="9" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
-        <td style="color:#667eea;"><strong>$${grandUsd.toFixed(2)}</strong></td>
+        <td data-label="Total USD Equivalent" colspan="9" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
+        <td data-label="Amount" style="color:#667eea;"><strong>$${grandUsd.toFixed(2)}</strong></td>
       </tr>
     </tbody></table></div>
     <div class="recon-help-box">
@@ -284,7 +284,7 @@ function showReconcilePanel() {
 
   let html = `
     <div class="table-container recon-table-wrap">
-      <table class="status-table recon-table">
+      <table class="status-table recon-table table-stack-mobile">
         <thead>
           <tr>
             <th class="col-type">Type</th>
@@ -304,18 +304,18 @@ function showReconcilePanel() {
     const typeBadge = row.scopeLabel === 'Personal' ? 'warning' : 'info';
     html += `
       <tr data-recon-index="${index}">
-        <td class="col-type"><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
-        <td class="col-bucket"><strong>${row.bucketName}</strong></td>
-        <td class="col-currency">${row.currency}</td>
-        <td class="col-balance" id="reconClosing_${index}">${formatReconAmount(row.closing)}</td>
-        <td class="col-actual">
+        <td class="col-type" data-label="Type"><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
+        <td class="col-bucket" data-label="Bucket"><strong>${row.bucketName}</strong></td>
+        <td class="col-currency" data-label="Currency">${row.currency}</td>
+        <td class="col-balance" data-label="Balance" id="reconClosing_${index}">${formatReconAmount(row.closing)}</td>
+        <td class="col-actual" data-label="Actual">
           <input type="number" id="reconActual_${index}" step="0.01" placeholder="Amount"
             class="recon-actual-input" data-index="${index}" data-closing="${row.closing}" data-currency="${row.currency}"
             oninput="window.onReconcileActualInput(${index})">
         </td>
-        <td class="col-difference currency-display" id="reconDiff_${index}">—</td>
-        <td class="col-usd" id="reconUsd_${index}">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
-        <td class="col-comments">
+        <td class="col-difference currency-display" data-label="Difference" id="reconDiff_${index}">—</td>
+        <td class="col-usd" data-label="USD Equiv" id="reconUsd_${index}">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
+        <td class="col-comments" data-label="Comments">
           <textarea id="reconComments_${index}" rows="2" placeholder="Reason" class="recon-comments-input"></textarea>
         </td>
       </tr>
@@ -594,19 +594,19 @@ async function viewReconciliationHistory(submissionId) {
 
       rowsHtml += `
         <tr>
-          <td><span class="badge badge-${typeBadge}">${scopeLabel}</span></td>
-          <td><strong>${line.bucket_name}</strong></td>
-          <td>${line.currency}</td>
-          <td>${fmt(line.opening_balance)}</td>
-          <td class="positive">+${fmt(line.income_amount)}</td>
-          <td class="positive">+${fmt(line.transfers_in)}</td>
-          <td class="negative">-${fmt(line.expenses_amount)}</td>
-          <td class="negative">-${fmt(line.transfers_out)}</td>
-          <td><strong>${fmt(line.closing_balance)}</strong></td>
-          <td><strong>${fmt(line.actual_balance)}</strong></td>
-          <td class="currency-display ${diffLevel}">${diffText}</td>
-          <td style="color:#667eea;">${line.usd_equivalent !== null && line.usd_equivalent !== undefined ? `$${fmt(line.usd_equivalent)}` : '—'}</td>
-          <td>${line.comments || '—'}</td>
+          <td data-label="Type"><span class="badge badge-${typeBadge}">${scopeLabel}</span></td>
+          <td data-label="Bucket"><strong>${line.bucket_name}</strong></td>
+          <td data-label="Currency">${line.currency}</td>
+          <td data-label="Opening">${fmt(line.opening_balance)}</td>
+          <td data-label="+ Income" class="positive">+${fmt(line.income_amount)}</td>
+          <td data-label="+ Transfers In" class="positive">+${fmt(line.transfers_in)}</td>
+          <td data-label="- Expenses" class="negative">-${fmt(line.expenses_amount)}</td>
+          <td data-label="- Transfers Out" class="negative">-${fmt(line.transfers_out)}</td>
+          <td data-label="Closing"><strong>${fmt(line.closing_balance)}</strong></td>
+          <td data-label="Actual"><strong>${fmt(line.actual_balance)}</strong></td>
+          <td data-label="Difference" class="currency-display ${diffLevel}">${diffText}</td>
+          <td data-label="USD Equiv" style="color:#667eea;">${line.usd_equivalent !== null && line.usd_equivalent !== undefined ? `$${fmt(line.usd_equivalent)}` : '—'}</td>
+          <td data-label="Comments">${line.comments || '—'}</td>
         </tr>
       `;
     });
@@ -621,7 +621,7 @@ async function viewReconciliationHistory(submissionId) {
           Submitted ${new Date(data.created_at).toLocaleString()} (read-only)
         </p>
         <div class="table-container">
-          <table class="status-table recon-table">
+          <table class="status-table recon-table table-stack-mobile">
             <thead>
               <tr>
                 <th>Type</th><th>Bucket</th><th>Currency</th><th>Opening</th><th>+ Income</th><th>+ Transfers In</th>
@@ -632,9 +632,9 @@ async function viewReconciliationHistory(submissionId) {
             <tbody>
               ${rowsHtml}
               <tr class="status-total">
-                <td colspan="11" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
-                <td style="color:#667eea;"><strong>$${grandUsd.toFixed(2)}</strong></td>
-                <td></td>
+                <td data-label="Total USD Equivalent" colspan="11" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
+                <td data-label="Amount" style="color:#667eea;"><strong>$${grandUsd.toFixed(2)}</strong></td>
+                <td data-label=""></td>
               </tr>
             </tbody>
           </table>

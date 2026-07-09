@@ -547,24 +547,8 @@ export async function initViewBudgetsPage() {
 window.initViewBudgetsPage = initViewBudgetsPage;
 
 function renderBudgetSummaryTable(container, budgets) {
-  let html = `
-    <div class="card">
-      <h2>📊 Budget Summary</h2>
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Budget</th>
-              <th>Status</th>
-              <th>Total Budgeted (USD)</th>
-              <th>Total Spent (USD)</th>
-              <th>Remaining (USD)</th>
-              <th>Health</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-  `;
+  let tableRows = '';
+  let mobileCards = '';
 
   let grandTotalBudgeted = 0;
   let grandTotalSpent = 0;
@@ -599,41 +583,91 @@ function renderBudgetSummaryTable(container, budgets) {
     const canEdit = state.canEditBudgets;
     const canDelete = state.canDeleteBudgets;
 
-    html += `
+    tableRows += `
       <tr style="cursor: pointer;" onclick="window.viewBudgetDetail('${budget.id}')">
-        <td><strong>${budget.name}</strong></td>
-        <td>${statusBadge}</td>
-        <td>$${totalBudgetedUSD.toFixed(2)}</td>
-        <td>$${totalSpentUSD.toFixed(2)}</td>
-        <td class="${isOver ? 'negative' : 'positive'}" style="font-weight: bold;">$${remaining.toFixed(2)}</td>
-        <td>${healthBadge}</td>
-        <td class="action-buttons">
+        <td data-label="Budget"><strong>${budget.name}</strong></td>
+        <td data-label="Status">${statusBadge}</td>
+        <td data-label="Budgeted">$${totalBudgetedUSD.toFixed(2)}</td>
+        <td data-label="Spent">$${totalSpentUSD.toFixed(2)}</td>
+        <td data-label="Remaining" class="${isOver ? 'negative' : 'positive'}" style="font-weight: bold;">$${remaining.toFixed(2)}</td>
+        <td data-label="Health">${healthBadge}</td>
+        <td data-label="Actions" class="action-buttons">
           ${canEdit ? `<button class="info small" onclick="event.stopPropagation(); window.editBudgetPlan('${budget.id}')">Edit</button>` : ''}
           ${canDelete ? `<button class="danger small" onclick="event.stopPropagation(); window.deleteBudgetPlan('${budget.id}')">Delete</button>` : ''}
         </td>
       </tr>
+    `;
+
+    mobileCards += `
+      <article class="data-card data-card--compact data-card--clickable" onclick="window.viewBudgetDetail('${budget.id}')">
+        <div class="data-card-top">
+          <span class="data-card-title">${budget.name}</span>
+          <span class="data-card-badges">${healthBadge}</span>
+        </div>
+        <div class="data-card-summary">
+          ${statusBadge} · Budgeted $${totalBudgetedUSD.toFixed(2)} · Spent $${totalSpentUSD.toFixed(2)}
+        </div>
+        <div class="data-card-footer" onclick="event.stopPropagation()">
+          <span class="data-card-hint ${isOver ? 'negative' : 'positive'}">Remaining $${remaining.toFixed(2)}</span>
+          <div class="data-card-actions">
+            ${canEdit ? `<button class="info small" onclick="window.editBudgetPlan('${budget.id}')">Edit</button>` : ''}
+            ${canDelete ? `<button class="danger small" onclick="window.deleteBudgetPlan('${budget.id}')">Delete</button>` : ''}
+          </div>
+        </div>
+      </article>
     `;
   });
 
   const grandRemaining = grandTotalBudgeted - grandTotalSpent;
   const grandOver = grandRemaining < 0;
 
-  html += `
-          <tr style="background: #f8f9fa; font-weight: bold; border-top: 2px solid #333;">
-            <td colspan="2"><strong>GRAND TOTAL</strong></td>
-            <td><strong>$${grandTotalBudgeted.toFixed(2)}</strong></td>
-            <td><strong>$${grandTotalSpent.toFixed(2)}</strong></td>
-            <td class="${grandOver ? 'negative' : 'positive'}" style="font-weight: bold;"><strong>$${grandRemaining.toFixed(2)}</strong></td>
-            <td colspan="2"></td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
-      <p style="margin-top: 15px; color: #666; font-size: 0.9em;">Click any budget row to view detailed category breakdown.</p>
-    </div>
+  tableRows += `
+    <tr class="status-total">
+      <td data-label="Total"><strong>GRAND TOTAL</strong></td>
+      <td data-label=""></td>
+      <td data-label="Budgeted"><strong>$${grandTotalBudgeted.toFixed(2)}</strong></td>
+      <td data-label="Spent"><strong>$${grandTotalSpent.toFixed(2)}</strong></td>
+      <td data-label="Remaining" class="${grandOver ? 'negative' : 'positive'}"><strong>$${grandRemaining.toFixed(2)}</strong></td>
+      <td data-label=""></td>
+      <td data-label=""></td>
+    </tr>
   `;
 
-  container.innerHTML = html;
+  mobileCards += `
+    <article class="data-card data-card--total">
+      <div class="data-card-top">
+        <span class="data-card-title">Grand Total</span>
+      </div>
+      <div class="data-card-summary">
+        Budgeted $${grandTotalBudgeted.toFixed(2)} · Spent $${grandTotalSpent.toFixed(2)} ·
+        Remaining $${grandRemaining.toFixed(2)}
+      </div>
+    </article>
+  `;
+
+  container.innerHTML = `
+    <div class="card">
+      <h2>📊 Budget Summary</h2>
+      <div class="table-container show-desktop">
+        <table class="table-stack-mobile">
+          <thead>
+            <tr>
+              <th>Budget</th>
+              <th>Status</th>
+              <th>Total Budgeted (USD)</th>
+              <th>Total Spent (USD)</th>
+              <th>Remaining (USD)</th>
+              <th>Health</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+      <div class="show-mobile data-card-list">${mobileCards}</div>
+      <p style="margin-top: 15px; color: #666; font-size: 0.9em;">Tap a budget to view detailed category breakdown.</p>
+    </div>
+  `;
 }
 
 function renderBudgetDetailCards(container, budgets) {

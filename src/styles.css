@@ -1,4 +1,5 @@
 /* ===== CSS VARIABLES ===== */
+@import './styles/mobile.css';
 :root {
   --primary: #667eea;
   --primary-dark: #5a67d8;

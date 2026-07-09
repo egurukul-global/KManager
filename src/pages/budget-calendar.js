@@ -58,7 +58,7 @@ export function getBudgetCalendarPage() {
         </div>
       </div>
       <div class="table-container">
-        <table>
+        <table class="table-stack-mobile">
           <thead>
             <tr>
               <th>Period Date</th>
@@ -145,13 +145,13 @@ async function loadCalendarEntries() {
 
     tbody.innerHTML = calendarEntriesList.map(entry => `
       <tr>
-        <td><strong>${formatDisplayDate(entry.budget_period_date)}</strong></td>
-        <td>${formatDisplayDate(entry.submission_deadline)}</td>
-        <td>${entry.label || '—'}</td>
-        <td>${entry.notes || '—'}</td>
-        <td>
-          <button type="button" class="secondary" style="padding:4px 10px; font-size:0.85em;" onclick="window.editCalendarEntry('${entry.id}')">Edit</button>
-          <button type="button" class="danger" style="padding:4px 10px; font-size:0.85em;" onclick="window.deleteCalendarEntry('${entry.id}')">Delete</button>
+        <td data-label="Period"><strong>${formatDisplayDate(entry.budget_period_date)}</strong></td>
+        <td data-label="Submit By">${formatDisplayDate(entry.submission_deadline)}</td>
+        <td data-label="Label">${entry.label || '—'}</td>
+        <td data-label="Notes">${entry.notes || '—'}</td>
+        <td data-label="Actions">
+          <button type="button" class="secondary small" onclick="window.editCalendarEntry('${entry.id}')">Edit</button>
+          <button type="button" class="danger small" onclick="window.deleteCalendarEntry('${entry.id}')">Delete</button>
         </td>
       </tr>
     `).join('');
