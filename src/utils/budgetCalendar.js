@@ -36,7 +36,11 @@ export function daysBetween(fromDateStr, toDateStr) {
 }
 
 export function todayDateStr() {
-  return new Date().toISOString().split('T')[0];
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /** Next relevant open calendar entry: upcoming submission deadline or most recent overdue */
@@ -62,12 +66,13 @@ export function monthlyBudgetExistsForEntry(budgets, entry) {
   );
 }
 
-/** Earliest open calendar period that still needs a monthly budget. */
+/** Earliest open calendar period that still needs a monthly budget — uses current period, not ancient backlog. */
 export function findOutstandingCalendarEntry(entries, budgets, today = todayDateStr()) {
-  const active = filterOpenCalendarEntries(entries)
-    .sort((a, b) => a.submission_deadline.localeCompare(b.submission_deadline));
-
-  return active.find(e => !monthlyBudgetExistsForEntry(budgets, e)) || null;
+  const current = findNextCalendarEntry(entries, today);
+  if (current && !monthlyBudgetExistsForEntry(budgets, current)) {
+    return current;
+  }
+  return null;
 }
 
 export function getSubmissionStatus(entry, hasMonthlyBudget, today = todayDateStr()) {

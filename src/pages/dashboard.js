@@ -3,7 +3,6 @@ import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import {
   findNextCalendarEntry,
-  findOutstandingCalendarEntry,
   monthlyBudgetExistsForEntry,
   getSubmissionStatus,
   getDailyReconciliationStatus,
@@ -49,9 +48,9 @@ export function getDashboardPage() {
         <h3 id="dashExpenses">—</h3>
         <p>Expenses</p>
       </div>
-      <div class="stat-card stat-card--gold">
+      <div class="stat-card stat-card--gold" id="dashSubmissionCard">
         <h3 id="dashNextSubmission">—</h3>
-        <p>Next Budget Submission</p>
+        <p id="dashSubmissionLabel">Next Budget Submission</p>
       </div>
     </div>
 
@@ -139,28 +138,53 @@ export async function initDashboardPage() {
     const expensesEl = document.getElementById('dashExpenses');
     if (expensesEl) expensesEl.textContent = formatUsd(totalExpenses);
 
-    const outstandingEntry = findOutstandingCalendarEntry(calendarEntries, budgets, today);
-    const nextEntry = outstandingEntry || findNextCalendarEntry(calendarEntries, today);
-    const hasMonthlyForNext = outstandingEntry
-      ? false
-      : monthlyBudgetExistsForEntry(budgets, nextEntry);
+    const currentEntry = findNextCalendarEntry(calendarEntries, today);
+    const hasMonthlyForCurrent = monthlyBudgetExistsForEntry(budgets, currentEntry);
+    const submissionStatus = getSubmissionStatus(currentEntry, hasMonthlyForCurrent, today);
 
-    const submissionStatus = getSubmissionStatus(nextEntry, hasMonthlyForNext, today);
     const nextEl = document.getElementById('dashNextSubmission');
+    const submissionCard = document.getElementById('dashSubmissionCard');
+    const submissionLabel = document.getElementById('dashSubmissionLabel');
+
+    if (submissionCard) {
+      submissionCard.classList.remove('stat-card--gold', 'stat-card--success', 'stat-card--danger');
+    }
+
     if (nextEl) {
-      if (!nextEntry) {
+      if (!currentEntry) {
         nextEl.textContent = '—';
         nextEl.title = 'No calendar configured';
-      } else if (hasMonthlyForNext) {
-        nextEl.textContent = formatDisplayDate(nextEntry.submission_deadline);
-        nextEl.title = `Submitted for ${formatDisplayDate(nextEntry.budget_period_date)}`;
-      } else if (submissionStatus.days !== null && submissionStatus.days >= 0) {
-        nextEl.textContent = submissionStatus.days === 0 ? 'Today' : `${submissionStatus.days}d`;
-        nextEl.title = `Submit by ${formatDisplayDate(nextEntry.submission_deadline)}`;
-      } else {
+        if (submissionLabel) submissionLabel.textContent = 'Next Budget Submission';
+        if (submissionCard) submissionCard.classList.add('stat-card--gold');
+      } else if (hasMonthlyForCurrent) {
+        nextEl.textContent = formatDisplayDate(currentEntry.submission_deadline);
+        nextEl.title = `Submitted for ${formatDisplayDate(currentEntry.budget_period_date)}`;
+        if (submissionLabel) {
+          submissionLabel.textContent = `Submitted — ${formatDisplayDate(currentEntry.budget_period_date)}`;
+        }
+        if (submissionCard) submissionCard.classList.add('stat-card--success');
+      } else if (submissionStatus.isOverdue) {
         const delay = Math.abs(submissionStatus.days);
-        nextEl.textContent = `+${delay}d late`;
-        nextEl.title = `Was due ${formatDisplayDate(nextEntry.submission_deadline)}`;
+        nextEl.textContent = delay === 1 ? 'Delayed 1 day' : `Delayed ${delay} days`;
+        nextEl.title = `Was due ${formatDisplayDate(currentEntry.submission_deadline)}`;
+        if (submissionLabel) {
+          submissionLabel.textContent = `Due ${formatDisplayDate(currentEntry.submission_deadline)}`;
+        }
+        if (submissionCard) submissionCard.classList.add('stat-card--danger');
+      } else if (submissionStatus.days === 0) {
+        nextEl.textContent = 'Due today';
+        nextEl.title = `Submit by ${formatDisplayDate(currentEntry.submission_deadline)}`;
+        if (submissionLabel) {
+          submissionLabel.textContent = `Due ${formatDisplayDate(currentEntry.submission_deadline)}`;
+        }
+        if (submissionCard) submissionCard.classList.add('stat-card--danger');
+      } else {
+        nextEl.textContent = `${submissionStatus.days}d`;
+        nextEl.title = `Submit by ${formatDisplayDate(currentEntry.submission_deadline)}`;
+        if (submissionLabel) {
+          submissionLabel.textContent = `Due ${formatDisplayDate(currentEntry.submission_deadline)}`;
+        }
+        if (submissionCard) submissionCard.classList.add('stat-card--gold');
       }
     }
 
@@ -192,7 +216,7 @@ export async function initDashboardPage() {
       console.warn('Pending transfers load:', pendingErr);
     }
 
-    if (nextEntry && !hasMonthlyForNext) {
+    if (currentEntry && !hasMonthlyForCurrent) {
       alerts.push({
         level: 'danger',
         icon: '📋',
