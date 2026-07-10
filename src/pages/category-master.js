@@ -1,7 +1,7 @@
 // ==================== CATEGORY MASTER (ADMIN) ====================
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
-import { showToast } from '../components/toasts.js';
+import { showToast, showConfirm } from '../components/toasts.js';
 import { btnIconDelete } from '../utils/uiHelpers.js';
 
 let masterData = [];
@@ -189,26 +189,28 @@ async function toggleCategoryMandatory(id, checked) {
 }
 
 async function deleteCategoryMaster(id) {
-  if (!confirm('Delete this category and all its subcategories?')) return;
-  try {
-    await supabaseClient.from('subcategory_master').update({ is_deleted: true }).eq('category_master_id', id);
-    const { error } = await supabaseClient.from('category_master').update({ is_deleted: true }).eq('id', id);
-    if (error) throw error;
-    showToast('Category deleted', 'success');
-    await loadMaster();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  showConfirm('Delete this category and all its subcategories?', async () => {
+    try {
+      await supabaseClient.from('subcategory_master').update({ is_deleted: true }).eq('category_master_id', id);
+      const { error } = await supabaseClient.from('category_master').update({ is_deleted: true }).eq('id', id);
+      if (error) throw error;
+      showToast('Category deleted', 'success');
+      await loadMaster();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
 }
 
 async function deleteSubcategoryMaster(id) {
-  if (!confirm('Delete this subcategory?')) return;
-  try {
-    const { error } = await supabaseClient.from('subcategory_master').update({ is_deleted: true }).eq('id', id);
-    if (error) throw error;
-    showToast('Subcategory deleted', 'success');
-    await loadMaster();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  showConfirm('Delete this subcategory?', async () => {
+    try {
+      const { error } = await supabaseClient.from('subcategory_master').update({ is_deleted: true }).eq('id', id);
+      if (error) throw error;
+      showToast('Subcategory deleted', 'success');
+      await loadMaster();
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  });
 }

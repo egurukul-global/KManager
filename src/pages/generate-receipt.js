@@ -598,16 +598,16 @@ window.exportSavedReceiptPng = async function(id) {
 window.deleteSavedReceipt = async function(id) {
   const record = teamReceiptsCache.find(r => r.id === id);
   if (!record || !canEditReceipt(record)) return;
-  if (!confirm(`Delete receipt ${record.receipt_number}?`)) return;
-
-  try {
-    const result = await sbSoftDelete('expense_receipts', id);
-    if (result?.error) throw new Error(result.error.message);
-    if (editingReceiptId === id) window.clearReceiptForm();
-    showToast('Receipt deleted', 'success');
-    await loadTeamReceipts();
-    renderReceiptList();
-  } catch (err) {
-    showToast(err.message || 'Delete failed', 'error');
-  }
+  showConfirm(`Delete receipt ${record.receipt_number}?`, async () => {
+    try {
+      const result = await sbSoftDelete('expense_receipts', id);
+      if (result?.error) throw new Error(result.error.message);
+      if (editingReceiptId === id) window.clearReceiptForm();
+      showToast('Receipt deleted', 'success');
+      await loadTeamReceipts();
+      renderReceiptList();
+    } catch (err) {
+      showToast(err.message || 'Delete failed', 'error');
+    }
+  });
 };

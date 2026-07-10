@@ -1,7 +1,7 @@
 /* ========== INCOME MODULE ========== */
 import { state } from '../state.js';
 import { localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete, sbSelect, supabaseClient } from '../db.js';
-import { showToast } from '../components/toasts.js';
+import { showToast, showConfirm } from '../components/toasts.js';
 import {
   getLatestUsdRate,
   calcUsdFromBucketAmount,
@@ -177,6 +177,23 @@ export function getRecordIncomePage() {
         
         <div id="incomeAllocationsContainer" class="alloc-line-cards" style="max-width: 600px; margin-bottom: 15px;"></div>
 
+        <div id="allocationEntryModal" class="modal">
+          <div class="modal-content small">
+            <button type="button" class="close-modal" onclick="window.closeAllocationEntryModal()">&times;</button>
+            <h2>Add Budget Allocation</h2>
+            <div class="field-labeled"><span>Budget Plan</span>
+              <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
+            </div>
+            <div class="field-labeled"><span>Amount (USD)</span>
+              <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00" required>
+            </div>
+            <div class="btn-group">
+              <button type="button" onclick="window.confirmAllocationEntry()">Add</button>
+              <button type="button" class="secondary" onclick="window.closeAllocationEntryModal()">Cancel</button>
+            </div>
+          </div>
+        </div>
+
         <div style="max-width: 600px; margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
           <div class="income-totals-bar" style="display: flex; justify-content: space-between; font-weight: bold; font-size: 0.95em;">
             <span>Total Income: $<span id="lblTotalIncomeDisplay">0.00</span></span>
@@ -187,7 +204,7 @@ export function getRecordIncomePage() {
         </div>
 
         <div class="btn-group">
-          <button type="button" class="secondary" onclick="window.addIncomeAllocationRow()">+ Add Budget Allocation</button>
+          <button type="button" class="secondary" onclick="window.openAllocationEntryModal(false)">+ Add Budget Allocation</button>
           <button type="submit">Save Income Record</button>
         </div>
       </form>
@@ -228,9 +245,7 @@ export async function initRecordIncomePage() {
     bucketSelect,
     paymentFromEl: document.getElementById('incPaymentFrom')
   });
-  if (defaultBudgetId) {
-    await window.addIncomeAllocationRow({ budget_id: defaultBudgetId });
-  }
+  // User adds allocations via modal (+ Add Budget Allocation)
 
   const paymentFromEl = document.getElementById('incPaymentFrom');
   if (paymentFromEl) setTimeout(() => paymentFromEl.focus(), 100);
@@ -299,7 +314,7 @@ function recalculateAllocationSummaries() {
 
   let totalAllocated = 0;
   rows.forEach(row => {
-    const val = parseFloat(row.querySelector('.alloc-usd-input')?.value) || 0;
+    const val = parseFloat(row.dataset.amountUsd) || parseFloat(row.querySelector('.alloc-usd-input')?.value) || 0;
     totalAllocated += val;
   });
 
@@ -325,31 +340,7 @@ function recalculateAllocationSummaries() {
   }
 }
 
-window.addIncomeAllocationRow = async function(data = null) {
-  const container = document.getElementById('incomeAllocationsContainer');
-  if (!container) return;
-
-  const row = document.createElement('div');
-  row.className = 'alloc-line-card income-alloc-row';
-
-  const defaultBudget = data ? (data.budgetId || data.budget_id || '') : '';
-  const defaultAmount = data ? (data.amountUsd || data.amount_usd || '') : '';
-
-  row.innerHTML = `
-    <div class="field-labeled"><span>Budget Plan</span>
-      <select class="alloc-budget-select" required data-selected="${defaultBudget}">
-        <option value="">Select Budget Plan</option>
-      </select>
-    </div>
-    <div class="field-labeled"><span>Amount (USD)</span>
-      <input type="number" class="alloc-usd-input input-amount" step="0.01" placeholder="1245.50" value="${defaultAmount}" required oninput="window.onAllocationRowAmountInput()">
-    </div>
-    <div class="alloc-line-card-actions">${btnIconDelete(`this.closest('.income-alloc-row').remove(); window.onAllocationRowAmountInput();`, 'Remove')}</div>
-  `;
-
-  container.appendChild(row);
-
-  // Load budget plans scoped to current team
+async function getBudgetPlansForTeam() {
   const teamId = state.currentTeam?.team_id;
   let plans = state.budgetPlans || [];
   if (plans.length === 0) {
@@ -357,13 +348,81 @@ window.addIncomeAllocationRow = async function(data = null) {
     plans = all.filter(b => b.team_id === teamId && !b.is_deleted);
     state.budgetPlans = plans;
   }
+  return plans;
+}
 
-  const selectEl = row.querySelector('.alloc-budget-select');
+function appendAllocationSummaryRow(container, budgetId, amountUsd, budgetName, forEdit = false) {
+  if (!container || !budgetId) return;
+  const row = document.createElement('div');
+  row.className = 'alloc-summary-row income-alloc-row';
+  row.dataset.budgetId = budgetId;
+  row.dataset.amountUsd = amountUsd || '';
+  const removeHandler = forEdit
+    ? `this.closest('.income-alloc-row').remove(); window.onEditIncomeMathChange();`
+    : `this.closest('.income-alloc-row').remove(); window.onAllocationRowAmountInput();`;
+  const amountDisplay = amountUsd ? `$${parseFloat(amountUsd).toFixed(2)}` : '$0.00';
+  row.innerHTML = `
+    <span class="alloc-summary-name">${budgetName}</span>
+    <span class="alloc-summary-amount">${amountDisplay}</span>
+    ${btnIconDelete(removeHandler, 'Remove')}
+  `;
+  container.appendChild(row);
+}
+
+window.openAllocationEntryModal = async function(forEdit = false) {
+  window._allocationModalForEdit = !!forEdit;
+  const modal = document.getElementById('allocationEntryModal');
+  const select = document.getElementById('allocModalBudget');
+  const amount = document.getElementById('allocModalAmount');
+  if (!modal || !select) return;
+
+  const plans = await getBudgetPlansForTeam();
+  select.innerHTML = '<option value="">Select Budget Plan</option>';
   plans.forEach(plan => {
-    const selectedAttr = plan.id === defaultBudget ? 'selected' : '';
-    selectEl.innerHTML += `<option value="${plan.id}" ${selectedAttr}>${plan.name} (${plan.status || 'draft'})</option>`;
+    select.innerHTML += `<option value="${plan.id}">${plan.name} (${plan.status || 'draft'})</option>`;
   });
-  if (defaultBudget) selectEl.value = defaultBudget;
+  if (amount) amount.value = '';
+  modal.classList.add('active');
+};
+
+window.closeAllocationEntryModal = function() {
+  document.getElementById('allocationEntryModal')?.classList.remove('active');
+};
+
+window.confirmAllocationEntry = async function() {
+  const budgetId = document.getElementById('allocModalBudget')?.value;
+  const amountUsd = parseFloat(document.getElementById('allocModalAmount')?.value) || 0;
+  if (!budgetId || amountUsd <= 0) {
+    showToast('Select a budget and enter an amount greater than zero.', 'warning');
+    return;
+  }
+  const plans = await getBudgetPlansForTeam();
+  const plan = plans.find(p => p.id === budgetId);
+  const name = plan ? plan.name : 'Unknown Plan';
+  const forEdit = !!window._allocationModalForEdit;
+  const container = document.getElementById(forEdit ? 'editIncomeAllocationsContainer' : 'incomeAllocationsContainer');
+  appendAllocationSummaryRow(container, budgetId, amountUsd, name, forEdit);
+  window.closeAllocationEntryModal();
+  if (forEdit) window.onEditIncomeMathChange();
+  else window.onAllocationRowAmountInput();
+};
+
+window.addIncomeAllocationRow = async function(data = null) {
+  const budgetId = data ? (data.budgetId || data.budget_id || '') : '';
+  const amountUsd = data ? (data.amountUsd || data.amount_usd || '') : '';
+  if (!budgetId) {
+    window.openAllocationEntryModal(false);
+    return;
+  }
+  const plans = await getBudgetPlansForTeam();
+  const plan = plans.find(p => p.id === budgetId);
+  appendAllocationSummaryRow(
+    document.getElementById('incomeAllocationsContainer'),
+    budgetId,
+    amountUsd,
+    plan ? plan.name : 'Budget',
+    false
+  );
 };
 
 window.onAllocationRowAmountInput = function() {
@@ -417,8 +476,8 @@ window.createIncomeRecord = async function(e) {
   let totalAllocated = 0;
 
   allocRows.forEach(row => {
-    const budgetId = row.querySelector('.alloc-budget-select').value;
-    const amountUsd = parseFloat(row.querySelector('.alloc-usd-input').value) || 0;
+    const budgetId = row.dataset.budgetId || row.querySelector('.alloc-budget-select')?.value;
+    const amountUsd = parseFloat(row.dataset.amountUsd) || parseFloat(row.querySelector('.alloc-usd-input')?.value) || 0;
     if (budgetId && amountUsd > 0) {
       allocations.push({ budget_id: budgetId, amount_usd: amountUsd });
       totalAllocated += amountUsd;
@@ -566,11 +625,28 @@ export function getIncomeManagerPage() {
           </div>
 
           <div class="btn-group">
-            <button type="button" class="secondary" onclick="window.addEditIncomeAllocationRow()">+ Add Split</button>
+            <button type="button" class="secondary" onclick="window.openAllocationEntryModal(true)">+ Add Split</button>
             <button type="submit" class="success">Save Changes</button>
             <button type="button" class="secondary" onclick="window.closeEditIncomeModal()">Cancel</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div id="allocationEntryModal" class="modal">
+      <div class="modal-content small">
+        <button type="button" class="close-modal" onclick="window.closeAllocationEntryModal()">&times;</button>
+        <h2>Add Budget Allocation</h2>
+        <div class="field-labeled"><span>Budget Plan</span>
+          <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
+        </div>
+        <div class="field-labeled"><span>Amount (USD)</span>
+          <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00" required>
+        </div>
+        <div class="btn-group">
+          <button type="button" onclick="window.confirmAllocationEntry()">Add</button>
+          <button type="button" class="secondary" onclick="window.closeAllocationEntryModal()">Cancel</button>
+        </div>
       </div>
     </div>
   `;
@@ -704,50 +780,59 @@ export async function initIncomeManagerPage() {
 window.initIncomeManagerPage = initIncomeManagerPage;
 
 window.openEditIncomeRecord = async function(id) {
-  const rec = state.incomeRecords.find(r => r.id === id);
-  if (!rec) return;
+  try {
+    const rec = state.incomeRecords.find(r => r.id === id);
+    if (!rec) {
+      showToast('Income record not found.', 'error');
+      return;
+    }
 
-  // Ensure buckets loaded
-  if (teamBucketsCache.length === 0) await loadTeamBuckets();
-  if (exchangeRatesCache.length === 0) await loadExchangeRates();
+    if (teamBucketsCache.length === 0) await loadTeamBuckets();
+    if (exchangeRatesCache.length === 0) await loadExchangeRates();
 
-  document.getElementById('editIncId').value = rec.id;
-  document.getElementById('editIncDate').value = rec.date;
-  document.getElementById('editIncPaymentFrom').value = rec.payment_from || '';
+    document.getElementById('editIncId').value = rec.id;
+    document.getElementById('editIncDate').value = rec.date;
+    document.getElementById('editIncPaymentFrom').value = rec.payment_from || '';
 
-  // Populate bucket dropdown
-  const bucketSelect = document.getElementById('editIncBucketId');
-  bucketSelect.innerHTML = '<option value="">Select Bucket</option>';
-  teamBucketsCache.forEach(b => {
-    bucketSelect.innerHTML += `<option value="${b.id}" data-currency="${b.currency}">${b.name} (${b.currency})</option>`;
-  });
-  bucketSelect.value = rec.bucket_id || '';
+    const bucketSelect = document.getElementById('editIncBucketId');
+    bucketSelect.innerHTML = '<option value="">Select Bucket</option>';
+    teamBucketsCache.forEach(b => {
+      bucketSelect.innerHTML += `<option value="${b.id}" data-currency="${b.currency}">${b.name} (${b.currency})</option>`;
+    });
+    bucketSelect.value = rec.bucket_id || '';
 
-  // Trigger currency/rate update
-  window.onEditIncomeBucketChange(bucketSelect);
+    document.getElementById('editIncAmount').value = rec.amount_usd || 0;
+    document.getElementById('editIncExchangeRate').value = rec.exchange_rate || 1;
+    document.getElementById('editIncDescription').value = rec.description || '';
 
-  document.getElementById('editIncAmount').value = rec.amount_usd || 0;
-  document.getElementById('editIncExchangeRate').value = rec.exchange_rate || 1;
-  document.getElementById('editIncDescription').value = rec.description || '';
+    window.onEditIncomeBucketChange(bucketSelect, { preserveRate: true });
 
-  // Recalculate local amount
-  window.onEditIncomeMathChange();
+    window.onEditIncomeMathChange();
 
-  // Load allocations
-  const container = document.getElementById('editIncomeAllocationsContainer');
-  container.innerHTML = '';
-  const allocs = rec.budget_allocations || [];
-  allocs.forEach(a => window.addEditIncomeAllocationRow(a));
+    const container = document.getElementById('editIncomeAllocationsContainer');
+    container.innerHTML = '';
+    const plans = await getBudgetPlansForTeam();
+    const allocs = rec.budget_allocations || [];
+    allocs.forEach(a => {
+      const plan = plans.find(p => p.id === a.budget_id);
+      appendAllocationSummaryRow(container, a.budget_id, a.amount_usd, plan ? plan.name : 'Unknown Plan', true);
+    });
 
-  document.getElementById('editIncomeModal').classList.add('active');
+    document.getElementById('editIncomeModal').classList.add('active');
+  } catch (err) {
+    console.error('Open edit income error:', err);
+    showToast(err.message || 'Could not open edit form.', 'error');
+  }
 };
 
-window.onEditIncomeBucketChange = function(selectEl) {
+window.onEditIncomeBucketChange = function(selectEl, options = {}) {
+  const preserveRate = options.preserveRate === true;
   const bucketId = selectEl.value;
   const bucket = getBucketById(bucketId);
 
   const currencyDisplay = document.getElementById('editIncCurrencyDisplay');
   const rateInput = document.getElementById('editIncExchangeRate');
+  const rateLabel = document.getElementById('editIncExchangeRateLabel');
 
   if (!bucket) {
     if (currencyDisplay) currencyDisplay.value = 'USD';
@@ -776,35 +861,21 @@ window.onEditIncomeBucketChange = function(selectEl) {
 };
 
 window.addEditIncomeAllocationRow = async function(data = null) {
-  const container = document.getElementById('editIncomeAllocationsContainer');
-  if (!container) return;
-
-  const row = document.createElement('div');
-  row.className = 'alloc-line-card income-alloc-row';
-
-  const defaultBudget = data ? (data.budget_id || data.budgetId || '') : '';
-  const defaultAmount = data ? (data.amount_usd || data.amountUsd || '') : '';
-
-  row.innerHTML = `
-    <div class="field-labeled"><span>Budget Plan</span>
-      <select class="edit-alloc-budget-select" required>
-        <option value="">Select Budget</option>
-      </select>
-    </div>
-    <div class="field-labeled"><span>Amount (USD)</span>
-      <input type="number" class="edit-alloc-usd-input" step="0.01" placeholder="1245.50" value="${defaultAmount}" required oninput="window.onEditIncomeMathChange()">
-    </div>
-    <div class="alloc-line-card-actions">${btnIconDelete(`this.closest('.income-alloc-row').remove(); window.onEditIncomeMathChange();`, 'Remove')}</div>
-  `;
-  container.appendChild(row);
-
-  const selectEl = row.querySelector('.edit-alloc-budget-select');
-  const plans = state.budgetPlans || [];
-  plans.forEach(plan => {
-    const selectedAttr = plan.id === defaultBudget ? 'selected' : '';
-    selectEl.innerHTML += `<option value="${plan.id}" ${selectedAttr}>${plan.name}</option>`;
-  });
-  if (defaultBudget) selectEl.value = defaultBudget;
+  if (data?.budget_id || data?.budgetId) {
+    const plans = await getBudgetPlansForTeam();
+    const budgetId = data.budget_id || data.budgetId;
+    const plan = plans.find(p => p.id === budgetId);
+    appendAllocationSummaryRow(
+      document.getElementById('editIncomeAllocationsContainer'),
+      budgetId,
+      data.amount_usd || data.amountUsd || '',
+      plan ? plan.name : 'Unknown Plan',
+      true
+    );
+    window.onEditIncomeMathChange();
+    return;
+  }
+  window.openAllocationEntryModal(true);
 };
 
 window.onEditIncomeMathChange = function() {
@@ -823,7 +894,7 @@ window.onEditIncomeMathChange = function() {
   const rows = document.querySelectorAll('#editIncomeAllocationsContainer .income-alloc-row');
   let allocated = 0;
   rows.forEach(row => {
-    allocated += parseFloat(row.querySelector('.edit-alloc-usd-input').value) || 0;
+    allocated += parseFloat(row.dataset.amountUsd) || parseFloat(row.querySelector('.edit-alloc-usd-input')?.value) || 0;
   });
 
   document.getElementById('lblEditTotalIncome').textContent = amount.toFixed(2);
@@ -864,8 +935,8 @@ window.saveEditedIncomeRecord = async function(e) {
   let allocations = [];
   let totalAllocated = 0;
   rows.forEach(row => {
-    const bId = row.querySelector('.edit-alloc-budget-select').value;
-    const amt = parseFloat(row.querySelector('.edit-alloc-usd-input').value) || 0;
+    const bId = row.dataset.budgetId || row.querySelector('.edit-alloc-budget-select')?.value;
+    const amt = parseFloat(row.dataset.amountUsd) || parseFloat(row.querySelector('.edit-alloc-usd-input')?.value) || 0;
     if (bId && amt > 0) {
       allocations.push({ budget_id: bId, amount_usd: amt });
       totalAllocated += amt;
@@ -920,28 +991,30 @@ window.saveEditedIncomeRecord = async function(e) {
 };
 
 window.deleteIncomeRecord = async function(id) {
-  if (!confirm('Are you sure you want to delete this income entry? Allocations tied to it will clear.')) return;
+  showConfirm(
+    'Are you sure you want to delete this income entry? Allocations tied to it will clear.',
+    async () => {
+      const existing = state.incomeRecords.find(r => r.id === id);
 
-  const existing = state.incomeRecords.find(r => r.id === id);
+      try {
+        const result = await sbSoftDelete('income', id);
+        if (result && result.error) throw new Error(result.error.message);
 
-  try {
-    const result = await sbSoftDelete('income', id);
-    if (result && result.error) throw new Error(result.error.message);
+        const teamId = state.currentTeam?.team_id;
+        state.incomeRecords = [];
+        const all = await localGetAll('income');
+        state.incomeRecords = all.filter(i => i.team_id === teamId && !i.is_deleted);
 
-    const teamId = state.currentTeam?.team_id;
-    state.incomeRecords = [];
-    const all = await localGetAll('income');
-    state.incomeRecords = all.filter(i => i.team_id === teamId && !i.is_deleted);
+        await auditLog('DELETE', 'income', id, existing, null);
 
-    // Audit log the soft delete
-    await auditLog('DELETE', 'income', id, existing, null);
-
-    showToast('Income record removed.', 'success');
-    initIncomeManagerPage();
-  } catch (err) {
-    console.error('Delete income error:', err);
-    showToast('Failed to drop record', 'error');
-  }
+        showToast('Income record removed.', 'success');
+        initIncomeManagerPage();
+      } catch (err) {
+        console.error('Delete income error:', err);
+        showToast('Failed to drop record', 'error');
+      }
+    }
+  );
 };
 
 window.closeEditIncomeModal = function() {

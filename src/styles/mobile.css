@@ -153,12 +153,8 @@
   }
 
   .sync-status {
-    bottom: calc(var(--bottom-nav-height) + 6px);
-    left: 8px;
-    right: auto;
-    padding: 2px 8px;
-    font-size: 0.68em;
-    max-width: 72px;
+    bottom: calc(4px + env(safe-area-inset-bottom, 0));
+    left: 4px;
   }
 
   .toast-container {
@@ -220,12 +216,13 @@
 
   .table-stack-mobile tbody td.action-buttons,
   .table-stack-mobile tbody td.col-comments {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 
   .table-stack-mobile tbody td.action-buttons::before {
-    flex: 0 0 100%;
-    margin-bottom: 4px;
+    flex: 0 0 auto;
+    max-width: 46%;
+    margin-bottom: 0;
   }
 
   .table-stack-mobile .recon-actual-input,

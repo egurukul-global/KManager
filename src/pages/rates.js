@@ -1,7 +1,7 @@
 // ==================== EXCHANGE RATES PAGE ====================
 import { state } from '../state.js';
 import { sbSelect, sbInsert, sbSoftDelete } from '../db.js';
-import { showToast } from '../components/toasts.js';
+import { showToast, showConfirm } from '../components/toasts.js';
 import { btnIconDelete } from '../utils/uiHelpers.js';
 import { LOCAL_CURRENCIES, rateDisplayLabel, normalizeRateRecord } from '../utils/currency.js';
 
@@ -165,15 +165,15 @@ async function addRate(e) {
 }
 
 async function deleteRate(rateId) {
-  if (!confirm('Delete this exchange rate?')) return;
-
-  try {
-    const { error } = await sbSoftDelete('exchange_rates', rateId);
-    if (error) throw error;
-    showToast('Rate deleted', 'success');
-    await loadRates();
-  } catch (err) {
-    console.error('Delete rate error:', err);
-    showToast('Failed to delete rate: ' + err.message, 'error');
-  }
+  showConfirm('Delete this exchange rate?', async () => {
+    try {
+      const { error } = await sbSoftDelete('exchange_rates', rateId);
+      if (error) throw error;
+      showToast('Rate deleted', 'success');
+      await loadRates();
+    } catch (err) {
+      console.error('Delete rate error:', err);
+      showToast('Failed to delete rate: ' + err.message, 'error');
+    }
+  });
 }

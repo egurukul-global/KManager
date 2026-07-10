@@ -1150,25 +1150,45 @@ tr.selected { background: #e7f3ff !important; }
 .allocation-row input,
 .allocation-row select { margin-bottom: 0; }
 
-/* ===== SYNC STATUS ===== */
-.sync-status {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  padding: 10px 15px;
-  border-radius: 8px;
-  font-size: 0.85em;
-  font-weight: 500;
-  z-index: 2500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.3s;
+/* ===== SYNC STATUS (see ui-components.css for layout) ===== */
+.sync-status.online { background: none; }
+.sync-status.offline { background: none; }
+.sync-status.syncing { background: none; }
+.sync-status.error { background: none; }
+
+/* ===== ALERT MODAL ===== */
+.alert-modal-content {
+  text-align: center;
+  max-width: 400px;
 }
-.sync-status.online { background: #d4edda; color: #155724; }
-.sync-status.offline { background: #fff3cd; color: #856404; }
-.sync-status.syncing { background: #d1ecf1; color: #0c5460; }
-.sync-status.error { background: #f8d7da; color: #721c24; }
+
+.alert-modal-title {
+  margin-bottom: 16px;
+  font-size: 1.1em;
+}
+
+.alert-modal-body {
+  margin-bottom: 24px;
+  line-height: 1.6;
+  text-align: left;
+  word-break: break-word;
+}
+
+.alert-modal-actions {
+  justify-content: center;
+}
+
+.alert-modal-actions .primary {
+  min-width: 120px;
+}
+
+@media (min-width: 769px) {
+  .sync-status {
+    bottom: 20px;
+    left: auto;
+    right: 20px;
+  }
+}
 
 /* ===== MISC ===== */
 .currency-display { font-family: 'Courier New', monospace; font-weight: bold; }

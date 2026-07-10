@@ -1,7 +1,7 @@
 // ==================== BUDGET CALENDAR (ADMIN) ====================
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
-import { showToast } from '../components/toasts.js';
+import { showToast, showConfirm } from '../components/toasts.js';
 import { computeSubmissionDeadline, formatDisplayDate } from '../utils/budgetCalendar.js';
 import { btnIconEdit, btnIconDelete } from '../utils/uiHelpers.js';
 
@@ -212,16 +212,17 @@ async function saveCalendarEntry(e) {
 }
 
 async function deleteCalendarEntry(id) {
-  if (!confirm('Delete this calendar entry?')) return;
-  try {
-    const { error } = await supabaseClient
-      .from('budget_calendar_entries')
-      .update({ is_deleted: true, updated_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) throw error;
-    showToast('Entry deleted', 'success');
-    await loadCalendarEntries();
-  } catch (err) {
-    showToast(err.message || 'Delete failed', 'error');
-  }
+  showConfirm('Delete this calendar entry?', async () => {
+    try {
+      const { error } = await supabaseClient
+        .from('budget_calendar_entries')
+        .update({ is_deleted: true, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      if (error) throw error;
+        showToast('Entry deleted', 'success');
+      await loadCalendarEntries();
+    } catch (err) {
+      showToast(err.message || 'Delete failed', 'error');
+    }
+  });
 }

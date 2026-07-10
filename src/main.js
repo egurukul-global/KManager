@@ -253,13 +253,22 @@ function updateSyncStatus(status) {
   if (!indicator) return;
 
   indicator.className = 'sync-status ' + status;
-  const texts = {
-    online: '🟢 Online',
-    offline: '🟡 Offline',
-    syncing: '🔵 Syncing...',
-    error: '🔴 Sync Error'
+  const icons = {
+    online: '🟢',
+    offline: '🟡',
+    syncing: '🔵',
+    error: '🔴'
   };
-  indicator.textContent = texts[status] || status;
+  const labels = {
+    online: 'Online',
+    offline: 'Offline',
+    syncing: 'Syncing',
+    error: 'Error'
+  };
+  const iconEl = indicator.querySelector('.sync-status-icon');
+  const labelEl = indicator.querySelector('.sync-status-label');
+  if (iconEl) iconEl.textContent = icons[status] || '⚪';
+  if (labelEl) labelEl.textContent = labels[status] || status;
 }
 
 // ==================== TEAM SWITCHER ====================
@@ -462,7 +471,10 @@ function renderAppShell() {
       </div>
     </div>
 
-    <div class="sync-status online" id="syncIndicator">🟢 Online</div>
+    <div class="sync-status online" id="syncIndicator">
+      <span class="sync-status-icon">🟢</span>
+      <span class="sync-status-label">Online</span>
+    </div>
     <div class="toast-container" id="toastContainer"></div>
 
     <nav class="bottom-nav" aria-label="Main navigation">

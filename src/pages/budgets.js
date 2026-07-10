@@ -1,7 +1,7 @@
 /* ========== BUDGET PLANS CRUD ========== */
 import { state } from '../state.js';
 import { supabaseClient, localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete, sbSelect } from '../db.js';
-import { showToast } from '../components/toasts.js';
+import { showToast, showConfirm } from '../components/toasts.js';
 import { getLatestUsdRate, getLocalCurrenciesFromRates, usdToLocal, rateForInput } from '../utils/currency.js';
 import { loadCategoryMasterLines, normalizeBudgetCategory } from '../utils/categoryMaster.js';
 import { formatDisplayDate } from '../utils/budgetCalendar.js';
@@ -197,6 +197,10 @@ window.addCategoryRow = function() {
   const row = document.createElement('div');
   row.className = 'budget-line-card category-row';
   row.innerHTML = `
+    <div class="line-card-header">
+      <span class="line-card-header-label">Category line</span>
+      ${btnIconDelete('window.removeCategoryRow(this)', 'Remove')}
+    </div>
     <div class="field-labeled"><span>Category</span>
       <select class="budget-cat-name" required><option value="">Select Category</option></select>
     </div>
@@ -212,7 +216,6 @@ window.addCategoryRow = function() {
     <div class="field-labeled"><span>Local Amount</span>
       <input type="number" class="budget-cat-local" step="0.01" placeholder="Local" readonly>
     </div>
-    <div class="budget-line-card-actions">${btnIconDelete('window.removeCategoryRow(this)', 'Remove')}</div>
   `;
   container.appendChild(row);
   populateCategoryRows();
@@ -876,7 +879,10 @@ window.addEditCategoryRow = function(categoryData = null, options = {}) {
 
   const removeBtn = isTemplate
     ? ''
-    : `<div class="budget-line-card-actions">${btnIconDelete('window.removeEditCategoryRow(this)', 'Remove')}</div>`;
+    : `<div class="line-card-header">
+        <span class="line-card-header-label">${escapeHtmlAttr(displayName) || 'Category'}</span>
+        ${btnIconDelete('window.removeEditCategoryRow(this)', 'Remove')}
+      </div>`;
 
   let nameFields;
   if (isTemplate || (normalized && normalized.category && !isCustom)) {
@@ -884,7 +890,7 @@ window.addEditCategoryRow = function(categoryData = null, options = {}) {
       <input type="hidden" class="edit-budget-cat-category" value="${escapeHtmlAttr(normalized?.category || '')}">
       <input type="hidden" class="edit-budget-cat-subcategory" value="${escapeHtmlAttr(normalized?.subcategory || '')}">
       <input type="hidden" class="edit-budget-cat-name-value" value="${escapeHtmlAttr(displayName)}">
-      <div class="budget-line-card-title">${escapeHtmlAttr(displayName)}</div>`;
+      ${isTemplate ? `<div class="budget-line-card-title">${escapeHtmlAttr(displayName)}</div>` : ''}`;
   } else {
     nameFields = `
       <div class="field-labeled"><span>Category</span>
@@ -1161,23 +1167,23 @@ window.deleteBudgetPlan = async function(id) {
     msg += `\n\n⚠️ This budget has ${expenseCount} expense(s) recorded. They will remain but won't be linked to any budget.`;
   }
 
-  if (!confirm(msg)) return;
-
-  try {
-    const result = await sbSoftDelete('budget_plans', id);
-    if (result && !result.error) {
-      showToast(`Budget "${budget.name}" deleted`, 'success');
-      const teamId = state.currentTeam?.team_id;
-      const all = await localGetAll('budget_plans');
-      state.budgetPlans = all.filter(b => b.team_id === teamId && !b.is_deleted);
-      initViewBudgetsPage();
-    } else {
-      showToast(result?.error?.message || 'Failed to delete budget', 'error');
+  showConfirm(msg.replace(/\n/g, '<br>'), async () => {
+    try {
+      const result = await sbSoftDelete('budget_plans', id);
+      if (result && !result.error) {
+        showToast(`Budget "${budget.name}" deleted`, 'success');
+        const teamId = state.currentTeam?.team_id;
+        const all = await localGetAll('budget_plans');
+        state.budgetPlans = all.filter(b => b.team_id === teamId && !b.is_deleted);
+        initViewBudgetsPage();
+      } else {
+        showToast(result?.error?.message || 'Failed to delete budget', 'error');
+      }
+    } catch (err) {
+      console.error('Delete budget error:', err);
+      showToast('Failed to delete budget', 'error');
     }
-  } catch (err) {
-    console.error('Delete budget error:', err);
-    showToast('Failed to delete budget', 'error');
-  }
+  });
 };
 
 window.addEventListener('click', function(event) {
