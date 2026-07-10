@@ -218,7 +218,7 @@ function generateFinancialStatus() {
         <td data-label="- Expenses" class="negative">-${row.expenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td data-label="- Transfers Out" class="negative">-${row.transfersOut.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
         <td data-label="Closing" class="${closingClass}"><strong>${row.closing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
-        <td data-label="USD Equiv" style="color:#667eea;">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
+        <td data-label="USD Equiv" style="color:var(--primary);">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
       </tr>
     `;
   });
@@ -226,7 +226,7 @@ function generateFinancialStatus() {
   html += `
       <tr class="status-total">
         <td data-label="Total USD Equivalent" colspan="9" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
-        <td data-label="Amount" style="color:#667eea;"><strong>$${grandUsd.toFixed(2)}</strong></td>
+        <td data-label="Amount" style="color:var(--primary);"><strong>$${grandUsd.toFixed(2)}</strong></td>
       </tr>
     </tbody></table></div>
     <div class="recon-help-box">
@@ -605,7 +605,7 @@ async function viewReconciliationHistory(submissionId) {
           <td data-label="Closing"><strong>${fmt(line.closing_balance)}</strong></td>
           <td data-label="Actual"><strong>${fmt(line.actual_balance)}</strong></td>
           <td data-label="Difference" class="${diffLevel}">${diffText}</td>
-          <td data-label="USD Equiv" style="color:#667eea;">${line.usd_equivalent !== null && line.usd_equivalent !== undefined ? `$${fmt(line.usd_equivalent)}` : '—'}</td>
+          <td data-label="USD Equiv" style="color:var(--primary);">${line.usd_equivalent !== null && line.usd_equivalent !== undefined ? `$${fmt(line.usd_equivalent)}` : '—'}</td>
           <td data-label="Comments">${line.comments || '—'}</td>
         </tr>
       `;
@@ -633,7 +633,7 @@ async function viewReconciliationHistory(submissionId) {
               ${rowsHtml}
               <tr class="status-total">
                 <td data-label="Total USD Equivalent" colspan="11" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
-                <td data-label="Amount" style="color:#667eea;"><strong>$${grandUsd.toFixed(2)}</strong></td>
+                <td data-label="Amount" style="color:var(--primary);"><strong>$${grandUsd.toFixed(2)}</strong></td>
                 <td data-label=""></td>
               </tr>
             </tbody>

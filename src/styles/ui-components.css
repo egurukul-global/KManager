@@ -229,43 +229,47 @@
   margin-bottom: 8px;
 }
 
-/* Sync status — styled like bottom-nav item */
+/* Sync status — lives inside bottom nav (mobile) or sidebar (desktop) */
 .sync-status {
-  position: fixed;
-  z-index: 1002;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 4px 6px;
-  background: none;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.65em;
+  gap: 1px;
   font-weight: 600;
-  line-height: 1.1;
-  bottom: calc(4px + env(safe-area-inset-bottom, 0));
-  left: 8px;
-  right: auto;
-  max-width: none;
-  white-space: nowrap;
-  pointer-events: none;
+  line-height: 1.05;
 }
 
-.sync-status-icon {
-  font-size: 1.35em;
+.sync-status-icon,
+.bottom-nav-status .sync-status-icon {
+  font-size: 1.15em;
   line-height: 1;
 }
 
-.sync-status-label {
-  line-height: 1.1;
+.sync-status-label,
+.bottom-nav-status .sync-status-label {
+  font-size: 0.58em;
+  line-height: 1.05;
 }
 
-.sync-status.online .sync-status-label { color: #198754; }
-.sync-status.offline .sync-status-label { color: #856404; }
-.sync-status.syncing .sync-status-label { color: #0c5460; }
-.sync-status.error .sync-status-label { color: #dc3545; }
+.sidebar-sync {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 0.82em;
+}
+
+.sidebar-sync .sync-status-icon { font-size: 1em; }
+.sidebar-sync .sync-status-label { font-size: 0.95em; }
+.sidebar-sync.online .sync-status-label { color: #7dcea0; }
+.sidebar-sync.offline .sync-status-label { color: var(--accent-gold-light); }
+.sidebar-sync.error .sync-status-label { color: #f5a5a5; }
 
 /* Reconcile stacked cards — consistent fonts */
 .table-stack-mobile.recon-table tbody td {
@@ -290,8 +294,9 @@
 .budget-grand-total-card {
   margin-top: 8px;
   padding: 12px 14px;
-  background: #f0f4ff;
-  border: 1px solid #c7d2fe;
+  background: #F5EDE8;
+  border: 1px solid var(--accent-gold-light);
+  border-left: var(--gold-border) solid var(--accent-gold);
   border-radius: var(--radius-sm);
   font-weight: 600;
 }

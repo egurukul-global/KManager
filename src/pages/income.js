@@ -158,7 +158,7 @@ export function getRecordIncomePage() {
         <div class="form-stack">
           <div class="form-grid-row form-grid-row--income-record-main">
             <div class="form-group"><label class="required">Payment From</label><input type="text" id="incPaymentFrom" placeholder="KMOF" required></div>
-            <div class="form-group"><label class="required">Amount <span id="incCurrencyLabel" style="font-weight:600;color:#4f46e5;">(USD)</span></label><input type="number" class="input-amount" id="incAmount" step="0.01" placeholder="0.00" required oninput="window.onIncomeMathFieldsChange()"></div>
+            <div class="form-group"><label class="required">Amount <span id="incCurrencyLabel" style="color: var(--primary);">(USD)</span></label><input type="number" class="input-amount" id="incAmount" step="0.01" placeholder="0.00" required oninput="window.onIncomeMathFieldsChange()"></div>
             <div class="form-group"><label class="required">Payment Bucket</label><select id="incBucketId" required onchange="window.onIncomeBucketChange(this)"><option value="">Loading…</option></select></div>
           </div>
           <div class="form-grid-row form-grid-row--income-record-secondary">
@@ -198,7 +198,7 @@ export function getRecordIncomePage() {
           <div class="income-totals-bar" style="display: flex; justify-content: space-between; font-weight: bold; font-size: 0.95em;">
             <span>Total Income: $<span id="lblTotalIncomeDisplay">0.00</span></span>
             <span>Allocated: $<span id="lblTotalAllocatedDisplay">0.00</span></span>
-            <span style="color: #4f46e5;">Unallocated: $<span id="lblUnallocatedDisplay">0.00</span></span>
+            <span style="color: var(--primary);">Unallocated: $<span id="lblUnallocatedDisplay">0.00</span></span>
           </div>
           <div id="allocationFormError" style="color: #dc3545; font-size: 0.85em; margin-top: 8px; display: none; font-weight: bold;"></div>
         </div>
@@ -327,7 +327,7 @@ function recalculateAllocationSummaries() {
   if (lblAllocated) lblAllocated.textContent = totalAllocated.toFixed(2);
   if (lblUnallocated) {
     lblUnallocated.textContent = unallocated.toFixed(2);
-    lblUnallocated.parentElement.style.color = unallocated < 0 ? '#dc3545' : '#4f46e5';
+    lblUnallocated.parentElement.style.color = unallocated < 0 ? 'var(--danger)' : 'var(--primary)';
   }
 
   if (errContainer) {
@@ -603,7 +603,7 @@ export function getIncomeManagerPage() {
           <div class="form-stack">
             <div class="form-grid-row form-grid-row--income-edit-main">
               <div class="form-group"><label class="required">Payment From</label><input type="text" id="editIncPaymentFrom" required></div>
-              <div class="form-group"><label class="required">Amount <span id="editIncCurrencyLabel" style="font-weight:600;color:#4f46e5;">(USD)</span></label><input type="number" class="input-amount" id="editIncAmount" step="0.01" required oninput="window.onEditIncomeMathChange()"></div>
+              <div class="form-group"><label class="required">Amount <span id="editIncCurrencyLabel" style="color: var(--primary);">(USD)</span></label><input type="number" class="input-amount" id="editIncAmount" step="0.01" required oninput="window.onEditIncomeMathChange()"></div>
               <div class="form-group"><label class="required">Bucket</label><select id="editIncBucketId" required onchange="window.onEditIncomeBucketChange(this)"><option value="">Loading…</option></select></div>
             </div>
             <div class="form-grid-row form-grid-row--income-edit-meta">

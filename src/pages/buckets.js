@@ -135,11 +135,18 @@ function renderBucketGrid(buckets) {
       <div class="bucket-card ${isDeleted ? 'deleted' : ''}">
         ${isDeleted ? '<div class="deleted-banner">DELETED</div>' : ''}
         <div class="bucket-header">
-          <div>
+          <div class="bucket-header-main">
             <div class="bucket-name">${typeEmoji} ${bucket.name}</div>
             <div class="bucket-type">${bucket.type?.replace(/_/g, ' ') || 'Other'}${isPersonal ? ' · Personal' : ''}</div>
           </div>
-          <span class="badge badge-info">${bucket.currency}</span>
+          <div class="bucket-header-end">
+            <span class="badge badge-info">${bucket.currency}</span>
+            <span class="action-icon-group">
+              ${canEdit ? btnIconEdit(`window.loadBucketForEdit('${bucket.id}')`) : ''}
+              ${canDelete ? btnIconDelete(`window.confirmDeleteBucket('${bucket.id}', '${safeName}')`) : ''}
+              ${canRestore ? `<button class="btn-icon btn-icon--edit" onclick="window.restoreBucket('${bucket.id}')" title="Restore">↩</button>` : ''}
+            </span>
+          </div>
         </div>
         <div class="bucket-balance ${balanceClass}">
           ${(bucket.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})} ${bucket.currency}
@@ -147,11 +154,6 @@ function renderBucketGrid(buckets) {
         <div class="bucket-meta">
           <span>💰 Balance: ${(bucket.balance || 0).toLocaleString()} ${bucket.currency}</span>
           <span>📅 ${new Date(bucket.created_at).toLocaleDateString()}</span>
-        </div>
-        <div class="bucket-actions">
-          ${canEdit ? btnIconEdit(`window.loadBucketForEdit('${bucket.id}')`) : ''}
-          ${canDelete ? btnIconDelete(`window.confirmDeleteBucket('${bucket.id}', '${safeName}')`) : ''}
-          ${canRestore ? `<button class="btn-icon btn-icon--edit" onclick="window.restoreBucket('${bucket.id}')" title="Restore">↩</button>` : ''}
         </div>
       </div>
     `;

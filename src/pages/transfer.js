@@ -98,9 +98,9 @@ export function getTransferFundsPage() {
             <div class="form-group"><label>Destination Bucket</label><select id="trDestBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trDestCurrency">Currency: —</span></div>
           </div>
           <div class="form-grid-row form-grid-row--transfer-amount">
-            <div class="form-group"><label>Amount <span id="trAmountCurrencyLabel" style="font-weight:600;color:#4f46e5;">(USD)</span></label><input type="number" class="input-amount" id="trAmount" step="0.01" placeholder="0.00" required oninput="window.onTransferAmountChange()"></div>
+            <div class="form-group"><label>Amount <span id="trAmountCurrencyLabel" style="font-weight:600;color:var(--primary);">(USD)</span></label><input type="number" class="input-amount" id="trAmount" step="0.01" placeholder="0.00" required oninput="window.onTransferAmountChange()"></div>
             <div class="form-group"><label id="trRateLabel">Rate (1 USD = ?)</label><input type="number" class="input-rate" id="trRate" step="any" min="0.000001" placeholder="95.4" oninput="window.onTransferAmountChange()"></div>
-            <div class="form-group"><label>Converted <span id="trConvertedCurrencyLabel" style="font-weight:600;color:#4f46e5;"></span></label><input type="number" class="input-amount" id="trConvertedAmount" step="0.01" readonly style="background:#f3f4f6;"><span class="form-field-hint" id="trConvertedLabel">—</span></div>
+            <div class="form-group"><label>Converted <span id="trConvertedCurrencyLabel" style="font-weight:600;color:var(--primary);"></span></label><input type="number" class="input-amount" id="trConvertedAmount" step="0.01" readonly style="background:#f3f4f6;"><span class="form-field-hint" id="trConvertedLabel">—</span></div>
           </div>
           <div class="form-group"><label>Reference Memo</label><textarea id="trMemo" rows="2" placeholder="Optional"></textarea></div>
         </div>

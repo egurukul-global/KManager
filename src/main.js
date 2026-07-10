@@ -249,10 +249,6 @@ function handleOffline() {
 }
 
 function updateSyncStatus(status) {
-  const indicator = document.getElementById('syncIndicator');
-  if (!indicator) return;
-
-  indicator.className = 'sync-status ' + status;
   const icons = {
     online: '🟢',
     offline: '🟡',
@@ -265,10 +261,20 @@ function updateSyncStatus(status) {
     syncing: 'Syncing',
     error: 'Error'
   };
-  const iconEl = indicator.querySelector('.sync-status-icon');
-  const labelEl = indicator.querySelector('.sync-status-label');
-  if (iconEl) iconEl.textContent = icons[status] || '⚪';
-  if (labelEl) labelEl.textContent = labels[status] || status;
+
+  document.querySelectorAll('.sync-status').forEach(indicator => {
+    if (indicator.classList.contains('bottom-nav-status') || indicator.id === 'syncIndicator') {
+      indicator.className = `bottom-nav-item bottom-nav-status sync-status ${status}`;
+    } else if (indicator.classList.contains('sidebar-sync')) {
+      indicator.className = `sidebar-sync sync-status show-desktop ${status}`;
+    } else {
+      indicator.className = `sync-status ${status}`;
+    }
+    const iconEl = indicator.querySelector('.sync-status-icon');
+    const labelEl = indicator.querySelector('.sync-status-label');
+    if (iconEl) iconEl.textContent = icons[status] || '⚪';
+    if (labelEl) labelEl.textContent = labels[status] || status;
+  });
 }
 
 // ==================== TEAM SWITCHER ====================
@@ -457,6 +463,10 @@ function renderAppShell() {
         </nav>
 
         <div class="sidebar-footer">
+          <div class="sidebar-sync sync-status online show-desktop" id="syncIndicatorSidebar" aria-live="polite">
+            <span class="sync-status-icon">🟢</span>
+            <span class="sync-status-label">Online</span>
+          </div>
           <button type="button" class="sidebar-signout" onclick="window.handleLogout()">Sign Out</button>
         </div>
       </aside>
@@ -471,13 +481,13 @@ function renderAppShell() {
       </div>
     </div>
 
-    <div class="sync-status online" id="syncIndicator">
-      <span class="sync-status-icon">🟢</span>
-      <span class="sync-status-label">Online</span>
-    </div>
     <div class="toast-container" id="toastContainer"></div>
 
     <nav class="bottom-nav" aria-label="Main navigation">
+      <div class="bottom-nav-item bottom-nav-status sync-status online" id="syncIndicator" aria-live="polite">
+        <span class="bottom-nav-icon sync-status-icon">🟢</span>
+        <span class="bottom-nav-label sync-status-label">Online</span>
+      </div>
       <button type="button" class="bottom-nav-item active" data-tab="dashboard" onclick="window.navToTab('dashboard')">
         <span class="bottom-nav-icon">📊</span>
         <span class="bottom-nav-label">Home</span>

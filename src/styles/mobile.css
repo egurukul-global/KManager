@@ -32,7 +32,7 @@
 }
 
 .data-card--clickable:active {
-  border-color: var(--primary);
+  border-color: var(--accent-gold);
   box-shadow: var(--shadow);
 }
 
@@ -111,12 +111,12 @@
     right: 0;
     height: var(--bottom-nav-height);
     background: var(--card-bg);
-    border-top: 1px solid var(--border);
+    border-top: var(--gold-border) solid var(--accent-gold);
     z-index: 1001;
-    padding: 4px 6px calc(4px + env(safe-area-inset-bottom, 0));
+    padding: 2px 2px calc(2px + env(safe-area-inset-bottom, 0));
     justify-content: space-around;
     align-items: stretch;
-    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 -2px 12px rgba(44, 24, 16, 0.1);
   }
 
   .bottom-nav-item {
@@ -125,37 +125,49 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 1px;
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 0.65em;
+    font-size: 0.58em;
     font-weight: 600;
     cursor: pointer;
-    padding: 4px 2px;
-    min-height: var(--touch-min);
+    padding: 2px 1px;
+    min-height: 0;
+    min-width: 0;
     width: auto !important;
-    border-radius: 8px;
+    border-radius: 6px;
   }
 
   .bottom-nav-item.active {
     color: var(--primary);
-    background: rgba(102, 126, 234, 0.08);
+    background: rgba(154, 68, 82, 0.08);
+    box-shadow: inset 0 3px 0 var(--accent-gold);
+  }
+
+  .bottom-nav-status {
+    cursor: default;
+    pointer-events: none;
+    flex: 0.85;
   }
 
   .bottom-nav-icon {
-    font-size: 1.35em;
+    font-size: 1.15em;
     line-height: 1;
   }
 
   .bottom-nav-label {
-    line-height: 1.1;
+    line-height: 1.05;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .sync-status {
-    bottom: calc(4px + env(safe-area-inset-bottom, 0));
-    left: 4px;
-  }
+  .sync-status.online .sync-status-label { color: #198754; }
+  .sync-status.offline .sync-status-label { color: var(--warning); }
+  .sync-status.syncing .sync-status-label { color: var(--info); }
+  .sync-status.error .sync-status-label { color: var(--danger); }
 
   .toast-container {
     top: 60px;
