@@ -2,7 +2,7 @@
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
-import { computeSubmissionDeadline, formatDisplayDate } from '../utils/budgetCalendar.js';
+import { computeSubmissionDeadline, formatDisplayDate, CALENDAR_STATUS_OPEN, CALENDAR_STATUS_CLOSED, getCalendarStatusLabel } from '../utils/budgetCalendar.js';
 import { btnIconEdit, btnIconDelete } from '../utils/uiHelpers.js';
 
 function isOrgAdmin() {
@@ -24,6 +24,7 @@ export function getBudgetCalendarPage() {
     <p style="color: var(--text-secondary); margin-bottom: 16px;">
       Add each budget period date from the Hindu calendar. Multiple periods can fall in the same month — each <strong>date is unique</strong>.
       Teams submit monthly budgets by <strong>10 days before</strong> the period date.
+      Set status to <strong>Open</strong> when teams should be allowed to create monthly budgets for that period.
     </p>
 
     <div class="card">
@@ -34,6 +35,12 @@ export function getBudgetCalendarPage() {
           <div class="form-grid-row form-grid-row--calendar">
             <div class="form-group"><label>Period Date *</label><input type="date" id="calendarPeriodDate" required onchange="window.updateCalendarDeadlinePreview()"></div>
             <div class="form-group"><label>Deadline (T−10)</label><input type="text" id="calendarDeadlinePreview" readonly placeholder="Auto"></div>
+            <div class="form-group"><label>Status *</label>
+              <select id="calendarStatus" required>
+                <option value="${CALENDAR_STATUS_CLOSED}">Closed</option>
+                <option value="${CALENDAR_STATUS_OPEN}">Open</option>
+              </select>
+            </div>
             <div class="form-group"><label>Label</label><input type="text" id="calendarLabel" placeholder="Ashadh period"></div>
           </div>
           <div class="form-group"><label>Notes</label><textarea id="calendarNotes" rows="2" placeholder="Internal note"></textarea></div>
@@ -64,13 +71,14 @@ export function getBudgetCalendarPage() {
             <tr>
               <th>Period Date</th>
               <th>Submit By</th>
+              <th>Status</th>
               <th>Label</th>
               <th>Notes</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="calendarEntriesList">
-            <tr><td colspan="5" class="empty-state">Loading…</td></tr>
+            <tr><td colspan="6" class="empty-state">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -102,7 +110,15 @@ function updateCalendarDeadlinePreview() {
 function resetCalendarForm() {
   document.getElementById('calendarEntryId').value = '';
   document.getElementById('calendarForm').reset();
+  const statusEl = document.getElementById('calendarStatus');
+  if (statusEl) statusEl.value = CALENDAR_STATUS_CLOSED;
   updateCalendarDeadlinePreview();
+}
+
+function calendarStatusBadge(status) {
+  const label = getCalendarStatusLabel(status);
+  const cls = status === CALENDAR_STATUS_OPEN ? 'badge-success' : 'badge-secondary';
+  return `<span class="badge ${cls}">${label}</span>`;
 }
 
 let calendarEntriesList = [];
@@ -115,7 +131,7 @@ function filterEntriesByYear(entries, year) {
 async function loadCalendarEntries() {
   const tbody = document.getElementById('calendarEntriesList');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading…</td></tr>';
 
   const filter = document.getElementById('calendarFilter')?.value || 'upcoming';
   const today = new Date().toISOString().split('T')[0];
@@ -140,7 +156,7 @@ async function loadCalendarEntries() {
     calendarEntriesList = filtered;
 
     if (!calendarEntriesList.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No calendar entries yet. Add period dates above.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No calendar entries yet. Add period dates above.</td></tr>';
       return;
     }
 
@@ -148,6 +164,7 @@ async function loadCalendarEntries() {
       <tr>
         <td data-label="Period"><strong>${formatDisplayDate(entry.budget_period_date)}</strong></td>
         <td data-label="Submit By">${formatDisplayDate(entry.submission_deadline)}</td>
+        <td data-label="Status">${calendarStatusBadge(entry.status)}</td>
         <td data-label="Label">${entry.label || '—'}</td>
         <td data-label="Notes">${entry.notes || '—'}</td>
         <td data-label="Actions" class="action-buttons">
@@ -158,7 +175,7 @@ async function loadCalendarEntries() {
     `).join('');
   } catch (err) {
     console.error('Load calendar error:', err);
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state" style="color:#dc3545;">${err.message}. Run the SQL migration first.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state" style="color:#dc3545;">${err.message}. Run the SQL migration first.</td></tr>`;
   }
 }
 
@@ -167,6 +184,7 @@ function editCalendarEntry(id) {
   if (!entry) return;
   document.getElementById('calendarEntryId').value = entry.id;
   document.getElementById('calendarPeriodDate').value = entry.budget_period_date;
+  document.getElementById('calendarStatus').value = entry.status || CALENDAR_STATUS_CLOSED;
   document.getElementById('calendarLabel').value = entry.label || '';
   document.getElementById('calendarNotes').value = entry.notes || '';
   updateCalendarDeadlinePreview();
@@ -178,12 +196,14 @@ async function saveCalendarEntry(e) {
   const id = document.getElementById('calendarEntryId').value;
   const budget_period_date = document.getElementById('calendarPeriodDate').value;
   const submission_deadline = computeSubmissionDeadline(budget_period_date);
+  const status = document.getElementById('calendarStatus').value || CALENDAR_STATUS_CLOSED;
   const label = document.getElementById('calendarLabel').value.trim() || null;
   const notes = document.getElementById('calendarNotes').value.trim() || null;
 
   const payload = {
     budget_period_date,
     submission_deadline,
+    status,
     label,
     notes,
     updated_at: new Date().toISOString()

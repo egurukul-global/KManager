@@ -1,5 +1,23 @@
 // ==================== BUDGET CALENDAR HELPERS ====================
 
+export const CALENDAR_STATUS_OPEN = 'open';
+export const CALENDAR_STATUS_CLOSED = 'closed';
+
+/** Only open calendar periods can be used for monthly budget creation. */
+export function isCalendarEntryOpen(entry) {
+  if (!entry || entry.is_deleted) return false;
+  const status = entry.status ?? CALENDAR_STATUS_OPEN;
+  return status === CALENDAR_STATUS_OPEN;
+}
+
+export function getCalendarStatusLabel(status) {
+  return status === CALENDAR_STATUS_CLOSED ? 'Closed' : 'Open';
+}
+
+export function filterOpenCalendarEntries(entries) {
+  return (entries || []).filter(isCalendarEntryOpen);
+}
+
 /** Submission deadline = budget period date minus 10 days */
 export function computeSubmissionDeadline(budgetPeriodDate) {
   const d = new Date(budgetPeriodDate + 'T12:00:00');
@@ -21,10 +39,9 @@ export function todayDateStr() {
   return new Date().toISOString().split('T')[0];
 }
 
-/** Next relevant calendar entry: upcoming submission deadline or most recent overdue */
+/** Next relevant open calendar entry: upcoming submission deadline or most recent overdue */
 export function findNextCalendarEntry(entries, today = todayDateStr()) {
-  const active = (entries || [])
-    .filter(e => !e.is_deleted)
+  const active = filterOpenCalendarEntries(entries)
     .sort((a, b) => a.submission_deadline.localeCompare(b.submission_deadline));
 
   if (active.length === 0) return null;

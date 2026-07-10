@@ -4,7 +4,14 @@ import { supabaseClient, localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete
 import { showToast, showConfirm } from '../components/toasts.js';
 import { getLatestUsdRate, getLocalCurrenciesFromRates, usdToLocal, rateForInput } from '../utils/currency.js';
 import { loadCategoryMasterLines, normalizeBudgetCategory, formatCategoryLabel } from '../utils/categoryMaster.js';
-import { formatDisplayDate, isDateCnBudgetName, DATE_CN_BUDGET_NAME_WARNING } from '../utils/budgetCalendar.js';
+import { formatDisplayDate, isDateCnBudgetName, DATE_CN_BUDGET_NAME_WARNING, filterOpenCalendarEntries, isCalendarEntryOpen } from '../utils/budgetCalendar.js';
+import {
+  isMonthlyBudgetType,
+  isNamedBudgetType,
+  getBudgetTypeConfig,
+  getBudgetTypeLabel,
+  buildBudgetTypeOptionsHtml
+} from '../utils/budgetTypes.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 
 let calendarEntriesCache = [];
@@ -90,26 +97,40 @@ export function getCreateBudgetPage() {
       <h2>➕ New Budget Plan</h2>
       <form id="createBudgetForm" onsubmit="window.createBudget(event)">
         <div class="form-stack">
-          <div class="form-grid-row form-grid-row--budget-a">
+          <div class="form-group budget-type-first">
+            <label>Budget Type *</label>
+            <select id="newBudgetType" required onchange="window.onBudgetTypeChange()">
+              ${buildBudgetTypeOptionsHtml('monthly')}
+            </select>
+            <p id="budgetTypeHint" class="form-hint">Monthly budgets are tied to the org calendar; other types use a custom name for your team.</p>
+          </div>
+
+          <div id="monthlyBudgetFields" class="form-grid-row form-grid-row--budget-a">
             <div class="form-group" id="monthlyCalendarGroup">
-              <label>Budget Period Date</label>
-              <select id="newBudgetCalendarEntry" required onchange="window.onBudgetCalendarEntryChange()"><option value="">Select date…</option></select>
+              <label>Budget Period Date *</label>
+              <select id="newBudgetCalendarEntry" onchange="window.onBudgetCalendarEntryChange()"><option value="">Select date…</option></select>
+              <p id="monthlyCalendarEmptyHint" class="form-hint" style="display:none; color:#856404;">No open calendar periods. Ask an org admin to open a period in Budget Calendar.</p>
             </div>
-            <div class="form-group" id="adhocDateGroup" style="display:none;">
-              <label>Budget Period Date</label>
-              <input type="date" id="newBudgetAdhocDate">
-            </div>
-            <div class="form-group" id="budgetNameGroup">
+            <div class="form-group" id="monthlyNameGroup">
               <label>Budget Name</label>
-              <input type="text" id="newBudgetName" placeholder="Select a calendar date (monthly) or enter name (adhoc)" required onblur="window.validateBudgetName(this)">
-              <p id="monthlyNameHint" class="form-hint" style="margin-top:6px;">Monthly budgets use the calendar label so all teams share the same name.</p>
+              <input type="text" id="newBudgetName" placeholder="Select a calendar period date" readonly>
+              <p id="monthlyNameHint" class="form-hint">Uses the org calendar label — same name across all teams.</p>
             </div>
           </div>
-          <div class="form-grid-row form-grid-row--budget-b">
-            <div class="form-group">
-              <label>Budget Type</label>
-              <select id="newBudgetType" required onchange="window.onBudgetTypeChange()"><option value="monthly" selected>Monthly</option><option value="adhoc">Adhoc</option></select>
+
+          <div id="namedBudgetFields" class="form-grid-row form-grid-row--budget-a" style="display:none;">
+            <div class="form-group" id="namedPeriodGroup">
+              <label>Budget Period Date *</label>
+              <input type="date" id="newBudgetPeriodDate">
             </div>
+            <div class="form-group" id="budgetNameGroup">
+              <label>Budget Name *</label>
+              <input type="text" id="newBudgetNameNamed" placeholder="Enter a descriptive name" onblur="window.validateBudgetName(this)">
+              <p id="namedBudgetNameHint" class="form-hint"></p>
+            </div>
+          </div>
+
+          <div class="form-grid-row form-grid-row--budget-b">
             <div class="form-group">
               <label>Status</label>
               <select id="newBudgetStatus" required><option value="draft" selected>Draft</option><option value="current">Current</option><option value="archive">Archive</option></select>
@@ -182,15 +203,29 @@ function populateCalendarSelect() {
   if (!select) return;
 
   const current = select.value;
+  const openEntries = filterOpenCalendarEntries(calendarEntriesCache);
+  const emptyHint = document.getElementById('monthlyCalendarEmptyHint');
+
   select.innerHTML = '<option value="">Select date…</option>';
-  calendarEntriesCache.forEach(entry => {
+  openEntries.forEach(entry => {
     const label = entry.label
       ? `${formatDisplayDate(entry.budget_period_date)} — ${entry.label}`
       : formatDisplayDate(entry.budget_period_date);
     const safeLabel = escapeHtmlAttr(entry.label || '');
     select.innerHTML += `<option value="${entry.id}" data-label="${safeLabel}" data-date="${entry.budget_period_date}">${label}</option>`;
   });
-  if (current) select.value = current;
+
+  if (openEntries.some(e => e.id === current)) {
+    select.value = current;
+  } else {
+    select.value = '';
+  }
+
+  if (emptyHint) {
+    emptyHint.style.display = openEntries.length ? 'none' : '';
+  }
+
+  select.disabled = openEntries.length === 0;
   onBudgetCalendarEntryChange();
 }
 
@@ -202,7 +237,7 @@ function getMonthlyBudgetNameFromEntry(entry) {
 
 function onBudgetCalendarEntryChange() {
   const type = document.getElementById('newBudgetType')?.value || 'monthly';
-  if (type !== 'monthly') return;
+  if (!isMonthlyBudgetType(type)) return;
 
   const entryId = document.getElementById('newBudgetCalendarEntry')?.value;
   const nameInput = document.getElementById('newBudgetName');
@@ -214,39 +249,57 @@ function onBudgetCalendarEntryChange() {
 
 function onBudgetTypeChange() {
   const type = document.getElementById('newBudgetType')?.value || 'monthly';
-  const monthlyGroup = document.getElementById('monthlyCalendarGroup');
-  const adhocGroup = document.getElementById('adhocDateGroup');
+  const config = getBudgetTypeConfig(type);
+  const monthlyFields = document.getElementById('monthlyBudgetFields');
+  const namedFields = document.getElementById('namedBudgetFields');
   const calSelect = document.getElementById('newBudgetCalendarEntry');
-  const adhocInput = document.getElementById('newBudgetAdhocDate');
-
+  const periodInput = document.getElementById('newBudgetPeriodDate');
+  const monthlyNameInput = document.getElementById('newBudgetName');
+  const namedNameInput = document.getElementById('newBudgetNameNamed');
   const monthlyHint = document.getElementById('monthlyNameHint');
-  const nameInput = document.getElementById('newBudgetName');
+  const namedHint = document.getElementById('namedBudgetNameHint');
+  const typeHint = document.getElementById('budgetTypeHint');
 
-  if (type === 'monthly') {
-    if (monthlyGroup) monthlyGroup.style.display = '';
-    if (adhocGroup) adhocGroup.style.display = 'none';
-    if (calSelect) calSelect.required = true;
-    if (adhocInput) {
-      adhocInput.required = false;
-      adhocInput.value = '';
+  if (typeHint) {
+    typeHint.textContent = isMonthlyBudgetType(type)
+      ? 'Monthly budgets use open org calendar periods only; the name is shared across all teams.'
+      : `${config.label} budgets use a custom name and period date for your team.`;
+  }
+
+  if (isMonthlyBudgetType(type)) {
+    if (monthlyFields) monthlyFields.style.display = '';
+    if (namedFields) namedFields.style.display = 'none';
+    const openCount = filterOpenCalendarEntries(calendarEntriesCache).length;
+    if (calSelect) {
+      calSelect.required = openCount > 0;
+      calSelect.disabled = openCount === 0;
     }
-    if (nameInput) {
-      nameInput.readOnly = true;
+    if (periodInput) {
+      periodInput.required = false;
+      periodInput.value = '';
+    }
+    if (monthlyNameInput) {
+      monthlyNameInput.readOnly = true;
       onBudgetCalendarEntryChange();
     }
     if (monthlyHint) monthlyHint.style.display = '';
+    if (namedNameInput) namedNameInput.value = '';
   } else {
-    if (monthlyGroup) monthlyGroup.style.display = 'none';
-    if (adhocGroup) adhocGroup.style.display = '';
+    if (monthlyFields) monthlyFields.style.display = 'none';
+    if (namedFields) namedFields.style.display = '';
     if (calSelect) {
       calSelect.required = false;
       calSelect.value = '';
     }
-    if (adhocInput) adhocInput.required = true;
-    if (nameInput) {
-      nameInput.readOnly = false;
-      nameInput.value = '';
-      nameInput.placeholder = 'Dubai Trip, Passport renewal…';
+    if (periodInput) periodInput.required = true;
+    if (monthlyNameInput) monthlyNameInput.value = '';
+    if (namedNameInput) {
+      namedNameInput.readOnly = false;
+      namedNameInput.placeholder = config.namePlaceholder || 'Enter a descriptive name';
+      if (namedHint) {
+        namedHint.textContent = config.nameHint || '';
+        namedHint.style.display = config.nameHint ? '' : 'none';
+      }
     }
     if (monthlyHint) monthlyHint.style.display = 'none';
   }
@@ -476,7 +529,7 @@ window.validateBudgetName = function(input) {
   if (!name) return;
 
   const budgetType = document.getElementById('newBudgetType')?.value || 'monthly';
-  if (budgetType === 'adhoc' && isDateCnBudgetName(name)) {
+  if (isNamedBudgetType(budgetType) && isDateCnBudgetName(name)) {
     input.style.borderColor = '#e0a800';
     showToast(DATE_CN_BUDGET_NAME_WARNING, 'warning');
   }
@@ -488,7 +541,7 @@ window.validateBudgetName = function(input) {
   if (duplicate) {
     input.style.borderColor = '#dc3545';
     showToast('A budget with this name already exists in your team', 'warning');
-  } else if (!(budgetType === 'adhoc' && isDateCnBudgetName(name))) {
+  } else if (!(isNamedBudgetType(budgetType) && isDateCnBudgetName(name))) {
     input.style.borderColor = '';
   }
 };
@@ -500,23 +553,31 @@ window.createBudget = async function(e) {
     return;
   }
 
-  const name = document.getElementById('newBudgetName').value.trim();
-  const status = document.getElementById('newBudgetStatus').value;
   const budgetType = document.getElementById('newBudgetType')?.value || 'monthly';
   const existing = state.budgetPlans || [];
   const teamId = state.currentTeam?.team_id;
-  let resolvedName = name;
+  let resolvedName = '';
 
   let calendar_entry_id = null;
   let budget_period_date = null;
 
-  if (budgetType === 'monthly') {
+  if (isMonthlyBudgetType(budgetType)) {
+    const openEntries = filterOpenCalendarEntries(calendarEntriesCache);
+    if (!openEntries.length) {
+      showToast('No open calendar periods. Ask an org admin to open a period in Budget Calendar.', 'error');
+      return;
+    }
+
     const entryId = document.getElementById('newBudgetCalendarEntry')?.value;
     if (!entryId) {
-      showToast('Select a budget period date from the calendar', 'error');
+      showToast('Select an open budget period date from the calendar', 'error');
       return;
     }
     const entry = calendarEntriesCache.find(e => e.id === entryId);
+    if (!isCalendarEntryOpen(entry)) {
+      showToast('That calendar period is closed. Select an open period.', 'error');
+      return;
+    }
     calendar_entry_id = entryId;
     budget_period_date = entry?.budget_period_date || null;
 
@@ -538,11 +599,13 @@ window.createBudget = async function(e) {
     }
 
     resolvedName = monthlyName;
-    document.getElementById('newBudgetName').value = monthlyName;
+    const monthlyNameEl = document.getElementById('newBudgetName');
+    if (monthlyNameEl) monthlyNameEl.value = monthlyName;
   } else {
-    budget_period_date = document.getElementById('newBudgetAdhocDate')?.value || null;
+    resolvedName = document.getElementById('newBudgetNameNamed')?.value.trim() || '';
+    budget_period_date = document.getElementById('newBudgetPeriodDate')?.value || null;
     if (!budget_period_date) {
-      showToast('Select a budget period date for this adhoc budget', 'error');
+      showToast('Select a budget period date', 'error');
       return;
     }
     if (!resolvedName) {
@@ -595,6 +658,7 @@ window.createBudget = async function(e) {
   }
 
   const totalAmount = categories.reduce((sum, c) => sum + c.usdAmount, 0);
+  const status = document.getElementById('newBudgetStatus').value;
 
   const budget = {
     team_id: teamId,
@@ -673,10 +737,16 @@ export function getViewBudgetsPage() {
         <h2>Edit Budget</h2>
         <form id="editBudgetForm" onsubmit="window.saveEditedBudget(); return false;">
           <input type="hidden" id="editBudgetId">
+          <input type="hidden" id="editBudgetType">
+          <div class="form-group">
+            <label>Budget Type</label>
+            <input type="text" id="editBudgetTypeDisplay" readonly>
+          </div>
           <div class="form-grid-row form-grid-row--meta edit-budget-meta">
             <div class="form-group">
               <label>Budget Name</label>
               <input type="text" id="editBudgetName" required onblur="window.validateEditBudgetName(this)">
+              <p id="editBudgetNameHint" class="form-hint" style="display:none;">Monthly budgets use the org calendar label and cannot be renamed here.</p>
             </div>
             <div class="form-group">
               <label>Status</label>
@@ -813,9 +883,11 @@ function renderBudgetSummaryTable(container, budgets) {
     const canEdit = state.canEditBudgets;
     const canDelete = state.canDeleteBudgets;
 
+    const typeBadge = `<span class="badge badge-secondary">${getBudgetTypeLabel(budget.budget_type)}</span>`;
+
     tableRows += `
       <tr style="cursor: pointer;" onclick="window.viewBudgetDetail('${budget.id}')">
-        <td data-label="Budget"><strong>${budget.name}</strong></td>
+        <td data-label="Budget"><strong>${budget.name}</strong><br><span style="font-size:0.8em;">${typeBadge}</span></td>
         <td data-label="Status">${statusBadge}</td>
         <td data-label="Budgeted">$${totalBudgetedUSD.toFixed(2)}</td>
         <td data-label="Spent">$${totalSpentUSD.toFixed(2)}</td>
@@ -837,6 +909,7 @@ function renderBudgetSummaryTable(container, budgets) {
             ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
           </span>
         </div>
+        ${cardRow('Type', typeBadge)}
         ${cardRow('Status', statusBadge)}
         ${cardRow('Budgeted', `$${totalBudgetedUSD.toFixed(2)}`)}
         ${cardRow('Spent', `$${totalSpentUSD.toFixed(2)}`)}
@@ -951,10 +1024,12 @@ function renderBudgetDetailCards(container, budgets) {
     const canEdit = state.canEditBudgets;
     const canDelete = state.canDeleteBudgets;
 
+    const typeLabel = getBudgetTypeLabel(budget.budget_type);
+
     html += `
       <div class="budget-plan-card">
         <h3>
-          <span>${budget.name} ${statusBadge}</span>
+          <span>${budget.name} ${statusBadge} <span class="badge badge-secondary">${typeLabel}</span></span>
           <span class="action-icon-group">
             ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
             ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
@@ -1010,7 +1085,11 @@ window.editBudgetPlan = async function(id) {
   }
 
   document.getElementById('editBudgetId').value = budget.id;
+  const budgetType = budget.budget_type || 'adhoc';
+  document.getElementById('editBudgetType').value = budgetType;
+  document.getElementById('editBudgetTypeDisplay').value = getBudgetTypeLabel(budgetType);
   document.getElementById('editBudgetName').value = budget.name;
+  applyEditBudgetNameState(budgetType);
   document.getElementById('editBudgetStatus').value = budget.status || 'current';
   document.getElementById('editBudgetStatus').dataset.originalStatus = budget.status || 'current';
 
@@ -1063,9 +1142,12 @@ window.editBudgetPlan = async function(id) {
 
   const note = document.getElementById('editBudgetRateNote');
   if (note) {
+    const monthlyLocked = isMonthlyBudgetType(budgetType);
     note.textContent = isDraft
       ? 'USD amounts are primary. Select currency to auto-fill rate. Local amount auto-calculates.'
-      : '⚠️ This budget is not in Draft status. Categories, currencies, and rates are locked. You can only edit the budget name and status.';
+      : monthlyLocked
+        ? '⚠️ This budget is not in Draft status. Categories are locked. You can only change status (name is fixed for monthly budgets).'
+        : '⚠️ This budget is not in Draft status. Categories are locked. You can edit the budget name and status.';
     note.style.color = isDraft ? '#666' : '#856404';
   }
 
@@ -1221,11 +1303,26 @@ function recalculateEditBudgetLocal(row) {
   }
 }
 
+function applyEditBudgetNameState(budgetType) {
+  const nameInput = document.getElementById('editBudgetName');
+  const hint = document.getElementById('editBudgetNameHint');
+  if (!nameInput) return;
+
+  if (isMonthlyBudgetType(budgetType)) {
+    nameInput.readOnly = true;
+    if (hint) hint.style.display = '';
+  } else {
+    nameInput.readOnly = false;
+    if (hint) hint.style.display = 'none';
+  }
+}
+
 window.validateEditBudgetName = function(input) {
   const newName = input.value.trim();
   if (!newName) return;
 
-  if (isDateCnBudgetName(newName)) {
+  const budgetType = document.getElementById('editBudgetType')?.value || 'adhoc';
+  if (isNamedBudgetType(budgetType) && isDateCnBudgetName(newName)) {
     input.style.borderColor = '#e0a800';
     showToast(DATE_CN_BUDGET_NAME_WARNING, 'warning');
   }
@@ -1238,7 +1335,7 @@ window.validateEditBudgetName = function(input) {
   if (duplicate) {
     input.style.borderColor = '#dc3545';
     showToast('A budget with this name already exists in your team', 'warning');
-  } else if (!isDateCnBudgetName(newName)) {
+  } else if (!(isNamedBudgetType(budgetType) && isDateCnBudgetName(newName))) {
     input.style.borderColor = '';
   }
 };
@@ -1257,15 +1354,20 @@ window.saveEditedBudget = async function() {
     return;
   }
 
-  const newName = document.getElementById('editBudgetName').value.trim();
+  const budgetType = document.getElementById('editBudgetType')?.value || 'adhoc';
+  let newName = document.getElementById('editBudgetName').value.trim();
   const newStatus = document.getElementById('editBudgetStatus').value;
+
+  if (isMonthlyBudgetType(budgetType)) {
+    newName = allBudgets[budgetIndex].name;
+  }
 
   if (!newName) {
     showToast('Please enter a budget name', 'error');
     return;
   }
 
-  if (isDateCnBudgetName(newName)) {
+  if (isNamedBudgetType(budgetType) && isDateCnBudgetName(newName)) {
     showToast(DATE_CN_BUDGET_NAME_WARNING, 'warning');
   }
 

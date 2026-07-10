@@ -1298,7 +1298,13 @@ tr.selected { background: #F5EDE8 !important; }
   white-space: nowrap;
 }
 
-.report-expense-table .col-amount,
+.budget-type-first {
+  margin-bottom: 4px;
+}
+
+.budget-type-first select {
+  font-weight: 600;
+}
 .report-expense-table .col-rate,
 .report-expense-table .col-usd {
   white-space: nowrap;
