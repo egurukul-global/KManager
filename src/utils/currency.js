@@ -5,6 +5,17 @@
 export const SUPPORTED_CURRENCIES = ['USD', 'XOF', 'AED', 'INR', 'EUR', 'GBP'];
 export const LOCAL_CURRENCIES = SUPPORTED_CURRENCIES.filter(c => c !== 'USD');
 
+/** Currencies where 1 USD equals many local units — stored rate should be >> 1. */
+const HIGH_MULTIPLIER_CURRENCIES = new Set(['INR', 'XOF', 'AED']);
+
+function correctUsdMultiplierRate(currency, rate, legacy) {
+  if (!currency || currency === 'USD' || !rate || rate <= 0 || legacy) return rate;
+  if (HIGH_MULTIPLIER_CURRENCIES.has(currency) && rate < 1) {
+    return 1 / rate;
+  }
+  return rate;
+}
+
 /**
  * Normalize a DB rate record to USD-multiplier form.
  * Handles legacy records stored as local→USD (e.g. 1 INR = 0.01048 USD).
@@ -18,7 +29,7 @@ export function normalizeRateRecord(record) {
   if (record.from_currency === 'USD' && record.to_currency && record.to_currency !== 'USD') {
     return {
       currency: record.to_currency,
-      rate,
+      rate: correctUsdMultiplierRate(record.to_currency, rate, false),
       date: record.date,
       id: record.id,
       legacy: false
@@ -28,7 +39,7 @@ export function normalizeRateRecord(record) {
   if (record.to_currency === 'USD' && record.from_currency && record.from_currency !== 'USD') {
     return {
       currency: record.from_currency,
-      rate: 1 / rate,
+      rate: correctUsdMultiplierRate(record.from_currency, 1 / rate, true),
       date: record.date,
       id: record.id,
       legacy: true
@@ -138,9 +149,11 @@ export function roundUsd(amount) {
  */
 export function convertToUsd(amount, currency, rates) {
   const n = parseFloat(amount) || 0;
-  if (!currency || currency === 'USD') return roundUsd(n);
+  const cur = String(currency || '').trim();
+  if (!cur) return null;
+  if (cur === 'USD') return roundUsd(n);
 
-  const rate = getLatestUsdRate(rates, currency);
+  const rate = getLatestUsdRate(rates, cur);
   if (rate === null || rate <= 0) return null;
 
   return roundUsd(localToUsd(n, rate));
@@ -148,28 +161,60 @@ export function convertToUsd(amount, currency, rates) {
 
 /**
  * Sum amounts in mixed currencies — each line converted to USD first.
- * @returns {{ totalUsd: number, missingRates: string[] }}
+ * Buckets without currency or exchange rate are excluded (not treated as USD).
+ * @returns {{ totalUsd: number, missingRates: string[], missingCurrency: string[], breakdown: string[] }}
  */
-export function sumToUsd(items, rates, getAmount = (i) => i.amount, getCurrency = (i) => i.currency) {
+export function sumToUsd(items, rates, getAmount = (i) => i.amount, getCurrency = (i) => i.currency, getLabel = () => null) {
   let totalUsd = 0;
   const missingRates = new Set();
+  const missingCurrency = [];
+  const breakdown = [];
 
   for (const item of items || []) {
-    const usd = convertToUsd(getAmount(item), getCurrency(item), rates);
-    if (usd === null) {
-      const c = getCurrency(item);
-      if (c && c !== 'USD') missingRates.add(c);
+    const label = getLabel(item);
+    const currency = String(getCurrency(item) || '').trim();
+    const amount = parseFloat(getAmount(item)) || 0;
+
+    if (!currency) {
+      if (label) missingCurrency.push(label);
+      if (label) breakdown.push(`${label}: currency not set — excluded`);
       continue;
     }
+
+    const usd = convertToUsd(amount, currency, rates);
+    if (usd === null) {
+      missingRates.add(currency);
+      if (label) breakdown.push(`${label}: no ${currency} rate — excluded`);
+      continue;
+    }
+
     totalUsd += usd;
+    if (label) {
+      if (currency === 'USD') {
+        breakdown.push(`${label}: $${formatUsdDisplay(usd)}`);
+      } else {
+        breakdown.push(`${label}: $${formatUsdDisplay(usd)} (${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency})`);
+      }
+    }
   }
 
-  return { totalUsd: roundUsd(totalUsd), missingRates: [...missingRates] };
+  return {
+    totalUsd: roundUsd(totalUsd),
+    missingRates: [...missingRates],
+    missingCurrency,
+    breakdown
+  };
 }
 
 /** Sum bucket balances (each in its own currency) to a USD total. */
 export function sumBucketBalancesToUsd(buckets, rates) {
-  return sumToUsd(buckets, rates, (b) => b.balance, (b) => b.currency);
+  return sumToUsd(
+    buckets,
+    rates,
+    (b) => b.balance,
+    (b) => b.currency,
+    (b) => b.name || 'Bucket'
+  );
 }
 
 /** Primary = bucket currency (large); secondary = USD equivalent (small). */

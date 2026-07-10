@@ -38,7 +38,7 @@ export function getDashboardPage() {
     <div class="stats-grid dash-stats">
       <div class="stat-card stat-card--info">
         <h3 id="dashBalance">—</h3>
-        <p>Team balance (USD)</p>
+        <p id="dashBalanceLabel">Team balance (USD)</p>
       </div>
       <div class="stat-card stat-card--income">
         <h3 id="dashIncome">—</h3>
@@ -109,13 +109,26 @@ export async function initDashboardPage() {
     const transfers = transfersRes.data || [];
 
     const teamBuckets = filterBucketsByScope(buckets, 'team');
-    const { totalUsd: totalBalanceUsd, missingRates } = sumBucketBalancesToUsd(teamBuckets, rates);
+    const { totalUsd: totalBalanceUsd, missingRates, missingCurrency, breakdown } = sumBucketBalancesToUsd(teamBuckets, rates);
+    const hasForeignBuckets = teamBuckets.some(b => String(b.currency || '').trim() && b.currency !== 'USD');
+
     const balanceEl = document.getElementById('dashBalance');
+    const balanceLabel = document.getElementById('dashBalanceLabel');
     if (balanceEl) {
       balanceEl.textContent = formatUsd(totalBalanceUsd);
-      balanceEl.title = missingRates.length
-        ? `Team bucket balances (USD); excluded (no rate): ${missingRates.join(', ')}`
-        : 'Team operational bucket balances converted to USD (member wallets excluded)';
+      const titleParts = breakdown.length ? [breakdown.join('\n')] : [];
+      if (missingRates.length) {
+        titleParts.push(`Excluded (no rate): ${missingRates.join(', ')}`);
+      }
+      if (missingCurrency.length) {
+        titleParts.push(`Excluded (currency not set): ${missingCurrency.join(', ')}`);
+      }
+      balanceEl.title = titleParts.join('\n\n') || 'Team operational bucket balances';
+    }
+    if (balanceLabel) {
+      balanceLabel.textContent = hasForeignBuckets
+        ? 'Team balance (USD equiv.)'
+        : 'Team balance (USD)';
     }
 
     const currentBudgets = budgets.filter(b => b.status === 'current');
