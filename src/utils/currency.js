@@ -8,12 +8,33 @@ export const LOCAL_CURRENCIES = SUPPORTED_CURRENCIES.filter(c => c !== 'USD');
 /** Currencies where 1 USD equals many local units — stored rate should be >> 1. */
 const HIGH_MULTIPLIER_CURRENCIES = new Set(['INR', 'XOF', 'AED']);
 
-function correctUsdMultiplierRate(currency, rate, legacy) {
-  if (!currency || currency === 'USD' || !rate || rate <= 0 || legacy) return rate;
-  if (HIGH_MULTIPLIER_CURRENCIES.has(currency) && rate < 1) {
+/**
+ * Normalize any DB rate row to "1 USD = X local" (usd_multiplier).
+ * Handles:
+ *   - Standard: from=USD, to=INR, rate=95.4
+ *   - Legacy local→USD: from=INR, to=USD, rate=0.0105
+ *   - Mis-entered legacy: from=AED, to=USD, rate=3.76 (meant 1 USD = 3.76 AED)
+ */
+function toUsdMultiplier(fromCurrency, toCurrency, rawRate) {
+  const rate = parseFloat(rawRate);
+  if (!rate || rate <= 0) return null;
+
+  if (fromCurrency === 'USD' && toCurrency && toCurrency !== 'USD') {
+    if (HIGH_MULTIPLIER_CURRENCIES.has(toCurrency) && rate < 1) return 1 / rate;
+    return rate;
+  }
+
+  if (toCurrency === 'USD' && fromCurrency && fromCurrency !== 'USD') {
+    if (HIGH_MULTIPLIER_CURRENCIES.has(fromCurrency)) {
+      // rate > 1 in legacy fields = user entered USD-multiplier in wrong columns
+      if (rate > 1) return rate;
+      // rate < 1 = correct legacy "1 local = X USD" → multiplier = 1/X
+      return 1 / rate;
+    }
     return 1 / rate;
   }
-  return rate;
+
+  return null;
 }
 
 /**
@@ -26,27 +47,19 @@ export function normalizeRateRecord(record) {
   const rate = parseFloat(record.rate);
   if (!rate || rate <= 0) return null;
 
-  if (record.from_currency === 'USD' && record.to_currency && record.to_currency !== 'USD') {
-    return {
-      currency: record.to_currency,
-      rate: correctUsdMultiplierRate(record.to_currency, rate, false),
-      date: record.date,
-      id: record.id,
-      legacy: false
-    };
-  }
+  const multiplier = toUsdMultiplier(record.from_currency, record.to_currency, rate);
+  if (multiplier === null) return null;
 
-  if (record.to_currency === 'USD' && record.from_currency && record.from_currency !== 'USD') {
-    return {
-      currency: record.from_currency,
-      rate: correctUsdMultiplierRate(record.from_currency, 1 / rate, true),
-      date: record.date,
-      id: record.id,
-      legacy: true
-    };
-  }
+  const currency = record.from_currency === 'USD' ? record.to_currency : record.from_currency;
+  const legacy = record.to_currency === 'USD';
 
-  return null;
+  return {
+    currency,
+    rate: multiplier,
+    date: record.date,
+    id: record.id,
+    legacy
+  };
 }
 
 /** Build a map of currency → latest normalized rate (most recent date wins). */
@@ -221,7 +234,15 @@ export function sumBucketBalancesToUsd(buckets, rates) {
 export function formatBucketBalanceDisplay(balance, currency, rates) {
   const n = parseFloat(balance) || 0;
   const formatted = n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const cur = currency || 'USD';
+  const cur = String(currency || '').trim();
+
+  if (!cur) {
+    return {
+      primary: formatted,
+      suffix: '',
+      usdLine: 'Currency not set — USD equiv. unavailable'
+    };
+  }
 
   if (cur === 'USD') {
     return {
@@ -236,7 +257,7 @@ export function formatBucketBalanceDisplay(balance, currency, rates) {
     primary: formatted,
     suffix: ` ${cur}`,
     usdLine: usd !== null
-      ? `≈ $${usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      ? `≈ $${usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
       : 'USD rate unavailable'
   };
 }

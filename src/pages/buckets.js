@@ -4,8 +4,14 @@ import { sbSelect, sbInsert, sbUpdate, sbSoftDelete, sbRestore, localGetAll } fr
 import { showToast, showConfirm } from '../components/toasts.js';
 import { createModal, openModal, closeModal, removeModal } from '../components/modals.js';
 import { btnIconEdit, btnIconDelete } from '../utils/uiHelpers.js';
+import {
+  formatBucketBalanceDisplay,
+  sumBucketBalancesToUsd,
+  formatUsdDisplay
+} from '../utils/currency.js';
 
 let allBuckets = [];
+let exchangeRates = [];
 
 export function getBucketsPage() {
   return `
@@ -77,15 +83,25 @@ async function loadBuckets() {
   if (personalContainer) personalContainer.innerHTML = '<div class="empty-state">Loading buckets...</div>';
 
   try {
-    const { data: buckets, error } = await sbSelect('buckets', {
-      teamId: state.currentTeam.team_id,
-      includeDeleted: state.showDeleted,
-      orderBy: 'name',
-      ascending: true
-    });
+    const teamId = state.currentTeam.team_id;
+    const [bucketsResult, ratesResult] = await Promise.all([
+      sbSelect('buckets', {
+        teamId,
+        includeDeleted: state.showDeleted,
+        orderBy: 'name',
+        ascending: true
+      }),
+      sbSelect('exchange_rates', {
+        teamId,
+        orderBy: 'date',
+        ascending: false
+      })
+    ]);
 
+    const { data: buckets, error } = bucketsResult;
     if (error) throw error;
 
+    exchangeRates = (ratesResult.data || []).filter(r => !r.is_deleted);
     allBuckets = buckets || [];
     renderBuckets();
 
@@ -130,6 +146,7 @@ function renderBucketGrid(buckets) {
     const canRestore = state.canDeleteBuckets && isDeleted;
     const isPersonal = !!bucket.owner_user_id;
     const safeName = (bucket.name || '').replace(/'/g, "\\'");
+    const display = formatBucketBalanceDisplay(bucket.balance, bucket.currency, exchangeRates);
 
     html += `
       <div class="bucket-card ${isDeleted ? 'deleted' : ''}">
@@ -140,7 +157,7 @@ function renderBucketGrid(buckets) {
             <div class="bucket-type">${bucket.type?.replace(/_/g, ' ') || 'Other'}${isPersonal ? ' · Personal' : ''}</div>
           </div>
           <div class="bucket-header-end">
-            <span class="badge badge-info">${bucket.currency}</span>
+            <span class="badge badge-info">${bucket.currency || '—'}</span>
             <span class="action-icon-group">
               ${canEdit ? btnIconEdit(`window.loadBucketForEdit('${bucket.id}')`) : ''}
               ${canDelete ? btnIconDelete(`window.confirmDeleteBucket('${bucket.id}', '${safeName}')`) : ''}
@@ -149,10 +166,10 @@ function renderBucketGrid(buckets) {
           </div>
         </div>
         <div class="bucket-balance ${balanceClass}">
-          ${(bucket.balance || 0).toLocaleString(undefined, {minimumFractionDigits: 2})} ${bucket.currency}
+          ${display.primary}${display.suffix}
         </div>
+        ${display.usdLine ? `<div class="bucket-balance-usd">${display.usdLine}</div>` : ''}
         <div class="bucket-meta">
-          <span>💰 Balance: ${(bucket.balance || 0).toLocaleString()} ${bucket.currency}</span>
           <span>📅 ${new Date(bucket.created_at).toLocaleDateString()}</span>
         </div>
       </div>
@@ -161,6 +178,26 @@ function renderBucketGrid(buckets) {
 
   html += '</div>';
   return html;
+}
+
+function renderBucketSectionTotal(buckets, label) {
+  const { totalUsd, breakdown, missingRates, missingCurrency } = sumBucketBalancesToUsd(buckets, exchangeRates);
+  if (!buckets.length) return '';
+
+  const notes = [];
+  if (missingRates.length) notes.push(`No exchange rate for: ${missingRates.join(', ')}`);
+  if (missingCurrency.length) notes.push(`Currency not set on: ${missingCurrency.join(', ')}`);
+
+  return `
+    <div class="bucket-section-total">
+      <div class="bucket-section-total-main">
+        <span>${label}</span>
+        <strong>$${formatUsdDisplay(totalUsd)}</strong>
+      </div>
+      ${breakdown.length ? `<details class="bucket-section-total-breakdown"><summary>USD breakdown (${buckets.length} bucket${buckets.length === 1 ? '' : 's'})</summary><ul>${breakdown.map(line => `<li>${line}</li>`).join('')}</ul></details>` : ''}
+      ${notes.length ? `<p class="bucket-section-total-note">${notes.join(' · ')} — excluded from total</p>` : ''}
+    </div>
+  `;
 }
 
 function renderBuckets() {
@@ -192,13 +229,13 @@ function renderBuckets() {
   if (teamBuckets.length === 0) {
     teamContainer.innerHTML = '<div class="empty-state"><p>No team buckets yet.</p></div>';
   } else {
-    teamContainer.innerHTML = renderBucketGrid(teamBuckets);
+    teamContainer.innerHTML = renderBucketGrid(teamBuckets) + renderBucketSectionTotal(teamBuckets, 'Team total (USD equiv.) — matches Dashboard');
   }
 
   if (personalBuckets.length === 0) {
     personalContainer.innerHTML = '<div class="empty-state"><p>No personal buckets yet.</p></div>';
   } else {
-    personalContainer.innerHTML = renderBucketGrid(personalBuckets);
+    personalContainer.innerHTML = renderBucketGrid(personalBuckets) + renderBucketSectionTotal(personalBuckets, 'Personal total (USD equiv.)');
   }
 
   if (personalCard) personalCard.style.display = '';
