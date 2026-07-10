@@ -29,6 +29,8 @@ import { getAddExpensePage, initAddExpensePage, getExpenseManagerPage, initExpen
 import { getGenerateReceiptPage, initGenerateReceiptPage } from './pages/generate-receipt.js';
 import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js';
 import { getDisplayName } from './utils/displayName.js';
+import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher } from './utils/teamAccess.js';
+import { getTeamMgmtPage, initTeamMgmtPage } from './pages/team-mgmt.js';
 import swamijiImg from './Swamiji.png';
 
 // ==================== APP CONTAINER ====================
@@ -120,57 +122,14 @@ async function initializeApp() {
     }
 
     // 2. Get all teams for this user
-    const { data: teamsData, error: teamsError } = await supabaseClient
-      .rpc('get_accessible_teams', { p_user_id: state.user.id });
-
-    let rawTeams = [];
-
-    if (teamsError) {
-      console.warn('get_accessible_teams error:', teamsError);
-      const { data: fallbackTeams } = await supabaseClient
-        .from('user_teams')
-        .select('team_id, is_primary, access_level, teams:team_id(id, name)')
-        .eq('user_id', state.user.id);
-
-      if (fallbackTeams) {
-        rawTeams = fallbackTeams.map(t => ({
-          team_id: t.team_id,
-          team_name: t.teams?.name || 'Unknown',
-          is_primary: t.is_primary,
-          access_level: t.access_level || 'member'
-        }));
-      }
-    } else {
-      rawTeams = teamsData || [];
-    }
-
-    // Deduplicate teams by team_id
-    const seenTeamIds = new Set();
-    state.teams = [];
-    for (const team of rawTeams) {
-      if (team && team.team_id && !seenTeamIds.has(team.team_id)) {
-        seenTeamIds.add(team.team_id);
-        state.teams.push(team);
-      }
-    }
+    await loadAccessibleTeams(state.user.id);
 
     if (state.teams.length === 0) {
       throw new Error('You are not assigned to any teams. Please contact an administrator.');
     }
 
     // 3. Set current team
-    const primaryTeam = state.teams.find(t => t.is_primary);
-    state.currentTeam = primaryTeam || state.teams[0];
-
-    // 4. Set access level
-    state.userTeamAccess = {
-      access_level: state.currentTeam.access_level || 'member',
-      granted_by: state.currentTeam.granted_by,
-      granted_at: state.currentTeam.granted_at
-    };
-
-    // 5. Compute permissions
-    computePermissions();
+    syncCurrentTeamAfterReload();
 
     await loadUserTeamDefaultsForCurrentTeam();
 
@@ -279,21 +238,6 @@ function updateSyncStatus(status) {
 
 // ==================== TEAM SWITCHER ====================
 
-function populateTeamSwitcher() {
-  const select = document.getElementById('teamSelect');
-  if (!select) return;
-  select.innerHTML = '';
-
-  state.teams.forEach(team => {
-    const option = document.createElement('option');
-    option.value = team.team_id;
-    option.textContent = team.team_name + (team.is_primary ? ' ★' : '');
-    if (team.team_id === state.currentTeam.team_id) {
-      option.selected = true;
-    }
-    select.appendChild(option);
-  });
-}
 
 export async function switchTeam(teamId) {
   const team = state.teams.find(t => t.team_id === teamId);
@@ -607,7 +551,7 @@ export function showPage(pageName) {
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
     'user-mgmt': { html: () => placeholderPage('User Management', 'Session 8'), init: () => {} },
-    'team-mgmt': { html: () => placeholderPage('Team Managemet', 'Session 8'), init: () => {} }
+    'team-mgmt': { html: getTeamMgmtPage, init: initTeamMgmtPage }
   };
 
   updateBottomNavActive(pageName);

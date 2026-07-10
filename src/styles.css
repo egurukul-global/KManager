@@ -962,6 +962,72 @@ tr.selected { background: #F5EDE8 !important; }
   margin-bottom: 12px;
 }
 
+/* Team management admin */
+.page-intro {
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.form-grid-row--team-meta {
+  grid-template-columns: minmax(12rem, 1fr);
+  max-width: 28rem;
+}
+
+.form-grid-row--team-member {
+  grid-template-columns:
+    minmax(12rem, 2fr)
+    minmax(9rem, 1fr)
+    auto;
+  align-items: end;
+}
+
+.team-members-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.team-members-panel__header h2 {
+  margin: 0;
+}
+
+.team-add-member-form {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border, #e9ecef);
+}
+
+.team-mgmt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.team-access-select {
+  width: 100%;
+  max-width: 10rem;
+  min-height: 40px;
+}
+
+@media (max-width: 768px) {
+  .form-grid-row--team-member {
+    grid-template-columns: 1fr;
+  }
+
+  .team-add-member-form__actions button {
+    width: 100%;
+  }
+
+  .team-access-select {
+    max-width: none;
+  }
+}
+
+
 /* ===== MODALS ===== */
 .modal {
   display: none;
