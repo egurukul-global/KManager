@@ -3,6 +3,8 @@ import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import {
   findNextCalendarEntry,
+  findOutstandingCalendarEntry,
+  monthlyBudgetExistsForEntry,
   getSubmissionStatus,
   getDailyReconciliationStatus,
   formatDisplayDate,
@@ -37,7 +39,7 @@ export function getDashboardPage() {
     <div class="stats-grid dash-stats">
       <div class="stat-card stat-card--info">
         <h3 id="dashBalance">—</h3>
-        <p>Balance (USD)</p>
+        <p>Team balance (USD)</p>
       </div>
       <div class="stat-card stat-card--income">
         <h3 id="dashIncome">—</h3>
@@ -107,13 +109,14 @@ export async function initDashboardPage() {
     const reconSubmissions = reconSubmissionsRes.error ? [] : (reconSubmissionsRes.data || []);
     const transfers = transfersRes.data || [];
 
-    const { totalUsd: totalBalanceUsd, missingRates } = sumBucketBalancesToUsd(buckets, rates);
+    const teamBuckets = filterBucketsByScope(buckets, 'team');
+    const { totalUsd: totalBalanceUsd, missingRates } = sumBucketBalancesToUsd(teamBuckets, rates);
     const balanceEl = document.getElementById('dashBalance');
     if (balanceEl) {
       balanceEl.textContent = formatUsd(totalBalanceUsd);
       balanceEl.title = missingRates.length
-        ? `USD equivalent; buckets without rates excluded: ${missingRates.join(', ')}`
-        : 'Total of all bucket balances converted to USD at latest exchange rates';
+        ? `Team bucket balances (USD); excluded (no rate): ${missingRates.join(', ')}`
+        : 'Team operational bucket balances converted to USD (member wallets excluded)';
     }
 
     const currentBudgets = budgets.filter(b => b.status === 'current');
@@ -136,14 +139,11 @@ export async function initDashboardPage() {
     const expensesEl = document.getElementById('dashExpenses');
     if (expensesEl) expensesEl.textContent = formatUsd(totalExpenses);
 
-    const nextEntry = findNextCalendarEntry(calendarEntries, today);
-    const hasMonthlyForNext = nextEntry
-      ? budgets.some(b =>
-          b.budget_type === 'monthly' &&
-          b.status !== 'archive' &&
-          (b.calendar_entry_id === nextEntry.id ||
-            b.budget_period_date === nextEntry.budget_period_date))
-      : false;
+    const outstandingEntry = findOutstandingCalendarEntry(calendarEntries, budgets, today);
+    const nextEntry = outstandingEntry || findNextCalendarEntry(calendarEntries, today);
+    const hasMonthlyForNext = outstandingEntry
+      ? false
+      : monthlyBudgetExistsForEntry(budgets, nextEntry);
 
     const submissionStatus = getSubmissionStatus(nextEntry, hasMonthlyForNext, today);
     const nextEl = document.getElementById('dashNextSubmission');

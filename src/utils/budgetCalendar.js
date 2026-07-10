@@ -46,10 +46,28 @@ export function findNextCalendarEntry(entries, today = todayDateStr()) {
 
   if (active.length === 0) return null;
 
-  const upcoming = active.find(e => e.submission_deadline >= today);
-  if (upcoming) return upcoming;
+  const overdueOrToday = active.filter(e => e.submission_deadline <= today);
+  if (overdueOrToday.length > 0) return overdueOrToday[overdueOrToday.length - 1];
 
-  return active[active.length - 1];
+  return active.find(e => e.submission_deadline > today) || active[active.length - 1];
+}
+
+export function monthlyBudgetExistsForEntry(budgets, entry) {
+  if (!entry) return false;
+  return (budgets || []).some(b =>
+    b.budget_type === 'monthly' &&
+    b.status !== 'archive' &&
+    (b.calendar_entry_id === entry.id ||
+      b.budget_period_date === entry.budget_period_date)
+  );
+}
+
+/** Earliest open calendar period that still needs a monthly budget. */
+export function findOutstandingCalendarEntry(entries, budgets, today = todayDateStr()) {
+  const active = filterOpenCalendarEntries(entries)
+    .sort((a, b) => a.submission_deadline.localeCompare(b.submission_deadline));
+
+  return active.find(e => !monthlyBudgetExistsForEntry(budgets, e)) || null;
 }
 
 export function getSubmissionStatus(entry, hasMonthlyBudget, today = todayDateStr()) {

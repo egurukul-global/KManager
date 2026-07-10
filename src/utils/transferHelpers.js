@@ -119,10 +119,10 @@ export async function applyAcceptedTransferBalances(transfer, srcBucket, destBuc
   const srcBalance = (parseFloat(srcBucket.balance) || 0) - srcAmount;
   const destBalance = (parseFloat(destBucket.balance) || 0) + destAmount;
 
-  const srcResult = await sbUpdate('buckets', { id: srcBucket.id, balance: srcBalance });
+  const srcResult = await sbUpdate('buckets', { balance: srcBalance }, { id: srcBucket.id });
   if (srcResult.error) throw srcResult.error;
 
-  const destResult = await sbUpdate('buckets', { id: destBucket.id, balance: destBalance });
+  const destResult = await sbUpdate('buckets', { balance: destBalance }, { id: destBucket.id });
   if (destResult.error) throw destResult.error;
 
   return { srcBalance, destBalance, destAmount };

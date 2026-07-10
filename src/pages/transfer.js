@@ -139,18 +139,18 @@ export function getTransferFundsPage() {
       <h2>🔄 New Transfer</h2>
       <form id="transferFundsForm" onsubmit="window.executeFundsTransfer(event)">
         <div class="form-stack">
-          <div class="form-grid-row form-grid-row--transfer-buckets">
-            <div class="form-group"><label>Transfer Date</label><input type="date" id="trDate" required></div>
-            <div class="form-group"><label>Source Bucket</label><select id="trSourceBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trSourceCurrency">Currency: —</span></div>
-            <div class="form-group"><label>Destination Bucket</label><select id="trDestBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trDestCurrency">Currency: —</span></div>
-          </div>
-
           <div id="trMemberFilters" class="transfer-filter-row" style="display:none;">
             <label class="checkbox-inline"><input type="checkbox" id="trShowMembers" onchange="window.onTransferDestFilterChange()"> Include member wallets</label>
           </div>
           <div id="trOtmFilters" class="transfer-filter-row" style="display:none;">
             <label class="checkbox-inline"><input type="checkbox" id="trShowTeamPeers" onchange="window.onTransferDestFilterChange()"> Team bucket</label>
             <label class="checkbox-inline"><input type="checkbox" id="trShowMemberPeers" onchange="window.onTransferDestFilterChange()"> Member wallets</label>
+          </div>
+
+          <div class="form-grid-row form-grid-row--transfer-buckets">
+            <div class="form-group"><label>Transfer Date</label><input type="date" id="trDate" required></div>
+            <div class="form-group"><label>Source Bucket</label><select id="trSourceBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trSourceCurrency">Currency: —</span></div>
+            <div class="form-group"><label>Destination Bucket</label><select id="trDestBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trDestCurrency">Currency: —</span></div>
           </div>
 
           <div class="form-grid-row form-grid-row--transfer-amount">
