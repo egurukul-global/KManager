@@ -1193,6 +1193,62 @@ tr.selected { background: #F5EDE8 !important; }
   border-top: var(--gold-border) solid var(--accent-gold);
 }
 
+.stat-card--income {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+}
+
+.stat-card--alloc {
+  background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+}
+
+.stat-card--unalloc {
+  background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);
+}
+
+.stat-card--success {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+}
+
+.stat-card--danger {
+  background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+}
+
+.report-results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.report-results-header h3 {
+  margin: 0;
+}
+
+.report-section-divider {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 2px solid var(--border);
+}
+
+.pdf-export-btn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 14px;
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pdf-export-btn:hover {
+  filter: brightness(1.08);
+}
+
 /* ===== ALERT MODAL ===== */
 .alert-modal-content {
   text-align: center;

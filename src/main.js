@@ -458,6 +458,8 @@ function renderAppShell() {
             <div class="nav-subitems">
               <div class="nav-subitem" data-page="user-mgmt" onclick="window.showPage('user-mgmt')">Users</div>
               <div class="nav-subitem" data-page="team-mgmt" onclick="window.showPage('team-mgmt')">Teams</div>
+              <div class="nav-subitem" data-page="budget-calendar" onclick="window.showPage('budget-calendar')">Budget Calendar</div>
+              <div class="nav-subitem" data-page="category-master" onclick="window.showPage('category-master')">Category Master</div>
             </div>
           </div>
         </nav>

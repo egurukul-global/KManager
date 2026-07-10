@@ -189,7 +189,7 @@ export function getRecordIncomePage() {
             <button type="button" class="close-modal" onclick="window.closeAllocationEntryModal()">&times;</button>
             <h2>Add Budget Allocation</h2>
             <div class="modal-field-card">
-              <div class="modal-field-row">
+              <div class="modal-field-row modal-field-row--stacked">
                 <label for="allocModalBudget">Budget Plan</label>
                 <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
               </div>
@@ -659,7 +659,7 @@ export function getIncomeManagerPage() {
         <button type="button" class="close-modal" onclick="window.closeAllocationEntryModal()">&times;</button>
         <h2>Add Budget Allocation</h2>
         <div class="modal-field-card">
-          <div class="modal-field-row">
+          <div class="modal-field-row modal-field-row--stacked">
             <label for="allocModalBudget">Budget Plan</label>
             <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
           </div>
