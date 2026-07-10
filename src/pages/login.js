@@ -5,7 +5,7 @@ export function getLoginPage() {
     <div class="login-container">
       <div class="login-card">
         <div class="logo">🔱</div>
-        <h1>Kailasa Manager</h1>
+        <h1>One Kailasa</h1>
         <p class="subtitle">Sign in to manage your team's finances</p>
 
         <div id="loginError" class="error-msg"></div>

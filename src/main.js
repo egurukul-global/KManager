@@ -354,7 +354,7 @@ function renderAppShell() {
   app.innerHTML = `
     <div class="mobile-header">
       <button class="menu-toggle" onclick="window.toggleSidebar()">☰</button>
-      <h1>Kailasa Manager</h1>
+      <h1>One Kailasa</h1>
       <img src="${swamijiImg}" alt="" class="header-logo" width="36" height="36">
     </div>
 
@@ -473,7 +473,7 @@ function renderAppShell() {
 
       <div class="main-area">
         <header class="app-topbar">
-          <span class="app-topbar-title">Kailasa Manager</span>
+          <span class="app-topbar-title">One Kailasa</span>
           <img src="${swamijiImg}" alt="" class="app-topbar-logo" width="40" height="40">
         </header>
         <main class="main-content" id="mainContent">

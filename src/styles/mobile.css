@@ -125,43 +125,51 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1px;
+    gap: 2px;
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 0.58em;
+    font-size: 0.65em;
     font-weight: 600;
     cursor: pointer;
-    padding: 2px 1px;
+    padding: 3px 2px;
     min-height: 0;
     min-width: 0;
     width: auto !important;
     border-radius: 6px;
   }
 
-  .bottom-nav-item.active {
-    color: var(--primary);
-    background: rgba(154, 68, 82, 0.08);
-    box-shadow: inset 0 3px 0 var(--accent-gold);
-  }
-
   .bottom-nav-status {
     cursor: default;
     pointer-events: none;
-    flex: 0.85;
+    flex: 1;
   }
 
-  .bottom-nav-icon {
-    font-size: 1.15em;
+  .bottom-nav-icon,
+  .bottom-nav-status .sync-status-icon {
+    font-size: 1.25em;
     line-height: 1;
   }
 
-  .bottom-nav-label {
-    line-height: 1.05;
+  .bottom-nav-label,
+  .bottom-nav-status .sync-status-label {
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: 1.1;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .bottom-nav-status .sync-status-label {
+    font-weight: 700;
+  }
+
+  .bottom-nav-item.active {
+    color: var(--primary);
+    background: rgba(154, 68, 82, 0.08);
+    box-shadow: inset 0 3px 0 var(--accent-gold);
   }
 
   .sync-status.online .sync-status-label { color: #198754; }

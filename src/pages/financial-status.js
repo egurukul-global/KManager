@@ -2,6 +2,7 @@
 import { state } from '../state.js';
 import { supabaseClient, sbSelect } from '../db.js';
 import { showToast } from '../components/toasts.js';
+import { cardRow } from '../utils/uiHelpers.js';
 import {
   getDailyReconciliationStatus,
   formatDisplayDate,
@@ -282,47 +283,38 @@ function showReconcilePanel() {
     return;
   }
 
-  let html = `
-    <div class="table-container recon-table-wrap">
-      <table class="status-table recon-table table-stack-mobile">
-        <thead>
-          <tr>
-            <th class="col-type">Type</th>
-            <th class="col-bucket">Bucket</th>
-            <th class="col-currency">Currency</th>
-            <th class="col-balance">Balance</th>
-            <th class="col-actual">Actual</th>
-            <th class="col-difference">Difference</th>
-            <th class="col-usd">USD Equiv</th>
-            <th class="col-comments">Comments</th>
-          </tr>
-        </thead>
-        <tbody>
-  `;
+  let html = '<div class="recon-cards-list">';
 
   rows.forEach((row, index) => {
     const typeBadge = row.scopeLabel === 'Personal' ? 'warning' : 'info';
     html += `
-      <tr data-recon-index="${index}">
-        <td class="col-type" data-label="Type"><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
-        <td class="col-bucket" data-label="Bucket"><strong>${row.bucketName}</strong></td>
-        <td class="col-currency" data-label="Currency">${row.currency}</td>
-        <td class="col-balance" data-label="Balance" id="reconClosing_${index}">${formatReconAmount(row.closing)}</td>
-        <td class="col-actual" data-label="Actual">
+      <article class="recon-entry-card data-card" data-recon-index="${index}">
+        <div class="data-card-top">
+          <span class="data-card-title">${row.bucketName}</span>
+          <span class="badge badge-${typeBadge}">${row.scopeLabel}</span>
+        </div>
+        ${cardRow('Currency', row.currency)}
+        ${cardRow('Balance', formatReconAmount(row.closing))}
+        <div class="data-card-row recon-field-row">
+          <span class="data-card-row-label">Actual</span>
           <input type="number" id="reconActual_${index}" step="0.01" placeholder="Amount"
             class="recon-actual-input" data-index="${index}" data-closing="${row.closing}" data-currency="${row.currency}"
             oninput="window.onReconcileActualInput(${index})">
-        </td>
-        <td class="col-difference" data-label="Difference" id="reconDiff_${index}">—</td>
-        <td class="col-usd" data-label="USD Equiv" id="reconUsd_${index}">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
-        <td class="col-comments" data-label="Comments">
-          <textarea id="reconComments_${index}" rows="2" placeholder="Reason" class="recon-comments-input"></textarea>
-        </td>
-      </tr>
+        </div>
+        <div class="data-card-row">
+          <span class="data-card-row-label">Difference</span>
+          <span class="data-card-row-value" id="reconDiff_${index}">—</span>
+        </div>
+        ${cardRow('USD Equiv', row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—')}
+        <div class="data-card-row recon-field-row recon-field-row--stacked">
+          <span class="data-card-row-label">Comments</span>
+          <textarea id="reconComments_${index}" rows="2" placeholder="Reason (optional)" class="recon-comments-input"></textarea>
+        </div>
+      </article>
     `;
   });
 
-  html += '</tbody></table></div>';
+  html += '</div>';
   body.innerHTML = html;
   panel.style.display = '';
   panel._reconcileRows = rows;
@@ -344,7 +336,7 @@ function onReconcileActualInput(index) {
 
   if (Number.isNaN(actual)) {
     diffCell.textContent = '—';
-    diffCell.className = 'col-difference';
+    diffCell.className = 'data-card-row-value';
     diffCell.title = '';
     return;
   }
@@ -352,7 +344,7 @@ function onReconcileActualInput(index) {
   const { text, level } = formatDifference(actual, closing, currency);
   diffCell.textContent = text;
   diffCell.title = text;
-  diffCell.className = `col-difference ${level}`;
+  diffCell.className = `data-card-row-value ${level}`;
 }
 
 async function submitReconciliation() {

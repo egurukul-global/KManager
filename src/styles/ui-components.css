@@ -45,9 +45,9 @@
 .data-card-row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
-  padding: 5px 0;
+  padding: 6px 0;
   font-size: 0.88em;
   line-height: 1.35;
 }
@@ -56,8 +56,8 @@
   color: var(--text-secondary);
   font-weight: 600;
   text-align: left;
-  flex: 0 0 auto;
-  max-width: 46%;
+  flex: 0 0 42%;
+  max-width: 42%;
   font-family: inherit;
   font-size: inherit;
 }
@@ -71,6 +71,9 @@
   font-size: inherit;
   font-weight: 500;
   color: var(--text);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .data-card-row-value.positive { color: var(--success); font-weight: 600; }
@@ -78,12 +81,30 @@
 
 .data-card-row input,
 .data-card-row select,
-.data-card-row textarea {
+.data-card-row textarea,
+.data-card-row-value input,
+.data-card-row-value select,
+.data-card-row-value textarea {
   flex: 1;
   min-width: 0;
-  max-width: 58%;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
   text-align: right;
   font-size: 0.95em;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.data-card-row textarea,
+.data-card-row-value textarea {
+  min-height: 64px;
+  resize: vertical;
+  text-align: left;
 }
 
 .data-card-top {
@@ -241,15 +262,19 @@
 }
 
 .sync-status-icon,
-.bottom-nav-status .sync-status-icon {
-  font-size: 1.15em;
+.bottom-nav-status .bottom-nav-icon {
+  font-size: 1.25em;
   line-height: 1;
 }
 
-.sync-status-label,
+.sync-status-label {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1.1;
+}
+
 .bottom-nav-status .sync-status-label {
-  font-size: 0.58em;
-  line-height: 1.05;
+  font-weight: 700;
 }
 
 .sidebar-sync {
@@ -322,3 +347,137 @@ td.positive { color: var(--success); font-weight: 600; }
 
 .col-difference.negative,
 td.negative { color: var(--danger); font-weight: 600; }
+
+/* ===== ALLOCATION SECTION CARD ===== */
+.alloc-section-card {
+  margin-top: 24px;
+  padding: 16px 18px;
+}
+
+.alloc-section-card h3 {
+  margin: 0 0 8px;
+  font-size: 1.05em;
+  color: var(--text);
+}
+
+.alloc-section-note,
+.alloc-empty-hint {
+  color: var(--text-secondary);
+  font-size: 0.88em;
+  margin: 0 0 12px;
+}
+
+.alloc-entry-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.alloc-entry-card {
+  border-left: var(--gold-border) solid var(--accent-gold);
+}
+
+.alloc-totals-card {
+  margin: 12px 0;
+}
+
+.alloc-unallocated-value.positive { color: var(--primary); font-weight: 600; }
+.alloc-unallocated-value.negative { color: var(--danger); font-weight: 600; }
+
+.alloc-form-error {
+  color: var(--danger);
+  font-size: 0.88em;
+  font-weight: 600;
+  margin: 8px 0 12px;
+}
+
+.alloc-add-btn {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.entry-form-card .form-stack {
+  margin: 16px 0;
+}
+
+/* Modal / form rows — label left, control right (same as exchange rate cards) */
+.modal-field-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0 20px;
+  padding: 14px 16px;
+  background: #fafbfc;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  border-left: var(--gold-border) solid var(--accent-gold);
+}
+
+.modal-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-field-row label {
+  flex: 0 0 42%;
+  max-width: 42%;
+  margin: 0;
+  font-size: 0.88em;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.modal-field-row input,
+.modal-field-row select,
+.modal-field-row textarea {
+  flex: 1;
+  min-width: 0;
+  max-width: 56%;
+  margin: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  background: #fff;
+  box-sizing: border-box;
+  text-align: right;
+}
+
+.modal-field-row select {
+  text-align-last: right;
+}
+
+/* ===== RECONCILE ENTRY CARDS ===== */
+.recon-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.recon-entry-card {
+  border-left: var(--gold-border) solid var(--accent-gold);
+  padding: 12px 14px;
+}
+
+.recon-field-row--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.recon-field-row--stacked .data-card-row-label {
+  flex: none;
+  max-width: 100%;
+  width: 100%;
+}
+
+.recon-field-row--stacked textarea {
+  width: 100%;
+  max-width: 100%;
+  text-align: left;
+}

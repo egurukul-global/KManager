@@ -170,22 +170,33 @@ export function getRecordIncomePage() {
           <div class="form-group"><label>Description / Notes</label><textarea id="incDescription" rows="2" placeholder="Optional notes…"></textarea></div>
         </div>
 
-        <h3 style="margin-top: 30px;">Budget Allocations (USD)</h3>
-        <p style="margin-bottom: 15px; color: #666; font-size: 0.9em;">
-          Allocate parts or all of this income directly to active budget plans.
-        </p>
-        
-        <div id="incomeAllocationsContainer" class="alloc-line-cards" style="max-width: 600px; margin-bottom: 15px;"></div>
+        <div class="alloc-section-card card">
+          <h3>Budget Allocations (USD)</h3>
+          <p class="alloc-section-note">Allocate parts or all of this income directly to active budget plans.</p>
+          <div id="incomeAllocationsContainer" class="alloc-entry-cards"></div>
+          <p id="allocEmptyHint" class="alloc-empty-hint">No allocations yet. Tap below to add one.</p>
+          <div class="budget-grand-total-card alloc-totals-card">
+            ${cardRow('Total Income', '$<span id="lblTotalIncomeDisplay">0.00</span>')}
+            ${cardRow('Allocated', '$<span id="lblTotalAllocatedDisplay">0.00</span>')}
+            ${cardRow('Unallocated', '$<span id="lblUnallocatedDisplay">0.00</span>', 'alloc-unallocated-value')}
+          </div>
+          <div id="allocationFormError" class="alloc-form-error" style="display: none;"></div>
+          <button type="button" class="secondary alloc-add-btn" onclick="window.openAllocationEntryModal(false)">+ Add Budget Allocation</button>
+        </div>
 
         <div id="allocationEntryModal" class="modal">
-          <div class="modal-content small">
+          <div class="modal-content small entry-form-card">
             <button type="button" class="close-modal" onclick="window.closeAllocationEntryModal()">&times;</button>
             <h2>Add Budget Allocation</h2>
-            <div class="field-labeled"><span>Budget Plan</span>
-              <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
-            </div>
-            <div class="field-labeled"><span>Amount (USD)</span>
-              <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00" required>
+            <div class="modal-field-card">
+              <div class="modal-field-row">
+                <label for="allocModalBudget">Budget Plan</label>
+                <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
+              </div>
+              <div class="modal-field-row">
+                <label for="allocModalAmount">Amount (USD)</label>
+                <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00" required>
+              </div>
             </div>
             <div class="btn-group">
               <button type="button" onclick="window.confirmAllocationEntry()">Add</button>
@@ -194,17 +205,7 @@ export function getRecordIncomePage() {
           </div>
         </div>
 
-        <div style="max-width: 600px; margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-          <div class="income-totals-bar" style="display: flex; justify-content: space-between; font-weight: bold; font-size: 0.95em;">
-            <span>Total Income: $<span id="lblTotalIncomeDisplay">0.00</span></span>
-            <span>Allocated: $<span id="lblTotalAllocatedDisplay">0.00</span></span>
-            <span style="color: var(--primary);">Unallocated: $<span id="lblUnallocatedDisplay">0.00</span></span>
-          </div>
-          <div id="allocationFormError" style="color: #dc3545; font-size: 0.85em; margin-top: 8px; display: none; font-weight: bold;"></div>
-        </div>
-
         <div class="btn-group">
-          <button type="button" class="secondary" onclick="window.openAllocationEntryModal(false)">+ Add Budget Allocation</button>
           <button type="submit">Save Income Record</button>
         </div>
       </form>
@@ -236,6 +237,7 @@ export async function initRecordIncomePage() {
   // Clear allocations
   const container = document.getElementById('incomeAllocationsContainer');
   if (container) container.innerHTML = '';
+  updateAllocationEmptyHint();
 
   // Default math state
   window.onIncomeMathFieldsChange();
@@ -327,7 +329,11 @@ function recalculateAllocationSummaries() {
   if (lblAllocated) lblAllocated.textContent = totalAllocated.toFixed(2);
   if (lblUnallocated) {
     lblUnallocated.textContent = unallocated.toFixed(2);
-    lblUnallocated.parentElement.style.color = unallocated < 0 ? 'var(--danger)' : 'var(--primary)';
+    const unallocRow = lblUnallocated.closest('.data-card-row-value');
+    if (unallocRow) {
+      unallocRow.classList.toggle('negative', unallocated < 0);
+      unallocRow.classList.toggle('positive', unallocated >= 0);
+    }
   }
 
   if (errContainer) {
@@ -351,23 +357,37 @@ async function getBudgetPlansForTeam() {
   return plans;
 }
 
+function updateAllocationEmptyHint() {
+  const container = document.getElementById('incomeAllocationsContainer');
+  const hint = document.getElementById('allocEmptyHint');
+  if (!hint) return;
+  const count = container?.querySelectorAll('.income-alloc-row').length || 0;
+  hint.style.display = count === 0 ? 'block' : 'none';
+}
+
 function appendAllocationSummaryRow(container, budgetId, amountUsd, budgetName, forEdit = false) {
   if (!container || !budgetId) return;
-  const row = document.createElement('div');
-  row.className = 'alloc-summary-row income-alloc-row';
+  const row = document.createElement('article');
+  row.className = 'data-card data-card--compact alloc-entry-card income-alloc-row';
   row.dataset.budgetId = budgetId;
   row.dataset.amountUsd = amountUsd || '';
   const removeHandler = forEdit
-    ? `this.closest('.income-alloc-row').remove(); window.onEditIncomeMathChange();`
-    : `this.closest('.income-alloc-row').remove(); window.onAllocationRowAmountInput();`;
+    ? `this.closest('.income-alloc-row').remove(); window.onEditIncomeMathChange(); window.updateAllocationEmptyHint && window.updateAllocationEmptyHint();`
+    : `this.closest('.income-alloc-row').remove(); window.onAllocationRowAmountInput(); window.updateAllocationEmptyHint && window.updateAllocationEmptyHint();`;
   const amountDisplay = amountUsd ? `$${parseFloat(amountUsd).toFixed(2)}` : '$0.00';
   row.innerHTML = `
-    <span class="alloc-summary-name">${budgetName}</span>
-    <span class="alloc-summary-amount">${amountDisplay}</span>
-    ${btnIconDelete(removeHandler, 'Remove')}
+    <div class="data-card-top">
+      <span class="data-card-title">${budgetName}</span>
+      <span class="action-icon-group">${btnIconDelete(removeHandler, 'Remove')}</span>
+    </div>
+    ${cardRow('Budget Plan', budgetName)}
+    ${cardRow('Amount (USD)', amountDisplay)}
   `;
   container.appendChild(row);
+  updateAllocationEmptyHint();
 }
+
+window.updateAllocationEmptyHint = updateAllocationEmptyHint;
 
 window.openAllocationEntryModal = async function(forEdit = false) {
   window._allocationModalForEdit = !!forEdit;
@@ -615,17 +635,18 @@ export function getIncomeManagerPage() {
             <div class="form-group"><label>Description</label><textarea id="editIncDescription" rows="2"></textarea></div>
           </div>
 
-          <h3 style="margin-top: 20px;">Split Allocations</h3>
-          <div id="editIncomeAllocationsContainer" class="alloc-line-cards" style="margin-bottom: 15px;"></div>
-          
-          <div class="income-totals-bar" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 15px; display: flex; justify-content: space-between; font-weight: bold; font-size: 0.9em;">
-            <span>Total Income: $<span id="lblEditTotalIncome">0.00</span></span>
-            <span>Allocated: $<span id="lblEditAllocated">0.00</span></span>
-            <span>Unallocated: $<span id="lblEditUnallocated">0.00</span></span>
+          <div class="alloc-section-card card" style="margin-top: 20px;">
+            <h3>Split Allocations</h3>
+            <div id="editIncomeAllocationsContainer" class="alloc-entry-cards"></div>
+            <div class="budget-grand-total-card alloc-totals-card">
+              ${cardRow('Total Income', '$<span id="lblEditTotalIncome">0.00</span>')}
+              ${cardRow('Allocated', '$<span id="lblEditAllocated">0.00</span>')}
+              ${cardRow('Unallocated', '$<span id="lblEditUnallocated">0.00</span>', 'alloc-unallocated-value')}
+            </div>
+            <button type="button" class="secondary alloc-add-btn" onclick="window.openAllocationEntryModal(true)">+ Add Split</button>
           </div>
 
           <div class="btn-group">
-            <button type="button" class="secondary" onclick="window.openAllocationEntryModal(true)">+ Add Split</button>
             <button type="submit" class="success">Save Changes</button>
             <button type="button" class="secondary" onclick="window.closeEditIncomeModal()">Cancel</button>
           </div>
@@ -634,14 +655,18 @@ export function getIncomeManagerPage() {
     </div>
 
     <div id="allocationEntryModal" class="modal">
-      <div class="modal-content small">
+      <div class="modal-content small entry-form-card">
         <button type="button" class="close-modal" onclick="window.closeAllocationEntryModal()">&times;</button>
         <h2>Add Budget Allocation</h2>
-        <div class="field-labeled"><span>Budget Plan</span>
-          <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
-        </div>
-        <div class="field-labeled"><span>Amount (USD)</span>
-          <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00" required>
+        <div class="modal-field-card">
+          <div class="modal-field-row">
+            <label for="allocModalBudget">Budget Plan</label>
+            <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
+          </div>
+          <div class="modal-field-row">
+            <label for="allocModalAmount">Amount (USD)</label>
+            <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00" required>
+          </div>
         </div>
         <div class="btn-group">
           <button type="button" onclick="window.confirmAllocationEntry()">Add</button>
@@ -903,7 +928,11 @@ window.onEditIncomeMathChange = function() {
   const unallocated = amount - allocated;
   const unallocEl = document.getElementById('lblEditUnallocated');
   unallocEl.textContent = unallocated.toFixed(2);
-  unallocEl.style.color = unallocated < 0 ? '#dc3545' : '#333';
+  const unallocRow = unallocEl.closest('.data-card-row-value');
+  if (unallocRow) {
+    unallocRow.classList.toggle('negative', unallocated < 0);
+    unallocRow.classList.toggle('positive', unallocated >= 0);
+  }
 };
 
 window.saveEditedIncomeRecord = async function(e) {
