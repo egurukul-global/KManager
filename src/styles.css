@@ -595,6 +595,78 @@ input.input-rate {
     minmax(var(--field-amount-min), auto);
 }
 
+.transfer-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 4px 0 8px;
+}
+
+.transfer-filter-row .checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.transfer-list-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.transfer-list-header h2 {
+  margin: 0;
+}
+
+.transfer-status-filter {
+  margin: 0;
+  min-width: 140px;
+}
+
+.transfer-status-filter label {
+  font-size: 0.8em;
+}
+
+.transfer-history-table .badge {
+  white-space: nowrap;
+}
+
+.badge--pending { background: #fef3c7; color: #92400e; }
+.badge--accepted { background: #d1fae5; color: #065f46; }
+.badge--rejected { background: #fee2e2; color: #991b1b; }
+
+.dash-alert-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dash-alert-action--accept {
+  background: var(--success, #16a34a);
+  color: #fff;
+  border-color: var(--success, #16a34a);
+}
+
+.dash-alert-action--accept:hover {
+  filter: brightness(0.92);
+}
+
+.dash-alert-action--reject {
+  background: transparent;
+  color: #dc2626;
+  border-color: #dc2626;
+}
+
+.dash-alert-action--reject:hover {
+  background: #fef2f2;
+}
+
 /* Bucket modal */
 .form-grid-row--bucket {
   grid-template-columns:

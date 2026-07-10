@@ -17,6 +17,7 @@ export const state = {
   // 💵 Income Module State Tracking
   incomeRecords: [],
   canManageIncome: false,
+  canTransferFunds: false,
   canManageExpenses: false,
   canViewAllExpenses: false,
   showDeleted: false,
@@ -45,12 +46,14 @@ export function computePermissions() {
     state.canEditBudgets = true;
     state.canDeleteBudgets = true;
     state.canManageIncome = true;
+    state.canTransferFunds = true;
     state.canManageExpenses = true;
     state.canViewAllExpenses = true;
     return;
   }
 
   state.canManageExpenses = level !== 'view';
+  state.canTransferFunds = level !== 'view';
   state.canViewAllExpenses = level === 'admin' || level === 'lead';
 
   // Team-level permissions based on access_level
@@ -66,6 +69,7 @@ export function computePermissions() {
       state.canEditBudgets = true;
       state.canDeleteBudgets = true;
       state.canManageIncome = true;
+      state.canTransferFunds = true;
       break;
     case 'lead':
       state.canCreateBuckets = true;
@@ -78,6 +82,7 @@ export function computePermissions() {
       state.canEditBudgets = true;
       state.canDeleteBudgets = false;
       state.canManageIncome = true;
+      state.canTransferFunds = true;
       break;
     case 'member':
       state.canCreateBuckets = false;
@@ -90,6 +95,7 @@ export function computePermissions() {
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
       state.canManageIncome = false;
+      state.canTransferFunds = true;
       break;
     case 'view':
       state.canCreateBuckets = false;
@@ -102,6 +108,7 @@ export function computePermissions() {
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
       state.canManageIncome = false;
+      state.canTransferFunds = false;
       break;
     default:
       state.canCreateBuckets = false;
@@ -114,6 +121,7 @@ export function computePermissions() {
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
       state.canManageIncome = false;
+      state.canTransferFunds = false;
   }
 }
 

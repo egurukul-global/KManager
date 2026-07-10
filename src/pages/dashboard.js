@@ -14,6 +14,13 @@ import {
   filterBucketsByScope,
   bucketHasMoney
 } from '../utils/financialStatusHelpers.js';
+import {
+  fetchPendingTransfersForUser
+} from '../utils/transferActions.js';
+import {
+  acceptTransferFromDashboard,
+  rejectTransferFromDashboard
+} from './transfer.js';
 
 function formatUsd(amount) {
   return '$' + formatUsdDisplay(amount);
@@ -58,6 +65,15 @@ export function getDashboardPage() {
 export async function initDashboardPage() {
   const teamId = state.currentTeam?.team_id;
   if (!teamId) return;
+
+  window.acceptDashboardTransfer = async (transferId) => {
+    const ok = await acceptTransferFromDashboard(transferId);
+    if (ok) await initDashboardPage();
+  };
+  window.rejectDashboardTransfer = async (transferId) => {
+    const ok = await rejectTransferFromDashboard(transferId);
+    if (ok) await initDashboardPage();
+  };
 
   const today = todayDateStr();
 
@@ -150,6 +166,32 @@ export async function initDashboardPage() {
 
     const alerts = [];
 
+    // Pending transfers awaiting this user's confirmation
+    try {
+      const pendingTransfers = await fetchPendingTransfersForUser(teamId, state.user?.id);
+      const { data: bucketList } = await supabaseClient
+        .from('buckets')
+        .select('id, name')
+        .eq('team_id', teamId)
+        .eq('is_deleted', false);
+      const bucketName = Object.fromEntries((bucketList || []).map(b => [b.id, b.name]));
+
+      pendingTransfers.forEach(t => {
+        const fromName = bucketName[t.from_bucket_id] || 'Source';
+        const amount = parseFloat(t.amount) || 0;
+        alerts.unshift({
+          level: 'warning',
+          icon: '💸',
+          title: 'Confirm money received',
+          message: `${amount.toFixed(2)} ${t.currency || ''} from ${fromName} — ${t.description || ''}`,
+          transferId: t.id,
+          isTransfer: true
+        });
+      });
+    } catch (pendingErr) {
+      console.warn('Pending transfers load:', pendingErr);
+    }
+
     if (nextEntry && !hasMonthlyForNext) {
       alerts.push({
         level: 'danger',
@@ -215,7 +257,13 @@ function renderAlerts(alerts) {
         <strong>${a.title}</strong>
         <span>${a.message}</span>
       </div>
-      ${a.action ? `<button type="button" class="dash-alert-action" onclick="window.showPage('${a.action.page}')">${a.action.label}</button>` : ''}
+      ${a.isTransfer ? `
+        <div class="dash-alert-actions">
+          <button type="button" class="dash-alert-action dash-alert-action--accept" onclick="window.acceptDashboardTransfer('${a.transferId}')">Accept</button>
+          <button type="button" class="dash-alert-action dash-alert-action--reject" onclick="window.rejectDashboardTransfer('${a.transferId}')">Reject</button>
+        </div>
+      ` : ''}
+      ${a.action && !a.isTransfer ? `<button type="button" class="dash-alert-action" onclick="window.showPage('${a.action.page}')">${a.action.label}</button>` : ''}
     </div>
   `).join('');
 }

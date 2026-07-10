@@ -48,7 +48,9 @@ export function getTransferDestAmount(transfer, destBucket, rates) {
 }
 
 function sumIncomeForBucket(bucketId, currency, fromDate, toDate, income, rates) {
-  let rows = (income || []).filter(f => f.bucket_id === bucketId && !f.is_deleted);
+  let rows = (income || []).filter(f =>
+    f.bucket_id === bucketId && !f.is_deleted && f.balance_impact !== false
+  );
   if (fromDate) rows = rows.filter(f => f.date >= fromDate);
   if (toDate) rows = rows.filter(f => f.date <= toDate);
 
@@ -60,7 +62,9 @@ function sumIncomeForBucket(bucketId, currency, fromDate, toDate, income, rates)
 }
 
 function sumExpensesForBucket(bucketId, currency, fromDate, toDate, expenses, rates) {
-  let rows = (expenses || []).filter(e => e.bucket_id === bucketId && !e.is_deleted);
+  let rows = (expenses || []).filter(e =>
+    e.bucket_id === bucketId && !e.is_deleted && e.balance_impact !== false
+  );
   if (fromDate) rows = rows.filter(e => e.date >= fromDate);
   if (toDate) rows = rows.filter(e => e.date <= toDate);
 
@@ -71,8 +75,12 @@ function sumExpensesForBucket(bucketId, currency, fromDate, toDate, expenses, ra
   }, 0);
 }
 
+import { isAcceptedTransfer } from './transferConstants.js';
+
 function sumTransfersIn(bucketId, currency, fromDate, toDate, transfers, bucketsById, rates) {
-  let rows = (transfers || []).filter(t => t.to_bucket_id === bucketId && !t.is_deleted);
+  let rows = (transfers || []).filter(t =>
+    t.to_bucket_id === bucketId && !t.is_deleted && isAcceptedTransfer(t)
+  );
   if (fromDate) rows = rows.filter(t => t.date >= fromDate);
   if (toDate) rows = rows.filter(t => t.date <= toDate);
 
@@ -85,7 +93,9 @@ function sumTransfersIn(bucketId, currency, fromDate, toDate, transfers, buckets
 }
 
 function sumTransfersOut(bucketId, currency, fromDate, toDate, transfers, bucketsById, rates) {
-  let rows = (transfers || []).filter(t => t.from_bucket_id === bucketId && !t.is_deleted);
+  let rows = (transfers || []).filter(t =>
+    t.from_bucket_id === bucketId && !t.is_deleted && isAcceptedTransfer(t)
+  );
   if (fromDate) rows = rows.filter(t => t.date >= fromDate);
   if (toDate) rows = rows.filter(t => t.date <= toDate);
 
