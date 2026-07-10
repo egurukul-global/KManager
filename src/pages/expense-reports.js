@@ -5,6 +5,16 @@ import { showToast } from '../components/toasts.js';
 import { getExpenseCategoryLabel } from '../utils/expenseHelpers.js';
 import { formatUsdDisplay } from '../utils/currency.js';
 import { exportExpenseReportToPdf } from '../utils/reportPdf.js';
+import {
+  DEFAULT_REPORT_SECTIONS,
+  truncReportItem,
+  getReportTeamName,
+  buildReportFilterDescription,
+  scopeIncomeForReport,
+  budgetedUsd,
+  categoryStatusBadge,
+  aggregateSpendByCategory
+} from '../utils/reportHelpers.js';
 
 let teamBuckets = [];
 let teamBudgets = [];
@@ -35,16 +45,36 @@ function getBudgetName(budgetId) {
   return teamBudgets.find(b => b.id === budgetId)?.name || 'Unknown';
 }
 
-function reportHeader(title, showPdf = true) {
+function getTeamName() {
+  return getReportTeamName(state);
+}
+
+function reportPageTitle() {
+  return `One Kailasa Report for ${getTeamName()}`;
+}
+
+function reportHeader(showPdf = true) {
   const pdfBtn = showPdf
     ? `<button type="button" class="pdf-export-btn" onclick="window.exportExpenseReportToPDF()">📄 Export to PDF</button>`
     : '';
   return `
     <div class="report-results-header">
-      <h3>${title}</h3>
+      <div>
+        <h3 class="report-main-title">${reportPageTitle()}</h3>
+        <p id="reportFilterLine" class="report-filter-line"></p>
+      </div>
       ${pdfBtn}
     </div>
   `;
+}
+
+function setFilterLine(filters, budget) {
+  const parts = buildReportFilterDescription(filters, budget, getBucketName);
+  const el = document.getElementById('reportFilterLine');
+  if (el) {
+    el.textContent = parts.length ? parts.join(' · ') : '';
+    el.style.display = parts.length ? '' : 'none';
+  }
 }
 
 export function getExpenseReportsPage() {
@@ -76,7 +106,7 @@ export function getExpenseReportsPage() {
           </div>
         </div>
         <div class="btn-group">
-          <button type="button" onclick="window.generateExpenseReport()">Generate Report</button>
+          <button type="button" onclick="window.promptAndGenerateExpenseReport()">Generate Report</button>
           <button type="button" class="secondary" onclick="window.resetExpenseReportFilters()">Reset</button>
         </div>
       </div>
@@ -86,7 +116,7 @@ export function getExpenseReportsPage() {
 }
 
 export async function initExpenseReportsPage() {
-  window.generateExpenseReport = generateExpenseReport;
+  window.promptAndGenerateExpenseReport = promptAndGenerateExpenseReport;
   window.resetExpenseReportFilters = resetExpenseReportFilters;
   window.onReportBudgetChange = onReportBudgetChange;
   window.exportExpenseReportToPDF = exportReportToPDF;
@@ -207,31 +237,71 @@ function filterExpenses(filters) {
   });
 }
 
-function filterIncome(filters) {
-  const { start, end, budgetId } = filters;
-
+function filterIncomeByDates(filters) {
+  const { start, end } = filters;
   return teamIncome.filter(rec => {
     if (start && rec.date < start) return false;
     if (end && rec.date > end) return false;
-    if (budgetId) {
-      const allocs = rec.budget_allocations || [];
-      if (!allocs.some(a => a.budget_id === budgetId)) return false;
-    }
     return true;
   });
 }
 
-function budgetedUsd(budget) {
-  return (budget.categories || []).reduce((sum, cat) => {
-    return sum + (parseFloat(cat.usdAmount ?? cat.usd_amount) || 0);
-  }, 0);
+function showReportSectionsModal() {
+  return new Promise(resolve => {
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
+    modal.innerHTML = `
+      <div class="modal-content small entry-form-card report-sections-modal">
+        <button type="button" class="close-modal" id="rptSecClose">&times;</button>
+        <h2>Report Sections</h2>
+        <p class="report-sections-hint">Choose what to include in this report.</p>
+        <div class="report-sections-list">
+          <label class="report-section-check"><input type="checkbox" id="rptSec_expenseDetail" checked> Expense Detail</label>
+          <label class="report-section-check"><input type="checkbox" id="rptSec_categorySummary" checked> Category Summary</label>
+          <label class="report-section-check"><input type="checkbox" id="rptSec_incomeSummary" checked> Income Summary</label>
+          <label class="report-section-check"><input type="checkbox" id="rptSec_incomeDetail" checked> Income Detail</label>
+          <label class="report-section-check"><input type="checkbox" id="rptSec_budgetAllocations" checked> Budget Allocations</label>
+          <label class="report-section-check"><input type="checkbox" id="rptSec_financialSummary" checked> Financial Summary</label>
+        </div>
+        <div class="btn-group">
+          <button type="button" id="rptSecGenerate">Generate Report</button>
+          <button type="button" class="secondary" id="rptSecCancel">Cancel</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = (result) => {
+      modal.remove();
+      resolve(result);
+    };
+
+    modal.querySelector('#rptSecClose').onclick = () => close(null);
+    modal.querySelector('#rptSecCancel').onclick = () => close(null);
+    modal.onclick = e => { if (e.target === modal) close(null); };
+
+    modal.querySelector('#rptSecGenerate').onclick = () => {
+      const sections = {
+        expenseDetail: modal.querySelector('#rptSec_expenseDetail').checked,
+        categorySummary: modal.querySelector('#rptSec_categorySummary').checked,
+        incomeSummary: modal.querySelector('#rptSec_incomeSummary').checked,
+        incomeDetail: modal.querySelector('#rptSec_incomeDetail').checked,
+        budgetAllocations: modal.querySelector('#rptSec_budgetAllocations').checked,
+        financialSummary: modal.querySelector('#rptSec_financialSummary').checked
+      };
+      if (!Object.values(sections).some(Boolean)) {
+        showToast('Select at least one report section.', 'warning');
+        return;
+      }
+      close(sections);
+    };
+  });
 }
 
-function categoryStatusBadge(budgeted, actual) {
-  const balance = budgeted - actual;
-  if (balance < 0) return '<span class="badge badge-danger">Over Budget</span>';
-  if (actual === 0) return '<span class="badge badge-secondary">No Spend</span>';
-  return '<span class="badge badge-success">On Track</span>';
+async function promptAndGenerateExpenseReport() {
+  const sections = await showReportSectionsModal();
+  if (!sections) return;
+  generateExpenseReport(sections);
 }
 
 function exportReportToPDF() {
@@ -246,7 +316,7 @@ function exportReportToPDF() {
   });
 }
 
-function generateExpenseReport() {
+function generateExpenseReport(sections = { ...DEFAULT_REPORT_SECTIONS }) {
   const start = document.getElementById('reportStart')?.value || '';
   const end = document.getElementById('reportEnd')?.value || '';
   const budgetId = document.getElementById('reportBudget')?.value || '';
@@ -256,322 +326,146 @@ function generateExpenseReport() {
 
   const filters = { start, end, budgetId, category, sourceId, currency };
   const filtered = filterExpenses(filters);
-  const filteredIncome = filterIncome(filters);
+  const incomeByDate = filterIncomeByDates(filters);
+  const incomeScope = scopeIncomeForReport(incomeByDate, budgetId || null);
   const container = document.getElementById('expenseReportResults');
   if (!container) return;
 
-  const totalUSD = filtered.reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
   const budget = budgetId ? teamBudgets.find(b => b.id === budgetId) : null;
 
   lastReportSnapshot = {
     filteredExpenses: filtered,
-    filteredIncome,
+    incomeScope,
     filters,
     budget,
-    teamCategories
+    teamCategories,
+    teamBuckets,
+    teamBudgets,
+    sections,
+    teamName: getTeamName()
   };
 
-  if (!budgetId) {
-    container.innerHTML = renderAllBudgetsReport(filtered, filteredIncome, totalUSD, filters);
-    return;
-  }
+  container.innerHTML = renderReport({
+    filtered,
+    incomeScope,
+    filters,
+    budget,
+    sections
+  });
 
-  if (!budget) {
-    container.innerHTML = '<div class="empty-state"><p>Budget not found.</p></div>';
-    lastReportSnapshot = null;
-    return;
-  }
-
-  container.innerHTML = renderSingleBudgetReport(filtered, filteredIncome, budget);
+  setFilterLine(filters, budget);
 }
 
-function renderIncomeSection(filteredIncome) {
-  if (!filteredIncome.length) return '';
+function renderReport({ filtered, incomeScope, filters, budget, sections }) {
+  let html = reportHeader(true);
 
-  const totalIncomeAmount = filteredIncome.reduce(
-    (sum, f) => sum + (parseFloat(f.amount_usd) || 0),
-    0
-  );
-  const totalIncomeAllocated = filteredIncome.reduce((sum, f) => {
-    return sum + (f.budget_allocations || []).reduce(
-      (s, a) => s + (parseFloat(a.amount_usd) || 0),
-      0
-    );
-  }, 0);
-  const totalIncomeUnallocated = totalIncomeAmount - totalIncomeAllocated;
+  if (budget) {
+    const totalBudgeted = budgetedUsd(budget);
+    const totalActual = filtered.reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
+    const balance = totalBudgeted - totalActual;
+    html += `
+      <div class="stats-grid" style="margin-bottom:20px;">
+        <div class="stat-card"><h3>${filtered.length}</h3><p>Transactions</p></div>
+        <div class="stat-card"><h3>$${totalBudgeted.toFixed(2)}</h3><p>Budgeted (USD)</p></div>
+        <div class="stat-card"><h3>$${totalActual.toFixed(2)}</h3><p>Actual (USD)</p></div>
+        <div class="stat-card ${balance < 0 ? 'stat-card--danger' : 'stat-card--success'}">
+          <h3>$${balance.toFixed(2)}</h3><p>${balance < 0 ? 'Over Budget' : 'Remaining'}</p>
+        </div>
+      </div>
+    `;
+  } else if (sections.expenseDetail) {
+    const totalUSD = filtered.reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
+    html += `
+      <div class="stats-grid" style="margin-bottom:20px;">
+        <div class="stat-card"><h3>${filtered.length}</h3><p>Transactions</p></div>
+        <div class="stat-card"><h3>$${formatUsdDisplay(totalUSD)}</h3><p>Total Spent (USD)</p></div>
+      </div>
+    `;
+  }
 
-  let html = `
-    <h3 class="report-section-divider">Income Received</h3>
-    <div class="stats-grid" style="margin-bottom:20px;">
-      <div class="stat-card stat-card--income"><h3>${filteredIncome.length}</h3><p>Records</p></div>
-      <div class="stat-card stat-card--income"><h3>$${totalIncomeAmount.toFixed(2)}</h3><p>Total Received</p></div>
-      <div class="stat-card stat-card--alloc"><h3>$${totalIncomeAllocated.toFixed(2)}</h3><p>Allocated</p></div>
-      <div class="stat-card stat-card--unalloc"><h3>$${totalIncomeUnallocated.toFixed(2)}</h3><p>Unallocated</p></div>
-    </div>
-    <h4>Income Details</h4>
-    <div class="table-container">
+  if (sections.expenseDetail) {
+    html += renderExpenseDetails(filtered, !!budget);
+  }
+
+  if (sections.categorySummary) {
+    if (budget) {
+      html += renderCategoryPerformance(filtered, budget);
+    } else {
+      html += renderBudgetVsActual(filtered, filters);
+      html += renderSpendingByCategory(filtered);
+    }
+  }
+
+  if (sections.incomeSummary) {
+    html += renderIncomeSummary(incomeScope, budget);
+  }
+
+  if (sections.incomeDetail) {
+    html += renderIncomeDetails(incomeScope, budget);
+  }
+
+  if (sections.budgetAllocations) {
+    html += renderBudgetAllocations(incomeScope);
+  }
+
+  if (sections.financialSummary) {
+    html += renderFinancialSummary();
+  }
+
+  return html;
+}
+
+function renderExpenseDetails(filtered, singleBudget) {
+  let html = '<h3>Expense Details</h3>';
+
+  if (!filtered.length) {
+    return html + '<div class="empty-state"><p>No expenses match the selected filters.</p></div>';
+  }
+
+  html += `
+    <div class="table-container report-expense-table">
       <table class="table-stack-mobile">
         <thead>
           <tr>
-            <th>Date</th><th>From</th><th>Bucket</th><th>Amount (Local)</th>
-            <th>Amount (USD)</th><th>Description</th><th>Allocations</th>
+            <th>Date</th>
+            <th class="col-item">Item</th>
+            ${singleBudget ? '' : '<th>Budget</th>'}
+            <th>Category</th>
+            <th>Source</th>
+            <th class="col-amount">Local</th>
+            <th class="col-rate">Rate</th>
+            <th class="col-usd">USD</th>
+            <th>Receipt</th>
           </tr>
         </thead>
         <tbody>
   `;
 
-  [...filteredIncome].sort((a, b) => b.date.localeCompare(a.date)).forEach(fund => {
-    const usdAmount = parseFloat(fund.amount_usd) || 0;
-    const localDisplay = fund.exchange_rate
-      ? `${(fund.local_amount || 0).toLocaleString()} ${fund.currency || ''} @ ${fund.exchange_rate}`
-      : `${(fund.local_amount || 0).toLocaleString()} ${fund.currency || ''}`;
-
-    if (!(fund.budget_allocations || []).length) {
-      html += `
-        <tr>
-          <td data-label="Date">${fund.date}</td>
-          <td data-label="From">${fund.payment_from || '—'}</td>
-          <td data-label="Bucket">${getBucketName(fund.bucket_id)}</td>
-          <td data-label="Local" class="positive">${localDisplay}</td>
-          <td data-label="USD"><strong>$${usdAmount.toFixed(2)}</strong></td>
-          <td data-label="Description">${fund.description || '—'}</td>
-          <td data-label="Allocations"><span style="color:#999;">Unallocated</span></td>
-        </tr>
-      `;
-      return;
-    }
-
-    let totalAllocUsd = 0;
-    fund.budget_allocations.forEach(alloc => {
-      const allocUsd = parseFloat(alloc.amount_usd) || 0;
-      totalAllocUsd += allocUsd;
-      const allocLocal = usdAmount > 0 ? (allocUsd / usdAmount) * (fund.local_amount || 0) : 0;
-      html += `
-        <tr>
-          <td data-label="Date">${fund.date}</td>
-          <td data-label="From">${fund.payment_from || '—'}</td>
-          <td data-label="Bucket">${getBucketName(fund.bucket_id)}</td>
-          <td data-label="Local" class="positive">${allocLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${fund.currency || ''}</td>
-          <td data-label="USD"><strong>$${allocUsd.toFixed(2)}</strong></td>
-          <td data-label="Description">${fund.description || '—'}</td>
-          <td data-label="Allocations">${getBudgetName(alloc.budget_id)}</td>
-        </tr>
-      `;
-    });
-
-    const unallocatedUsd = usdAmount - totalAllocUsd;
-    if (unallocatedUsd > 0.01) {
-      const unallocatedLocal = usdAmount > 0 ? (unallocatedUsd / usdAmount) * (fund.local_amount || 0) : 0;
-      html += `
-        <tr>
-          <td data-label="Date">${fund.date}</td>
-          <td data-label="From">${fund.payment_from || '—'}</td>
-          <td data-label="Bucket">${getBucketName(fund.bucket_id)}</td>
-          <td data-label="Local" class="positive">${unallocatedLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${fund.currency || ''}</td>
-          <td data-label="USD"><strong>$${unallocatedUsd.toFixed(2)}</strong></td>
-          <td data-label="Description">${fund.description || '—'}</td>
-          <td data-label="Allocations"><span style="color:#999;">Unallocated</span></td>
-        </tr>
-      `;
-    }
-  });
-
-  html += '</tbody></table></div>';
-
-  html += `
-    <h4 style="margin-top:24px;">Budget Allocations</h4>
-    <div class="table-container">
-      <table class="table-stack-mobile">
-        <thead>
-          <tr><th>Date</th><th>From</th><th>Budget</th><th>Amount (USD)</th><th>Source Income</th></tr>
-        </thead>
-        <tbody>
-  `;
-
-  let hasAllocRows = false;
-  filteredIncome.forEach(fund => {
-    (fund.budget_allocations || []).forEach(alloc => {
-      hasAllocRows = true;
-      html += `
-        <tr>
-          <td data-label="Date">${fund.date}</td>
-          <td data-label="From">${fund.payment_from || '—'}</td>
-          <td data-label="Budget">${getBudgetName(alloc.budget_id)}</td>
-          <td data-label="USD" class="positive">$${(parseFloat(alloc.amount_usd) || 0).toFixed(2)}</td>
-          <td data-label="Source">${fund.description || '—'}</td>
-        </tr>
-      `;
-    });
-  });
-
-  if (!hasAllocRows) {
-    html += '<tr><td colspan="5" class="empty-state">No allocations in this period.</td></tr>';
-  }
-
-  html += '</tbody></table></div>';
-  return html;
-}
-
-function renderAllBudgetsReport(filtered, filteredIncome, totalUSD) {
-  let html = reportHeader('Report Summary');
-
-  html += `
-    <div class="stats-grid" style="margin-bottom:20px;">
-      <div class="stat-card"><h3>${filtered.length}</h3><p>Transactions</p></div>
-      <div class="stat-card"><h3>$${formatUsdDisplay(totalUSD)}</h3><p>Total Spent (USD)</p></div>
-    </div>
-  `;
-
-  if (filtered.length > 0) {
-    html += `
-      <h3>Expense Details</h3>
-      <div class="table-container">
-        <table class="table-stack-mobile">
-          <thead>
-            <tr>
-              <th>Date</th><th>Item</th><th>Budget</th><th>Category</th><th>Source</th>
-              <th>Local Amount</th><th>Rate</th><th>USD</th><th>Receipt</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-
-    [...filtered].sort((a, b) => b.date.localeCompare(a.date)).forEach(exp => {
-      const receiptLink = exp.receipt_url
-        ? `<a href="${exp.receipt_url}" class="receipt-link" target="_blank" rel="noopener">View</a>`
-        : '—';
-      html += `
-        <tr>
-          <td data-label="Date">${exp.date}</td>
-          <td data-label="Item">${exp.item || '—'}</td>
-          <td data-label="Budget">${getBudgetName(exp.budget_id)}</td>
-          <td data-label="Category">${getExpenseCategoryLabel(exp, teamCategories)}</td>
-          <td data-label="Source">${getBucketName(exp.bucket_id)}</td>
-          <td data-label="Local">${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
-          <td data-label="Rate">${exp.exchange_rate ?? '—'}</td>
-          <td data-label="USD">$${(exp.usd_amount || 0).toFixed(2)}</td>
-          <td data-label="Receipt">${receiptLink}</td>
-        </tr>
-      `;
-    });
-
-    html += '</tbody></table></div>';
-  } else {
-    html += '<div class="empty-state"><p>No expenses match the selected filters.</p></div>';
-  }
-
-  html += '<h3 style="margin-top:30px;">Budget vs Actual</h3>';
-  html += `
-    <div class="table-container">
-      <table class="table-stack-mobile">
-        <thead>
-          <tr><th>Budget</th><th>Budgeted (USD)</th><th>Actual (USD)</th><th>Balance (USD)</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-  `;
-
-  let relevantBudgets = [...teamBudgets];
-  const category = document.getElementById('reportCategory')?.value;
-  const sourceId = document.getElementById('reportSource')?.value;
-  const currency = document.getElementById('reportCurrency')?.value;
-  if (category || sourceId || currency) {
-    const ids = new Set(filtered.map(e => e.budget_id));
-    relevantBudgets = teamBudgets.filter(b => ids.has(b.id));
-  }
-
-  let grandBudgeted = 0;
-  let grandActual = 0;
-  let grandBalance = 0;
-
-  relevantBudgets.forEach(budget => {
-    const budgeted = budgetedUsd(budget);
-    const actual = filtered.filter(e => e.budget_id === budget.id)
-      .reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
-    const balance = budgeted - actual;
-    grandBudgeted += budgeted;
-    grandActual += actual;
-    grandBalance += balance;
-    const over = balance < 0;
+  [...filtered].sort((a, b) => b.date.localeCompare(a.date)).forEach(exp => {
+    const receiptLink = exp.receipt_url
+      ? `<a href="${exp.receipt_url}" class="receipt-link" target="_blank" rel="noopener">View</a>`
+      : '—';
     html += `
       <tr>
-        <td data-label="Budget"><strong>${budget.name}</strong></td>
-        <td data-label="Budgeted">$${budgeted.toFixed(2)}</td>
-        <td data-label="Actual">$${actual.toFixed(2)}</td>
-        <td data-label="Balance" class="${over ? 'negative' : 'positive'}" style="font-weight:bold;">$${balance.toFixed(2)}</td>
-        <td data-label="Status">${categoryStatusBadge(budgeted, actual)}</td>
+        <td data-label="Date">${exp.date}</td>
+        <td data-label="Item" class="col-item" title="${(exp.item || '').replace(/"/g, '&quot;')}">${truncReportItem(exp.item)}</td>
+        ${singleBudget ? '' : `<td data-label="Budget">${getBudgetName(exp.budget_id)}</td>`}
+        <td data-label="Category">${getExpenseCategoryLabel(exp, teamCategories)}</td>
+        <td data-label="Source">${getBucketName(exp.bucket_id)}</td>
+        <td data-label="Local" class="col-amount">${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
+        <td data-label="Rate" class="col-rate">${exp.exchange_rate ?? '—'}</td>
+        <td data-label="USD" class="col-usd">$${(exp.usd_amount || 0).toFixed(2)}</td>
+        <td data-label="Receipt">${receiptLink}</td>
       </tr>
     `;
   });
 
-  const grandOver = grandBalance < 0;
-  html += `
-      <tr class="status-total">
-        <td data-label="Total"><strong>GRAND TOTAL</strong></td>
-        <td data-label="Budgeted"><strong>$${grandBudgeted.toFixed(2)}</strong></td>
-        <td data-label="Actual"><strong>$${grandActual.toFixed(2)}</strong></td>
-        <td data-label="Balance" class="${grandOver ? 'negative' : 'positive'}"><strong>$${grandBalance.toFixed(2)}</strong></td>
-        <td data-label="Status"><span class="badge badge-${grandOver ? 'danger' : 'success'}">${grandOver ? 'Over Budget' : 'On Track'}</span></td>
-      </tr>
-    </tbody></table></div>
-  `;
-
-  html += renderIncomeSection(filteredIncome);
+  html += '</tbody></table></div>';
   return html;
 }
 
-function renderSingleBudgetReport(filtered, filteredIncome, budget) {
-  const totalBudgeted = budgetedUsd(budget);
-  const totalActual = filtered.reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
-  const balance = totalBudgeted - totalActual;
-  const isOverBudget = balance < 0;
-
-  let html = reportHeader(`Budget Report: ${budget.name}`);
-
-  html += `
-    <div class="stats-grid" style="margin-bottom:20px;">
-      <div class="stat-card"><h3>${filtered.length}</h3><p>Transactions</p></div>
-      <div class="stat-card"><h3>$${totalBudgeted.toFixed(2)}</h3><p>Budgeted (USD)</p></div>
-      <div class="stat-card"><h3>$${totalActual.toFixed(2)}</h3><p>Actual (USD)</p></div>
-      <div class="stat-card ${isOverBudget ? 'stat-card--danger' : 'stat-card--success'}">
-        <h3>$${balance.toFixed(2)}</h3><p>${isOverBudget ? 'Over Budget' : 'Remaining'}</p>
-      </div>
-    </div>
-  `;
-
-  if (filtered.length > 0) {
-    html += `
-      <h3>Expense Details</h3>
-      <div class="table-container">
-        <table class="table-stack-mobile">
-          <thead>
-            <tr>
-              <th>Date</th><th>Item</th><th>Category</th><th>Source</th>
-              <th>Local Amount</th><th>Rate</th><th>USD</th><th>Receipt</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-    [...filtered].sort((a, b) => b.date.localeCompare(a.date)).forEach(exp => {
-      const receiptLink = exp.receipt_url
-        ? `<a href="${exp.receipt_url}" class="receipt-link" target="_blank" rel="noopener">View</a>`
-        : '—';
-      html += `
-        <tr>
-          <td data-label="Date">${exp.date}</td>
-          <td data-label="Item">${exp.item || '—'}</td>
-          <td data-label="Category">${getExpenseCategoryLabel(exp, teamCategories)}</td>
-          <td data-label="Source">${getBucketName(exp.bucket_id)}</td>
-          <td data-label="Local">${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
-          <td data-label="Rate">${exp.exchange_rate ?? '—'}</td>
-          <td data-label="USD">$${(exp.usd_amount || 0).toFixed(2)}</td>
-          <td data-label="Receipt">${receiptLink}</td>
-        </tr>
-      `;
-    });
-    html += '</tbody></table></div>';
-  }
-
-  html += '<h3 style="margin-top:30px;">Category Performance</h3>';
+function renderCategoryPerformance(filtered, budget) {
+  let html = '<h3 style="margin-top:30px;">Category Performance</h3>';
   html += `
     <div class="table-container">
       <table class="table-stack-mobile">
@@ -588,8 +482,9 @@ function renderSingleBudgetReport(filtered, filteredIncome, budget) {
     const catName = cat.category || cat.name;
     const catBudgeted = parseFloat(cat.usdAmount ?? cat.usd_amount) || 0;
     catGrandBudgeted += catBudgeted;
-    const catExpenses = filtered.filter(e => getExpenseCategoryLabel(e, teamCategories) === catName);
-    const catActual = catExpenses.reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
+    const catActual = filtered
+      .filter(e => getExpenseCategoryLabel(e, teamCategories) === catName)
+      .reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
     catGrandActual += catActual;
     const catBalance = catBudgeted - catActual;
     html += `
@@ -615,11 +510,245 @@ function renderSingleBudgetReport(filtered, filteredIncome, budget) {
       </tr>
     </tbody></table></div>
   `;
+  return html;
+}
 
-  if (!filtered.length) {
-    html += '<div class="empty-state" style="margin-top:16px;"><p>No transactions for this budget in the selected period.</p></div>';
+function renderBudgetVsActual(filtered, filters) {
+  let relevantBudgets = [...teamBudgets];
+  if (filters.category || filters.sourceId || filters.currency) {
+    const ids = new Set(filtered.map(e => e.budget_id));
+    relevantBudgets = teamBudgets.filter(b => ids.has(b.id));
   }
 
-  html += renderIncomeSection(filteredIncome);
+  let html = '<h3 style="margin-top:30px;">Budget vs Actual</h3>';
+  html += `
+    <div class="table-container">
+      <table class="table-stack-mobile">
+        <thead>
+          <tr><th>Budget</th><th>Budgeted (USD)</th><th>Actual (USD)</th><th>Balance (USD)</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+  `;
+
+  let grandBudgeted = 0;
+  let grandActual = 0;
+  let grandBalance = 0;
+
+  relevantBudgets.forEach(b => {
+    const budgeted = budgetedUsd(b);
+    const actual = filtered.filter(e => e.budget_id === b.id)
+      .reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
+    const balance = budgeted - actual;
+    grandBudgeted += budgeted;
+    grandActual += actual;
+    grandBalance += balance;
+    const over = balance < 0;
+    html += `
+      <tr>
+        <td data-label="Budget"><strong>${b.name}</strong></td>
+        <td data-label="Budgeted">$${budgeted.toFixed(2)}</td>
+        <td data-label="Actual">$${actual.toFixed(2)}</td>
+        <td data-label="Balance" class="${over ? 'negative' : 'positive'}" style="font-weight:bold;">$${balance.toFixed(2)}</td>
+        <td data-label="Status">${categoryStatusBadge(budgeted, actual)}</td>
+      </tr>
+    `;
+  });
+
+  const grandOver = grandBalance < 0;
+  html += `
+      <tr class="status-total">
+        <td data-label="Total"><strong>GRAND TOTAL</strong></td>
+        <td data-label="Budgeted"><strong>$${grandBudgeted.toFixed(2)}</strong></td>
+        <td data-label="Actual"><strong>$${grandActual.toFixed(2)}</strong></td>
+        <td data-label="Balance" class="${grandOver ? 'negative' : 'positive'}"><strong>$${grandBalance.toFixed(2)}</strong></td>
+        <td data-label="Status"><span class="badge badge-${grandOver ? 'danger' : 'success'}">${grandOver ? 'Over Budget' : 'On Track'}</span></td>
+      </tr>
+    </tbody></table></div>
+  `;
+  return html;
+}
+
+function renderSpendingByCategory(filtered) {
+  const byCat = aggregateSpendByCategory(filtered, teamCategories);
+  if (!byCat.length) return '';
+
+  let html = '<h3 style="margin-top:24px;">Spending by Category</h3>';
+  html += `
+    <div class="table-container">
+      <table class="table-stack-mobile">
+        <thead><tr><th>Category</th><th>Transactions</th><th>Actual (USD)</th></tr></thead>
+        <tbody>
+  `;
+  let total = 0;
+  byCat.forEach(row => {
+    total += row.actual;
+    html += `
+      <tr>
+        <td data-label="Category">${row.category}</td>
+        <td data-label="Transactions">${row.count}</td>
+        <td data-label="Actual">$${row.actual.toFixed(2)}</td>
+      </tr>
+    `;
+  });
+  html += `
+      <tr class="status-total">
+        <td data-label="Total"><strong>TOTAL</strong></td>
+        <td data-label="Transactions"><strong>${filtered.length}</strong></td>
+        <td data-label="Actual"><strong>$${total.toFixed(2)}</strong></td>
+      </tr>
+    </tbody></table></div>
+  `;
+  return html;
+}
+
+function renderIncomeSummary(incomeScope, budget) {
+  const { summary, records } = incomeScope;
+  if (!summary || !records.length) {
+    return '<h3 class="report-section-divider">Income Summary</h3><div class="empty-state"><p>No income for the selected criteria.</p></div>';
+  }
+
+  const title = budget ? `Income Summary — ${budget.name}` : 'Income Summary';
+  let html = `<h3 class="report-section-divider">${title}</h3>`;
+  html += '<div class="stats-grid" style="margin-bottom:20px;">';
+
+  if (summary.budgetScoped) {
+    html += `
+      <div class="stat-card stat-card--income"><h3>${summary.recordCount}</h3><p>Allocation Records</p></div>
+      <div class="stat-card stat-card--alloc"><h3>$${summary.allocated.toFixed(2)}</h3><p>Allocated to Budget</p></div>
+    `;
+  } else {
+    html += `
+      <div class="stat-card stat-card--income"><h3>${summary.recordCount}</h3><p>Records</p></div>
+      <div class="stat-card stat-card--income"><h3>$${summary.totalReceived.toFixed(2)}</h3><p>Total Received</p></div>
+      <div class="stat-card stat-card--alloc"><h3>$${summary.allocated.toFixed(2)}</h3><p>Allocated</p></div>
+      <div class="stat-card stat-card--unalloc"><h3>$${summary.unallocated.toFixed(2)}</h3><p>Unallocated</p></div>
+    `;
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function renderIncomeDetails(incomeScope, budget) {
+  const { records } = incomeScope;
+  if (!records.length) return '';
+
+  const title = budget ? `Income Details — ${budget.name}` : 'Income Details';
+  let html = `<h4>${title}</h4>`;
+  html += `
+    <div class="table-container">
+      <table class="table-stack-mobile">
+        <thead>
+          <tr>
+            <th>Date</th><th>From</th><th>Bucket</th><th>Amount (Local)</th>
+            <th>Amount (USD)</th><th>Description</th><th>Allocation</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  [...records].sort((a, b) => b.date.localeCompare(a.date)).forEach(fund => {
+    const fundUsd = parseFloat(fund.amount_usd) || 0;
+    const allocs = fund.budget_allocations || [];
+
+    if (!allocs.length) {
+      const localDisplay = fund.exchange_rate
+        ? `${(fund.local_amount || 0).toLocaleString()} ${fund.currency || ''} @ ${fund.exchange_rate}`
+        : `${(fund.local_amount || 0).toLocaleString()} ${fund.currency || ''}`;
+      html += `
+        <tr>
+          <td data-label="Date">${fund.date}</td>
+          <td data-label="From">${fund.payment_from || '—'}</td>
+          <td data-label="Bucket">${getBucketName(fund.bucket_id)}</td>
+          <td data-label="Local" class="positive">${localDisplay}</td>
+          <td data-label="USD"><strong>$${fundUsd.toFixed(2)}</strong></td>
+          <td data-label="Description">${fund.description || '—'}</td>
+          <td data-label="Allocation"><span style="color:#999;">Unallocated</span></td>
+        </tr>
+      `;
+      return;
+    }
+
+    allocs.forEach(alloc => {
+      const allocUsd = parseFloat(alloc.amount_usd) || 0;
+      const allocLocal = fundUsd > 0 ? (allocUsd / fundUsd) * (fund.local_amount || 0) : 0;
+      html += `
+        <tr>
+          <td data-label="Date">${fund.date}</td>
+          <td data-label="From">${fund.payment_from || '—'}</td>
+          <td data-label="Bucket">${getBucketName(fund.bucket_id)}</td>
+          <td data-label="Local" class="positive">${allocLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${fund.currency || ''}</td>
+          <td data-label="USD"><strong>$${allocUsd.toFixed(2)}</strong></td>
+          <td data-label="Description">${fund.description || '—'}</td>
+          <td data-label="Allocation">${getBudgetName(alloc.budget_id)}</td>
+        </tr>
+      `;
+    });
+  });
+
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function renderBudgetAllocations(incomeScope) {
+  const { records } = incomeScope;
+  let html = '<h4 style="margin-top:24px;">Budget Allocations</h4>';
+  html += `
+    <div class="table-container">
+      <table class="table-stack-mobile">
+        <thead>
+          <tr><th>Date</th><th>From</th><th>Budget</th><th>Amount (USD)</th><th>Source Income</th></tr>
+        </thead>
+        <tbody>
+  `;
+
+  let hasRows = false;
+  records.forEach(fund => {
+    (fund.budget_allocations || []).forEach(alloc => {
+      hasRows = true;
+      html += `
+        <tr>
+          <td data-label="Date">${fund.date}</td>
+          <td data-label="From">${fund.payment_from || '—'}</td>
+          <td data-label="Budget">${getBudgetName(alloc.budget_id)}</td>
+          <td data-label="USD" class="positive">$${(parseFloat(alloc.amount_usd) || 0).toFixed(2)}</td>
+          <td data-label="Source">${fund.description || '—'}</td>
+        </tr>
+      `;
+    });
+  });
+
+  if (!hasRows) {
+    html += '<tr><td colspan="5" class="empty-state">No allocations for the selected criteria.</td></tr>';
+  }
+
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function renderFinancialSummary() {
+  let html = '<h3 class="report-section-divider">Financial Summary — Bucket Balances</h3>';
+  if (!teamBuckets.length) {
+    return html + '<div class="empty-state"><p>No buckets configured.</p></div>';
+  }
+
+  html += `
+    <div class="table-container">
+      <table class="table-stack-mobile">
+        <thead><tr><th>Bucket</th><th>Currency</th><th>Balance</th></tr></thead>
+        <tbody>
+  `;
+
+  teamBuckets.forEach(b => {
+    html += `
+      <tr>
+        <td data-label="Bucket"><strong>${b.name}</strong></td>
+        <td data-label="Currency">${b.currency || '—'}</td>
+        <td data-label="Balance">${(parseFloat(b.balance) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+      </tr>
+    `;
+  });
+
+  html += '</tbody></table></div>';
   return html;
 }

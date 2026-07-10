@@ -1249,6 +1249,61 @@ tr.selected { background: #F5EDE8 !important; }
   filter: brightness(1.08);
 }
 
+.report-main-title {
+  margin: 0 0 4px;
+  font-size: 1.15em;
+}
+
+.report-filter-line {
+  margin: 0;
+  font-size: 0.88em;
+  color: var(--text-secondary);
+}
+
+.report-sections-modal h2 {
+  margin-bottom: 8px;
+}
+
+.report-sections-hint {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: 0.9em;
+}
+
+.report-sections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.report-section-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.report-section-check input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+
+.report-expense-table .col-item {
+  max-width: 8.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-expense-table .col-amount,
+.report-expense-table .col-rate,
+.report-expense-table .col-usd {
+  white-space: nowrap;
+}
+
 /* ===== ALERT MODAL ===== */
 .alert-modal-content {
   text-align: center;

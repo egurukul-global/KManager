@@ -378,7 +378,7 @@ export function getAddExpensePage() {
             <div class="form-group"><label>Payment bucket</label><select name="bucket_id" id="expBucket" required onchange="window.onExpenseBucketChange()"><option value="">Select bucket</option></select></div>
           </div>
           <div class="form-grid-row form-grid-row--expense-chunk">
-            <div class="form-group"><label class="required">Item</label><input type="text" name="item" id="expItem" required placeholder="e.g. Groceries"></div>
+            <div class="form-group"><label class="required">Item</label><input type="text" name="item" id="expItem" required maxlength="20" placeholder="e.g. Groceries"></div>
             <div class="form-group"><label class="required">Local amount</label><input type="number" class="input-amount" name="local_amount" id="expLocalAmount" step="0.01" min="0" required oninput="window.onExpenseMathChange()"></div>
             <div class="form-group"><label>Currency</label><select name="currency" id="expCurrency" required onchange="window.onExpenseCurrencyChange()"><option value="">—</option></select></div>
           </div>
@@ -652,7 +652,7 @@ export function getExpenseManagerPage() {
               <div class="form-group"><label class="required">Bucket</label><select id="editExpBucket" name="bucket_id" required onchange="window.onEditExpenseBucketChange()"></select></div>
             </div>
             <div class="form-grid-row form-grid-row--expense-chunk">
-              <div class="form-group"><label class="required">Item</label><input type="text" name="item" id="editExpItem" required></div>
+              <div class="form-group"><label class="required">Item</label><input type="text" name="item" id="editExpItem" required maxlength="20"></div>
               <div class="form-group"><label class="required">Local amount</label><input type="number" class="input-amount" name="local_amount" id="editExpLocalAmount" step="0.01" required oninput="window.onEditExpenseMathChange()"></div>
               <div class="form-group"><label class="required">Currency</label><select id="editExpCurrency" name="currency" required onchange="window.onEditExpenseCurrencyChange()"></select></div>
             </div>

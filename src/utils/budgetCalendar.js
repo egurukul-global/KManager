@@ -79,6 +79,14 @@ export function formatDisplayDate(dateStr) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** Legacy manual name pattern e.g. 2026-07-17-CN — use calendar labels for monthly budgets instead. */
+export function isDateCnBudgetName(name) {
+  return /^\d{4}-\d{2}-\d{2}-CN$/i.test(String(name || '').trim());
+}
+
+export const DATE_CN_BUDGET_NAME_WARNING =
+  'Names like yyyy-mm-dd-CN are discouraged. For monthly budgets, pick a calendar date and use its label so all teams share the same name. You can keep this name or change it later when editing the budget.';
+
 export function getReconciliationStatus(lastDateStr, today = todayDateStr()) {
   if (!lastDateStr) {
     return { level: 'danger', message: 'Not reconciled', daysSince: null };

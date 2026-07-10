@@ -4,7 +4,7 @@ import { supabaseClient, localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete
 import { showToast, showConfirm } from '../components/toasts.js';
 import { getLatestUsdRate, getLocalCurrenciesFromRates, usdToLocal, rateForInput } from '../utils/currency.js';
 import { loadCategoryMasterLines, normalizeBudgetCategory, formatCategoryLabel } from '../utils/categoryMaster.js';
-import { formatDisplayDate } from '../utils/budgetCalendar.js';
+import { formatDisplayDate, isDateCnBudgetName, DATE_CN_BUDGET_NAME_WARNING } from '../utils/budgetCalendar.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 
 let calendarEntriesCache = [];
@@ -93,15 +93,16 @@ export function getCreateBudgetPage() {
           <div class="form-grid-row form-grid-row--budget-a">
             <div class="form-group" id="monthlyCalendarGroup">
               <label>Budget Period Date</label>
-              <select id="newBudgetCalendarEntry" required><option value="">Select date…</option></select>
+              <select id="newBudgetCalendarEntry" required onchange="window.onBudgetCalendarEntryChange()"><option value="">Select date…</option></select>
             </div>
             <div class="form-group" id="adhocDateGroup" style="display:none;">
               <label>Budget Period Date</label>
               <input type="date" id="newBudgetAdhocDate">
             </div>
-            <div class="form-group">
+            <div class="form-group" id="budgetNameGroup">
               <label>Budget Name</label>
-              <input type="text" id="newBudgetName" placeholder="March 2026, Dubai Trip" required onblur="window.validateBudgetName(this)">
+              <input type="text" id="newBudgetName" placeholder="Select a calendar date (monthly) or enter name (adhoc)" required onblur="window.validateBudgetName(this)">
+              <p id="monthlyNameHint" class="form-hint" style="margin-top:6px;">Monthly budgets use the calendar label so all teams share the same name.</p>
             </div>
           </div>
           <div class="form-grid-row form-grid-row--budget-b">
@@ -153,6 +154,7 @@ export async function initCreateBudgetPage() {
   await seedCreateBudgetCategoryRows();
 
   window.onBudgetTypeChange = onBudgetTypeChange;
+  window.onBudgetCalendarEntryChange = onBudgetCalendarEntryChange;
   window.onCreateBudgetCurrencyChange = onCreateBudgetCurrencyChange;
   window.onCreateBudgetRateChange = onCreateBudgetRateChange;
   window.onCreateBudgetUSDChange = onCreateBudgetUSDChange;
@@ -185,9 +187,29 @@ function populateCalendarSelect() {
     const label = entry.label
       ? `${formatDisplayDate(entry.budget_period_date)} — ${entry.label}`
       : formatDisplayDate(entry.budget_period_date);
-    select.innerHTML += `<option value="${entry.id}">${label}</option>`;
+    const safeLabel = escapeHtmlAttr(entry.label || '');
+    select.innerHTML += `<option value="${entry.id}" data-label="${safeLabel}" data-date="${entry.budget_period_date}">${label}</option>`;
   });
   if (current) select.value = current;
+  onBudgetCalendarEntryChange();
+}
+
+function getMonthlyBudgetNameFromEntry(entry) {
+  if (!entry) return '';
+  if (entry.label?.trim()) return entry.label.trim();
+  return formatDisplayDate(entry.budget_period_date);
+}
+
+function onBudgetCalendarEntryChange() {
+  const type = document.getElementById('newBudgetType')?.value || 'monthly';
+  if (type !== 'monthly') return;
+
+  const entryId = document.getElementById('newBudgetCalendarEntry')?.value;
+  const nameInput = document.getElementById('newBudgetName');
+  if (!nameInput) return;
+
+  const entry = calendarEntriesCache.find(e => e.id === entryId);
+  nameInput.value = getMonthlyBudgetNameFromEntry(entry);
 }
 
 function onBudgetTypeChange() {
@@ -197,6 +219,9 @@ function onBudgetTypeChange() {
   const calSelect = document.getElementById('newBudgetCalendarEntry');
   const adhocInput = document.getElementById('newBudgetAdhocDate');
 
+  const monthlyHint = document.getElementById('monthlyNameHint');
+  const nameInput = document.getElementById('newBudgetName');
+
   if (type === 'monthly') {
     if (monthlyGroup) monthlyGroup.style.display = '';
     if (adhocGroup) adhocGroup.style.display = 'none';
@@ -205,6 +230,11 @@ function onBudgetTypeChange() {
       adhocInput.required = false;
       adhocInput.value = '';
     }
+    if (nameInput) {
+      nameInput.readOnly = true;
+      onBudgetCalendarEntryChange();
+    }
+    if (monthlyHint) monthlyHint.style.display = '';
   } else {
     if (monthlyGroup) monthlyGroup.style.display = 'none';
     if (adhocGroup) adhocGroup.style.display = '';
@@ -213,6 +243,12 @@ function onBudgetTypeChange() {
       calSelect.value = '';
     }
     if (adhocInput) adhocInput.required = true;
+    if (nameInput) {
+      nameInput.readOnly = false;
+      nameInput.value = '';
+      nameInput.placeholder = 'Dubai Trip, Passport renewal…';
+    }
+    if (monthlyHint) monthlyHint.style.display = 'none';
   }
 }
 
@@ -439,6 +475,12 @@ window.validateBudgetName = function(input) {
   const name = input.value.trim();
   if (!name) return;
 
+  const budgetType = document.getElementById('newBudgetType')?.value || 'monthly';
+  if (budgetType === 'adhoc' && isDateCnBudgetName(name)) {
+    input.style.borderColor = '#e0a800';
+    showToast(DATE_CN_BUDGET_NAME_WARNING, 'warning');
+  }
+
   const existing = state.budgetPlans || [];
   const teamId = state.currentTeam?.team_id;
   const duplicate = existing.find(b => b.name.toLowerCase().trim() === name.toLowerCase() && b.team_id === teamId && !b.is_deleted);
@@ -446,7 +488,7 @@ window.validateBudgetName = function(input) {
   if (duplicate) {
     input.style.borderColor = '#dc3545';
     showToast('A budget with this name already exists in your team', 'warning');
-  } else {
+  } else if (!(budgetType === 'adhoc' && isDateCnBudgetName(name))) {
     input.style.borderColor = '';
   }
 };
@@ -461,11 +503,9 @@ window.createBudget = async function(e) {
   const name = document.getElementById('newBudgetName').value.trim();
   const status = document.getElementById('newBudgetStatus').value;
   const budgetType = document.getElementById('newBudgetType')?.value || 'monthly';
-
-  if (!name) {
-    showToast('Please enter a budget name', 'error');
-    return;
-  }
+  const existing = state.budgetPlans || [];
+  const teamId = state.currentTeam?.team_id;
+  let resolvedName = name;
 
   let calendar_entry_id = null;
   let budget_period_date = null;
@@ -479,17 +519,46 @@ window.createBudget = async function(e) {
     const entry = calendarEntriesCache.find(e => e.id === entryId);
     calendar_entry_id = entryId;
     budget_period_date = entry?.budget_period_date || null;
+
+    const monthlyName = getMonthlyBudgetNameFromEntry(entry);
+    if (!monthlyName) {
+      showToast('Selected calendar entry has no label', 'error');
+      return;
+    }
+
+    const dupPeriod = existing.find(b =>
+      b.team_id === teamId &&
+      !b.is_deleted &&
+      b.budget_type === 'monthly' &&
+      b.calendar_entry_id === entryId
+    );
+    if (dupPeriod) {
+      showToast(`This team already has a monthly budget for "${monthlyName}"`, 'error');
+      return;
+    }
+
+    resolvedName = monthlyName;
+    document.getElementById('newBudgetName').value = monthlyName;
   } else {
     budget_period_date = document.getElementById('newBudgetAdhocDate')?.value || null;
     if (!budget_period_date) {
       showToast('Select a budget period date for this adhoc budget', 'error');
       return;
     }
+    if (!resolvedName) {
+      showToast('Please enter a budget name', 'error');
+      return;
+    }
+    if (isDateCnBudgetName(resolvedName)) {
+      showToast(DATE_CN_BUDGET_NAME_WARNING, 'warning');
+    }
   }
 
-  const existing = state.budgetPlans || [];
-  const teamId = state.currentTeam?.team_id;
-  const duplicate = existing.find(b => b.name.toLowerCase().trim() === name.toLowerCase() && b.team_id === teamId && !b.is_deleted);
+  const duplicate = existing.find(b =>
+    b.name.toLowerCase().trim() === resolvedName.toLowerCase() &&
+    b.team_id === teamId &&
+    !b.is_deleted
+  );
   if (duplicate) {
     showToast('A budget with this name already exists in your team', 'error');
     return;
@@ -529,7 +598,7 @@ window.createBudget = async function(e) {
 
   const budget = {
     team_id: teamId,
-    name: name,
+    name: resolvedName,
     status: status,
     budget_type: budgetType,
     calendar_entry_id,
@@ -549,7 +618,7 @@ window.createBudget = async function(e) {
   try {
     const result = await sbInsert('budget_plans', budget);
     if (result && !result.error) {
-      showToast(`Budget "${name}" created successfully!`, 'success');
+      showToast(`Budget "${resolvedName}" created successfully!`, 'success');
       document.getElementById('createBudgetForm').reset();
       await seedCreateBudgetCategoryRows();
       populateCreateBudgetCurrencySelect();
@@ -1156,6 +1225,11 @@ window.validateEditBudgetName = function(input) {
   const newName = input.value.trim();
   if (!newName) return;
 
+  if (isDateCnBudgetName(newName)) {
+    input.style.borderColor = '#e0a800';
+    showToast(DATE_CN_BUDGET_NAME_WARNING, 'warning');
+  }
+
   const id = document.getElementById('editBudgetId').value;
   const allBudgets = state.budgetPlans || [];
   const teamId = state.currentTeam?.team_id;
@@ -1164,7 +1238,7 @@ window.validateEditBudgetName = function(input) {
   if (duplicate) {
     input.style.borderColor = '#dc3545';
     showToast('A budget with this name already exists in your team', 'warning');
-  } else {
+  } else if (!isDateCnBudgetName(newName)) {
     input.style.borderColor = '';
   }
 };
@@ -1189,6 +1263,10 @@ window.saveEditedBudget = async function() {
   if (!newName) {
     showToast('Please enter a budget name', 'error');
     return;
+  }
+
+  if (isDateCnBudgetName(newName)) {
+    showToast(DATE_CN_BUDGET_NAME_WARNING, 'warning');
   }
 
   const teamId = state.currentTeam?.team_id;

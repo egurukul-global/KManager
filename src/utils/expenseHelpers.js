@@ -9,6 +9,7 @@ import {
   roundUsd
 } from './currency.js';
 import { categoryDisplayName, normalizeBudgetCategory } from './categoryMaster.js';
+import { EXPENSE_ITEM_MAX_LEN } from './reportHelpers.js';
 
 /** Budget category line → select option metadata */
 export function getBudgetCategoryOptions(budget, teamCategories = []) {
@@ -167,7 +168,7 @@ export function buildExpensePayload(form, teamId, userId) {
   return {
     team_id: teamId,
     date: val('date', 'expDate') || val('date', 'editExpDate'),
-    item: (val('item', 'expItem') || val('item', 'editExpItem')).trim(),
+    item: (val('item', 'expItem') || val('item', 'editExpItem')).trim().slice(0, EXPENSE_ITEM_MAX_LEN),
     description: (val('description', 'expDescription') || val('description', 'editExpDescription')).trim() || null,
     budget_id: val('budget_id', 'expBudget') || val('budget_id', 'editExpBudget'),
     category_id: categoryId || null,
