@@ -27,6 +27,7 @@ import {
   loadUserTeamDefaultsForCurrentTeam
 } from '../utils/userTeamDefaults.js';
 import { formatUsdDisplay, normalizeUsdMultiplierRate, rateForInput } from '../utils/currency.js';
+import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 
 let teamBucketsCache = [];
 let teamBudgetsCache = [];
@@ -386,7 +387,7 @@ export function getAddExpensePage() {
             <div class="form-group"><label>Manual</label><input type="number" class="input-rate" name="rate_manual" id="expRateManual" step="any" placeholder="Rate" oninput="window.onExpenseMathChange()"></div>
             <div class="form-group"><label>USD</label><input type="number" class="input-amount" id="expUSD" step="0.01" readonly></div>
           </div>
-          <div class="form-group form-span-full"><label class="required" for="expReceiptUrl">Receipt URL</label><input type="url" name="receipt_url" id="expReceiptUrl" placeholder="https://..." required></div>
+          <div class="form-group form-span-full"><label for="expReceiptUrl">Receipt URL</label><input type="url" name="receipt_url" id="expReceiptUrl" placeholder="https://... (optional)"></div>
           <div class="form-group form-span-full"><label for="expDescription">Notes</label><textarea name="description" id="expDescription" rows="2" placeholder="Optional notes"></textarea></div>
         </div>
         <div class="btn-group"><button type="submit">Add expense</button></div>
@@ -660,7 +661,7 @@ export function getExpenseManagerPage() {
               <div class="form-group"><label>Manual</label><input type="number" class="input-rate" id="editExpRateManual" name="rate_manual" step="any" oninput="window.onEditExpenseMathChange()"></div>
               <div class="form-group"><label>USD</label><input type="number" class="input-amount" id="editExpUSD" readonly></div>
             </div>
-            <div class="form-group form-span-full"><label class="required">Receipt URL</label><input type="url" id="editExpReceiptUrl" name="receipt_url" required></div>
+            <div class="form-group form-span-full"><label>Receipt URL</label><input type="url" id="editExpReceiptUrl" name="receipt_url" placeholder="https://... (optional)"></div>
             <div class="form-group form-span-full"><label>Notes</label><textarea id="editExpDescription" name="description" rows="2"></textarea></div>
           </div>
           <div class="btn-group">
@@ -847,8 +848,7 @@ function refreshExpenseList() {
         <td>$${(exp.usd_amount || 0).toFixed(2)}</td>
         <td>${receipt}</td>
         <td class="action-buttons">
-          ${canEdit ? `<button type="button" class="info small" onclick="window.editExpense('${exp.id}')">Edit</button>
-          <button type="button" class="danger small" onclick="window.deleteExpense('${exp.id}')">Del</button>` : '<span style="color:#999;font-size:0.8em;">View only</span>'}
+          ${canEdit ? `${btnIconEdit(`window.editExpense('${exp.id}')`)}${btnIconDelete(`window.deleteExpense('${exp.id}')`)}` : '<span style="color:#999;font-size:0.8em;">View only</span>'}
         </td>
       </tr>`;
 
@@ -856,13 +856,17 @@ function refreshExpenseList() {
       <article class="data-card data-card--compact">
         <div class="data-card-top">
           <span class="data-card-title">${exp.item}</span>
-          <span class="data-card-badges">$${(exp.usd_amount || 0).toFixed(2)}</span>
+          <span class="action-icon-group">
+            ${canEdit ? `${btnIconEdit(`window.editExpense('${exp.id}')`)}${btnIconDelete(`window.deleteExpense('${exp.id}')`)}` : ''}
+          </span>
         </div>
-        <div class="data-card-summary">${exp.date} · ${budget?.name || '—'} · ${catLabel}</div>
-        ${canEdit ? `<div class="data-card-actions">
-          <button type="button" class="info small" onclick="window.editExpense('${exp.id}')">Edit</button>
-          <button type="button" class="danger small" onclick="window.deleteExpense('${exp.id}')">Del</button>
-        </div>` : ''}
+        ${cardRow('Date', exp.date)}
+        ${cardRow('Budget', budget?.name || '—')}
+        ${cardRow('Category', catLabel)}
+        ${cardRow('Bucket', bucket?.name || '—')}
+        ${cardRow('Local', `${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}`)}
+        ${cardRow('USD', `$${(exp.usd_amount || 0).toFixed(2)}`, 'data-card-row-value')}
+        ${cardRow('Receipt', receipt)}
       </article>`;
   });
 

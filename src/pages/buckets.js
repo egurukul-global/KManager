@@ -3,6 +3,7 @@ import { state } from '../state.js';
 import { sbSelect, sbInsert, sbUpdate, sbSoftDelete, sbRestore, localGetAll } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { createModal, openModal, closeModal, removeModal } from '../components/modals.js';
+import { btnIconEdit, btnIconDelete } from '../utils/uiHelpers.js';
 
 let allBuckets = [];
 
@@ -148,9 +149,9 @@ function renderBucketGrid(buckets) {
           <span>📅 ${new Date(bucket.created_at).toLocaleDateString()}</span>
         </div>
         <div class="bucket-actions">
-          ${canEdit ? `<button class="info small" onclick="window.loadBucketForEdit('${bucket.id}')">Edit</button>` : ''}
-          ${canDelete ? `<button class="danger small" onclick="window.confirmDeleteBucket('${bucket.id}', '${safeName}')">Delete</button>` : ''}
-          ${canRestore ? `<button class="success small" onclick="window.restoreBucket('${bucket.id}')">Restore</button>` : ''}
+          ${canEdit ? btnIconEdit(`window.loadBucketForEdit('${bucket.id}')`) : ''}
+          ${canDelete ? btnIconDelete(`window.confirmDeleteBucket('${bucket.id}', '${safeName}')`) : ''}
+          ${canRestore ? `<button class="btn-icon btn-icon--edit" onclick="window.restoreBucket('${bucket.id}')" title="Restore">↩</button>` : ''}
         </div>
       </div>
     `;

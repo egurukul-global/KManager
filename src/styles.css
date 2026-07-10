@@ -1,5 +1,6 @@
 /* ===== CSS VARIABLES ===== */
 @import './styles/mobile.css';
+@import './styles/ui-components.css';
 :root {
   --primary: #667eea;
   --primary-dark: #5a67d8;
@@ -133,7 +134,12 @@ body {
   border-bottom: 1px solid rgba(255,255,255,0.1);
 }
 
-.sidebar-avatar,
+.sidebar-trident {
+  font-size: 1.5em;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .header-logo,
 .app-topbar-logo {
   border-radius: 50%;

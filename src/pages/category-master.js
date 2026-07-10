@@ -2,6 +2,7 @@
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import { showToast } from '../components/toasts.js';
+import { btnIconDelete } from '../utils/uiHelpers.js';
 
 let masterData = [];
 
@@ -105,7 +106,7 @@ async function loadMaster() {
               <input type="checkbox" ${cat.is_mandatory ? 'checked' : ''} onchange="window.toggleCategoryMandatory('${cat.id}', this.checked)">
               Mandatory
             </label>
-            <button type="button" class="danger" style="padding:4px 10px; font-size:0.85em;" onclick="window.deleteCategoryMaster('${cat.id}')">Delete</button>
+            ${btnIconDelete(`window.deleteCategoryMaster('${cat.id}')`)}
           </div>
         </div>
         <ul style="margin:10px 0 0 20px; color:var(--text-secondary);">
@@ -113,7 +114,7 @@ async function loadMaster() {
             ? cat.subcategories.map(s => `
               <li style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                 <span>${s.name}${s.is_mandatory ? ' <em>(required)</em>' : ''}</span>
-                <button type="button" class="secondary" style="padding:2px 8px; font-size:0.8em;" onclick="window.deleteSubcategoryMaster('${s.id}')">×</button>
+                ${btnIconDelete(`window.deleteSubcategoryMaster('${s.id}')`, 'Remove')}
               </li>
             `).join('')
             : '<li><em>No subcategories</em></li>'}

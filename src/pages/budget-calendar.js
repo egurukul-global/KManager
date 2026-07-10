@@ -3,6 +3,7 @@ import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import { showToast } from '../components/toasts.js';
 import { computeSubmissionDeadline, formatDisplayDate } from '../utils/budgetCalendar.js';
+import { btnIconEdit, btnIconDelete } from '../utils/uiHelpers.js';
 
 function isOrgAdmin() {
   return ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role);
@@ -149,9 +150,9 @@ async function loadCalendarEntries() {
         <td data-label="Submit By">${formatDisplayDate(entry.submission_deadline)}</td>
         <td data-label="Label">${entry.label || '—'}</td>
         <td data-label="Notes">${entry.notes || '—'}</td>
-        <td data-label="Actions">
-          <button type="button" class="secondary small" onclick="window.editCalendarEntry('${entry.id}')">Edit</button>
-          <button type="button" class="danger small" onclick="window.deleteCalendarEntry('${entry.id}')">Delete</button>
+        <td data-label="Actions" class="action-buttons">
+          ${btnIconEdit(`window.editCalendarEntry('${entry.id}')`)}
+          ${btnIconDelete(`window.deleteCalendarEntry('${entry.id}')`)}
         </td>
       </tr>
     `).join('');

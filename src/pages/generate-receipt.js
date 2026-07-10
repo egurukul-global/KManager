@@ -1,7 +1,8 @@
 // ==================== GENERATE RECEIPT PAGE ====================
 import { state } from '../state.js';
 import { sbInsert, sbUpdate, sbSoftDelete, sbSelect } from '../db.js';
-import { showToast } from '../components/toasts.js';
+import { showToast, showConfirm } from '../components/toasts.js';
+import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 import { SUPPORTED_CURRENCIES } from '../utils/currency.js';
 import {
   buildReceiptDataFromForm,
@@ -75,10 +76,7 @@ export function getGenerateReceiptPage() {
 
         <h3 class="receipt-section-heading">Items</h3>
         <p class="receipt-section-note">Add at least one item. Qty and Rate are required.</p>
-        <div class="receipt-items-heading">
-          <span>Qty</span><span>Unit</span><span>Item</span><span>Rate</span><span>Total</span><span></span>
-        </div>
-        <div id="receiptItemsContainer">${receiptItemRowHtml(false)}</div>
+        <div id="receiptItemsContainer" class="alloc-line-cards">${receiptItemRowHtml(false)}</div>
         <div class="btn-group">
           <button type="button" class="secondary" onclick="window.addReceiptItemRow()">+ Add Item</button>
         </div>
@@ -88,12 +86,12 @@ export function getGenerateReceiptPage() {
           <div class="form-group"><label>Discount</label><input type="number" id="receiptDiscount" step="0.01" value="0" oninput="window.recalcReceiptTotalsUi()"></div>
         </div>
 
-        <div class="receipt-totals-panel">
-          <div class="receipt-total-line"><span>Subtotal:</span><span id="receiptSubtotalDisplay">0.00</span></div>
-          <div class="receipt-total-line muted"><span>Tax:</span><span id="receiptTaxDisplay">0.00</span></div>
-          <div class="receipt-total-line"><span>Total:</span><span id="receiptTotalDisplay">0.00</span></div>
-          <div class="receipt-total-line discount"><span>Discount:</span><span id="receiptDiscountDisplay">0.00</span></div>
-          <div class="receipt-total-line grand"><span>GRAND TOTAL:</span><span id="receiptGrandTotalDisplay">0.00</span></div>
+        <div class="receipt-totals-panel budget-grand-total-card">
+          <div class="data-card-row"><span class="data-card-row-label">Subtotal</span><span class="data-card-row-value" id="receiptSubtotalDisplay">0.00</span></div>
+          <div class="data-card-row"><span class="data-card-row-label">Tax</span><span class="data-card-row-value" id="receiptTaxDisplay">0.00</span></div>
+          <div class="data-card-row"><span class="data-card-row-label">Total</span><span class="data-card-row-value" id="receiptTotalDisplay">0.00</span></div>
+          <div class="data-card-row"><span class="data-card-row-label">Discount</span><span class="data-card-row-value" id="receiptDiscountDisplay">0.00</span></div>
+          <div class="data-card-row"><span class="data-card-row-label">Grand Total</span><span class="data-card-row-value" id="receiptGrandTotalDisplay">0.00</span></div>
         </div>
 
         <div class="btn-group">
@@ -187,10 +185,6 @@ function bindReceiptItemHandlers() {
       }
     });
   });
-
-  container.querySelectorAll('.receipt-item-remove').forEach(btn => {
-    btn.addEventListener('click', () => removeReceiptItemRow(btn));
-  });
 }
 
 function recalcReceiptItemRow(input) {
@@ -231,10 +225,9 @@ window.addReceiptItemRow = function() {
   const row = container.lastElementChild;
   row.querySelector('.rec-rate')?.addEventListener('input', (e) => recalcReceiptItemRow(e.target));
   row.querySelector('.rec-qty')?.addEventListener('input', (e) => recalcReceiptItemRow(e.target));
-  row.querySelector('.receipt-item-remove')?.addEventListener('click', () => removeReceiptItemRow(row.querySelector('.receipt-item-remove')));
 };
 
-function removeReceiptItemRow(btn) {
+window.removeReceiptItemRow = function(btn) {
   const container = document.getElementById('receiptItemsContainer');
   if (!container || container.children.length <= 1) {
     showToast('Receipt must have at least one item', 'error');
@@ -500,10 +493,10 @@ function renderReceiptList() {
         <td>${r.currency}</td>
         <td>${parseFloat(r.grand_total).toFixed(2)}</td>
         <td>
-          ${editable ? `<button type="button" class="info small" onclick="window.editSavedReceipt('${r.id}')">Edit</button>` : ''}
+          ${editable ? btnIconEdit(`window.editSavedReceipt('${r.id}')`) : ''}
           <button type="button" class="secondary small" onclick="window.previewSavedReceipt('${r.id}')">Preview</button>
           <button type="button" class="success small" title="Download PNG only (already saved)" onclick="window.exportSavedReceiptPng('${r.id}')">PNG</button>
-          ${editable ? `<button type="button" class="danger small" onclick="window.deleteSavedReceipt('${r.id}')">Delete</button>` : ''}
+          ${editable ? btnIconDelete(`window.deleteSavedReceipt('${r.id}')`) : ''}
         </td>
       </tr>
     `;
@@ -513,17 +506,22 @@ function renderReceiptList() {
     mobile.innerHTML = filtered.map(r => {
       const editable = canEditReceipt(r);
       return `
-        <div class="data-card">
-          <div class="data-card-title">${r.receipt_number} · ${r.receipt_date}</div>
-          <div class="data-card-row"><span>Vendor</span><span>${r.vendor || '—'}</span></div>
-          <div class="data-card-row"><span>Total</span><span>${parseFloat(r.grand_total).toFixed(2)} ${r.currency}</span></div>
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${r.receipt_number}</span>
+            <span class="action-icon-group">
+              ${editable ? btnIconEdit(`window.editSavedReceipt('${r.id}')`) : ''}
+              ${editable ? btnIconDelete(`window.deleteSavedReceipt('${r.id}')`) : ''}
+            </span>
+          </div>
+          ${cardRow('Date', r.receipt_date)}
+          ${cardRow('Vendor', r.vendor || '—')}
+          ${cardRow('Total', `${parseFloat(r.grand_total).toFixed(2)} ${r.currency}`)}
           <div class="data-card-actions">
-            ${editable ? `<button type="button" class="info small" onclick="window.editSavedReceipt('${r.id}')">Edit</button>` : ''}
             <button type="button" class="secondary small" onclick="window.previewSavedReceipt('${r.id}')">Preview</button>
             <button type="button" class="success small" onclick="window.exportSavedReceiptPng('${r.id}')">PNG</button>
-            ${editable ? `<button type="button" class="danger small" onclick="window.deleteSavedReceipt('${r.id}')">Delete</button>` : ''}
           </div>
-        </div>
+        </article>
       `;
     }).join('');
   }

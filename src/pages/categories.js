@@ -3,6 +3,7 @@ import { state } from '../state.js';
 import { sbSelect, sbInsert, sbUpdate, sbSoftDelete, sbRestore } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { createModal, openModal, closeModal } from '../components/modals.js';
+import { btnIconEdit, btnIconDelete, truncLabel } from '../utils/uiHelpers.js';
 
 let allCategories = [];
 
@@ -104,12 +105,12 @@ function renderCategories() {
     const canRestore = state.canDeleteCategories && isDeleted;
 
     html += `
-      <div class="category-tag ${isDeleted ? 'deleted' : ''}" style="${isDeleted ? 'opacity: 0.6; background: #f8f9fa;' : ''}">
-        <span>${cat.name}</span>
+      <div class="category-tag ${isDeleted ? 'deleted' : ''}" style="${isDeleted ? 'opacity: 0.6; background: #f8f9fa;' : ''}" title="${cat.name}">
+        <span class="category-tag-name">${truncLabel(cat.name, 15)}</span>
         <div class="cat-actions">
-          ${canEdit ? `<button class="info small" onclick="window.loadCategoryForEdit('${cat.id}')">Edit</button>` : ''}
-          ${canDelete ? `<button class="danger small" onclick="window.confirmDeleteCategory('${cat.id}', '${cat.name}')">×</button>` : ''}
-          ${canRestore ? `<button class="success small" onclick="window.restoreCategory('${cat.id}')">Restore</button>` : ''}
+          ${canEdit ? btnIconEdit(`window.loadCategoryForEdit('${cat.id}')`) : ''}
+          ${canDelete ? btnIconDelete(`window.confirmDeleteCategory('${cat.id}', '${cat.name.replace(/'/g, "\\'")}')`) : ''}
+          ${canRestore ? `<button class="btn-icon btn-icon--edit" onclick="window.restoreCategory('${cat.id}')" title="Restore">↩</button>` : ''}
         </div>
       </div>
     `;

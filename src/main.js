@@ -348,7 +348,7 @@ function renderAppShell() {
     <div class="app-shell active">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-user">
-          <img src="${swamijiImg}" alt="" class="sidebar-avatar" width="40" height="40">
+          <span class="sidebar-trident" aria-hidden="true">🔱</span>
           <span id="userDisplayName" class="sidebar-display-name" title="${state.user?.name || ''}">${displayName}</span>
         </div>
 

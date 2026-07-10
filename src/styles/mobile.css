@@ -153,10 +153,12 @@
   }
 
   .sync-status {
-    bottom: calc(var(--bottom-nav-height) + 8px);
-    right: 10px;
-    font-size: 0.75em;
-    padding: 4px 8px;
+    bottom: calc(var(--bottom-nav-height) + 6px);
+    left: 8px;
+    right: auto;
+    padding: 2px 8px;
+    font-size: 0.68em;
+    max-width: 72px;
   }
 
   .toast-container {

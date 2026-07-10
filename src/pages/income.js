@@ -16,6 +16,7 @@ import {
   ALLOCATION_TOLERANCE
 } from '../utils/currency.js';
 import { applyDefaultsToIncomeForm, loadUserTeamDefaultsForCurrentTeam } from '../utils/userTeamDefaults.js';
+import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 
 // ==========================================
 // MODULE-LEVEL CACHE (team-scoped)
@@ -174,12 +175,7 @@ export function getRecordIncomePage() {
           Allocate parts or all of this income directly to active budget plans.
         </p>
         
-        <div class="category-row-heading" style="grid-template-columns: 2fr 1fr 40px; max-width: 600px;">
-          <span>Target Budget Plan</span>
-          <span>Allocated Amount (USD)</span>
-          <span></span>
-        </div>
-        <div id="incomeAllocationsContainer" style="max-width: 600px; margin-bottom: 15px;"></div>
+        <div id="incomeAllocationsContainer" class="alloc-line-cards" style="max-width: 600px; margin-bottom: 15px;"></div>
 
         <div style="max-width: 600px; margin: 15px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
           <div class="income-totals-bar" style="display: flex; justify-content: space-between; font-weight: bold; font-size: 0.95em;">
@@ -334,18 +330,21 @@ window.addIncomeAllocationRow = async function(data = null) {
   if (!container) return;
 
   const row = document.createElement('div');
-  row.className = 'income-alloc-row';
-  row.style = 'display: grid; grid-template-columns: 2fr 1fr 40px; gap: 10px; margin-bottom: 10px; align-items: center;';
+  row.className = 'alloc-line-card income-alloc-row';
 
   const defaultBudget = data ? (data.budgetId || data.budget_id || '') : '';
   const defaultAmount = data ? (data.amountUsd || data.amount_usd || '') : '';
 
   row.innerHTML = `
-    <select class="alloc-budget-select" required data-selected="${defaultBudget}">
-      <option value="">Select Budget Plan</option>
-    </select>
-    <input type="number" class="alloc-usd-input input-amount" step="0.01" placeholder="1245.50" value="${defaultAmount}" required oninput="window.onAllocationRowAmountInput()">
-    <button type="button" class="cat-remove-btn" onclick="this.closest('.income-alloc-row').remove(); window.onAllocationRowAmountInput();" style="margin: 0; padding: 4px;">×</button>
+    <div class="field-labeled"><span>Budget Plan</span>
+      <select class="alloc-budget-select" required data-selected="${defaultBudget}">
+        <option value="">Select Budget Plan</option>
+      </select>
+    </div>
+    <div class="field-labeled"><span>Amount (USD)</span>
+      <input type="number" class="alloc-usd-input input-amount" step="0.01" placeholder="1245.50" value="${defaultAmount}" required oninput="window.onAllocationRowAmountInput()">
+    </div>
+    <div class="alloc-line-card-actions">${btnIconDelete(`this.closest('.income-alloc-row').remove(); window.onAllocationRowAmountInput();`, 'Remove')}</div>
   `;
 
   container.appendChild(row);
@@ -558,7 +557,7 @@ export function getIncomeManagerPage() {
           </div>
 
           <h3 style="margin-top: 20px;">Split Allocations</h3>
-          <div id="editIncomeAllocationsContainer" style="margin-bottom: 15px;"></div>
+          <div id="editIncomeAllocationsContainer" class="alloc-line-cards" style="margin-bottom: 15px;"></div>
           
           <div class="income-totals-bar" style="padding: 12px; background: #f8f9fa; border-radius: 6px; margin-bottom: 15px; display: flex; justify-content: space-between; font-weight: bold; font-size: 0.9em;">
             <span>Total Income: $<span id="lblEditTotalIncome">0.00</span></span>
@@ -677,8 +676,7 @@ export async function initIncomeManagerPage() {
         <td data-label="Foreign">${valDisplay}</td>
         <td data-label="Allocations">${allocSummaryText}</td>
         <td data-label="Actions" class="action-buttons">
-          <button class="info small" onclick="window.openEditIncomeRecord('${rec.id}')">Edit</button>
-          <button class="danger small" onclick="window.deleteIncomeRecord('${rec.id}')">Delete</button>
+          ${btnIconEdit(`window.openEditIncomeRecord('${rec.id}')`)}${btnIconDelete(`window.deleteIncomeRecord('${rec.id}')`)}
         </td>
       </tr>
     `;
@@ -687,15 +685,15 @@ export async function initIncomeManagerPage() {
       <article class="data-card data-card--compact">
         <div class="data-card-top">
           <span class="data-card-title">${rec.payment_from || 'Unknown'}</span>
-          <span class="data-card-badges">$${(rec.amount_usd || 0).toFixed(2)}</span>
+          <span class="action-icon-group">
+            ${btnIconEdit(`window.openEditIncomeRecord('${rec.id}')`)}${btnIconDelete(`window.deleteIncomeRecord('${rec.id}')`)}
+          </span>
         </div>
-        <div class="data-card-summary">${rec.date} · ${bucketName} (${bucketCurrency})</div>
-        <div class="data-card-summary">${allocPlain}</div>
-        ${valDisplay !== '-' ? `<div class="data-card-sub">${valDisplay}</div>` : ''}
-        <div class="data-card-actions">
-          <button class="info small" onclick="window.openEditIncomeRecord('${rec.id}')">Edit</button>
-          <button class="danger small" onclick="window.deleteIncomeRecord('${rec.id}')">Delete</button>
-        </div>
+        ${cardRow('Date', rec.date)}
+        ${cardRow('Bucket', `${bucketName} (${bucketCurrency})`)}
+        ${cardRow('USD', `$${(rec.amount_usd || 0).toFixed(2)}`)}
+        ${valDisplay !== '-' ? cardRow('Foreign', valDisplay) : ''}
+        ${cardRow('Allocations', allocPlain)}
       </article>
     `;
   });
@@ -782,18 +780,21 @@ window.addEditIncomeAllocationRow = async function(data = null) {
   if (!container) return;
 
   const row = document.createElement('div');
-  row.className = 'income-alloc-row';
-  row.style = 'display: grid; grid-template-columns: 2fr 1fr 40px; gap: 10px; margin-bottom: 10px; align-items: center;';
+  row.className = 'alloc-line-card income-alloc-row';
 
   const defaultBudget = data ? (data.budget_id || data.budgetId || '') : '';
   const defaultAmount = data ? (data.amount_usd || data.amountUsd || '') : '';
 
   row.innerHTML = `
-    <select class="edit-alloc-budget-select" required>
-      <option value="">Select Budget</option>
-    </select>
-    <input type="number" class="edit-alloc-usd-input" step="0.01" placeholder="1245.50" value="${defaultAmount}" required oninput="window.onEditIncomeMathChange()">
-    <button type="button" class="cat-remove-btn" onclick="this.closest('.income-alloc-row').remove(); window.onEditIncomeMathChange();" style="margin:0; padding:4px;">×</button>
+    <div class="field-labeled"><span>Budget Plan</span>
+      <select class="edit-alloc-budget-select" required>
+        <option value="">Select Budget</option>
+      </select>
+    </div>
+    <div class="field-labeled"><span>Amount (USD)</span>
+      <input type="number" class="edit-alloc-usd-input" step="0.01" placeholder="1245.50" value="${defaultAmount}" required oninput="window.onEditIncomeMathChange()">
+    </div>
+    <div class="alloc-line-card-actions">${btnIconDelete(`this.closest('.income-alloc-row').remove(); window.onEditIncomeMathChange();`, 'Remove')}</div>
   `;
   container.appendChild(row);
 

@@ -2,6 +2,7 @@
 import { state } from '../state.js';
 import { sbSelect, sbInsert, sbSoftDelete } from '../db.js';
 import { showToast } from '../components/toasts.js';
+import { btnIconDelete } from '../utils/uiHelpers.js';
 import { LOCAL_CURRENCIES, rateDisplayLabel, normalizeRateRecord } from '../utils/currency.js';
 
 let allRates = [];
@@ -45,7 +46,7 @@ export function getRatesPage() {
     <div class="card">
       <h2>📋 Exchange Rate History</h2>
       <div class="table-container">
-        <table class="table-stack-mobile">
+        <table class="table-stack-mobile rates-table">
           <thead>
             <tr>
               <th>Date</th>
@@ -110,9 +111,9 @@ function renderRates() {
       <tr>
         <td data-label="Date">${rate.date}</td>
         <td data-label="Currency"><span class="badge badge-info">${currency}</span></td>
-        <td data-label="Rate" class="currency-display">${rateDisplayLabel(currency, displayRate)}</td>
+        <td data-label="Rate">${rateDisplayLabel(currency, displayRate)}</td>
         <td data-label="Actions">
-          <button class="danger small" onclick="window.deleteRate('${rate.id}')">Delete</button>
+          ${btnIconDelete(`window.deleteRate('${rate.id}')`)}
         </td>
       </tr>
     `;

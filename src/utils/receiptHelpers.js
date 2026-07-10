@@ -1,4 +1,5 @@
 // ==================== EXPENSE RECEIPT HELPERS ====================
+import { btnIconDelete } from './uiHelpers.js';
 
 export const RECEIPT_UNITS = [
   'unit', 'gms', 'kg', 'lbs', 'oz', 'ml', 'ltr', 'box', 'pkt', 'bunch'
@@ -213,14 +214,27 @@ function escapeHtml(str) {
 }
 
 export function receiptItemRowHtml(showRemove = false) {
+  const removeBtn = showRemove
+    ? `<div class="alloc-line-card-actions">${btnIconDelete('window.removeReceiptItemRow(this)', 'Remove')}</div>`
+    : '';
   return `
-    <div class="receipt-item-row">
-      <input type="number" class="rec-qty" step="0.01" placeholder="Qty" required>
-      <select class="rec-unit" required>${receiptUnitOptionsHtml()}</select>
-      <input type="text" class="rec-item" placeholder="Item name" required>
-      <input type="number" class="rec-rate input-amount" step="0.01" placeholder="Rate" required>
-      <input type="number" class="rec-total input-amount" step="0.01" placeholder="Total" readonly>
-      <button type="button" class="cat-remove-btn receipt-item-remove" ${showRemove ? '' : 'style="visibility:hidden;"'} aria-label="Remove item">×</button>
+    <div class="alloc-line-card receipt-item-row">
+      <div class="field-labeled"><span>Qty</span>
+        <input type="number" class="rec-qty" step="0.01" placeholder="Qty" required>
+      </div>
+      <div class="field-labeled"><span>Unit</span>
+        <select class="rec-unit" required>${receiptUnitOptionsHtml()}</select>
+      </div>
+      <div class="field-labeled"><span>Item</span>
+        <input type="text" class="rec-item" placeholder="Item name" required>
+      </div>
+      <div class="field-labeled"><span>Rate</span>
+        <input type="number" class="rec-rate input-amount" step="0.01" placeholder="Rate" required>
+      </div>
+      <div class="field-labeled"><span>Total</span>
+        <input type="number" class="rec-total input-amount" step="0.01" placeholder="Total" readonly>
+      </div>
+      ${removeBtn}
     </div>
   `;
 }

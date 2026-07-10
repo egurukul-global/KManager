@@ -313,7 +313,7 @@ function showReconcilePanel() {
             class="recon-actual-input" data-index="${index}" data-closing="${row.closing}" data-currency="${row.currency}"
             oninput="window.onReconcileActualInput(${index})">
         </td>
-        <td class="col-difference currency-display" data-label="Difference" id="reconDiff_${index}">—</td>
+        <td class="col-difference" data-label="Difference" id="reconDiff_${index}">—</td>
         <td class="col-usd" data-label="USD Equiv" id="reconUsd_${index}">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
         <td class="col-comments" data-label="Comments">
           <textarea id="reconComments_${index}" rows="2" placeholder="Reason" class="recon-comments-input"></textarea>
@@ -344,7 +344,7 @@ function onReconcileActualInput(index) {
 
   if (Number.isNaN(actual)) {
     diffCell.textContent = '—';
-    diffCell.className = 'col-difference currency-display';
+    diffCell.className = 'col-difference';
     diffCell.title = '';
     return;
   }
@@ -352,7 +352,7 @@ function onReconcileActualInput(index) {
   const { text, level } = formatDifference(actual, closing, currency);
   diffCell.textContent = text;
   diffCell.title = text;
-  diffCell.className = `col-difference currency-display ${level}`;
+  diffCell.className = `col-difference ${level}`;
 }
 
 async function submitReconciliation() {
@@ -604,7 +604,7 @@ async function viewReconciliationHistory(submissionId) {
           <td data-label="- Transfers Out" class="negative">-${fmt(line.transfers_out)}</td>
           <td data-label="Closing"><strong>${fmt(line.closing_balance)}</strong></td>
           <td data-label="Actual"><strong>${fmt(line.actual_balance)}</strong></td>
-          <td data-label="Difference" class="currency-display ${diffLevel}">${diffText}</td>
+          <td data-label="Difference" class="${diffLevel}">${diffText}</td>
           <td data-label="USD Equiv" style="color:#667eea;">${line.usd_equivalent !== null && line.usd_equivalent !== undefined ? `$${fmt(line.usd_equivalent)}` : '—'}</td>
           <td data-label="Comments">${line.comments || '—'}</td>
         </tr>

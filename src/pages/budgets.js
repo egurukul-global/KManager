@@ -5,6 +5,7 @@ import { showToast } from '../components/toasts.js';
 import { getLatestUsdRate, getLocalCurrenciesFromRates, usdToLocal, rateForInput } from '../utils/currency.js';
 import { loadCategoryMasterLines, normalizeBudgetCategory } from '../utils/categoryMaster.js';
 import { formatDisplayDate } from '../utils/budgetCalendar.js';
+import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 
 let calendarEntriesCache = [];
 let editTemplateRowKeys = null;
@@ -127,20 +128,10 @@ export function getCreateBudgetPage() {
         <h3 style="margin-top: 25px;">Categories & Amounts</h3>
         <p style="margin-bottom: 15px; color: #666;">Enter USD amounts (primary). Select currency to auto-fill rate. Local amount auto-calculates.</p>
 
-        <div class="budget-categories-table budget-categories-table--compact">
-          <div class="budget-categories-table-heading budget-categories-table-heading--compact">
-            <span>Line item</span>
-            <span>USD</span>
-            <span>Local</span>
-            <span aria-hidden="true"></span>
-          </div>
-          <div id="budgetCategoriesContainer"></div>
-          <div class="budget-grand-total">
-            <span>Total Amounts</span>
-            <span id="createBudgetTotalUsd">0.00</span>
-            <span id="createBudgetTotalLocal">0.00</span>
-            <span aria-hidden="true"></span>
-          </div>
+        <div id="budgetCategoriesContainer" class="budget-line-cards"></div>
+        <div class="budget-grand-total-card">
+          ${cardRow('Total USD', '<span id="createBudgetTotalUsd">0.00</span>')}
+          ${cardRow('Total Local', '<span id="createBudgetTotalLocal">0.00</span>')}
         </div>
 
         <div class="btn-group">
@@ -204,18 +195,24 @@ window.addCategoryRow = function() {
   const container = document.getElementById('budgetCategoriesContainer');
   if (!container) return;
   const row = document.createElement('div');
-  row.className = 'category-row';
+  row.className = 'budget-line-card category-row';
   row.innerHTML = `
-    <select class="budget-cat-name" required>
-      <option value="">Select Category</option>
-    </select>
-    <input type="number" class="budget-cat-usd" step="0.01" placeholder="USD" required oninput="window.onBudgetUSDChange(this)">
-    <select class="budget-cat-currency" required onchange="window.onBudgetCurrencyChange(this)">
-      <option value="">Currency</option>
-    </select>
-    <input type="number" class="budget-cat-rate" step="0.000001" placeholder="Rate" oninput="window.onBudgetRateChange(this)">
-    <input type="number" class="budget-cat-local" step="0.01" placeholder="Local" readonly>
-    <button type="button" class="cat-remove-btn" onclick="window.removeCategoryRow(this)">×</button>
+    <div class="field-labeled"><span>Category</span>
+      <select class="budget-cat-name" required><option value="">Select Category</option></select>
+    </div>
+    <div class="field-labeled"><span>USD Amount</span>
+      <input type="number" class="budget-cat-usd" step="0.01" placeholder="USD" required oninput="window.onBudgetUSDChange(this)">
+    </div>
+    <div class="field-labeled"><span>Currency</span>
+      <select class="budget-cat-currency" required onchange="window.onBudgetCurrencyChange(this)"><option value="">Currency</option></select>
+    </div>
+    <div class="field-labeled"><span>Exchange Rate</span>
+      <input type="number" class="budget-cat-rate" step="0.000001" placeholder="Rate" oninput="window.onBudgetRateChange(this)">
+    </div>
+    <div class="field-labeled"><span>Local Amount</span>
+      <input type="number" class="budget-cat-local" step="0.01" placeholder="Local" readonly>
+    </div>
+    <div class="budget-line-card-actions">${btnIconDelete('window.removeCategoryRow(this)', 'Remove')}</div>
   `;
   container.appendChild(row);
   populateCategoryRows();
@@ -450,16 +447,7 @@ export function getViewBudgetsPage() {
           </div>
           <h3 style="margin-top: 25px;">Categories & Amounts</h3>
           <p id="editBudgetRateNote" style="margin-bottom: 15px; color: #666;">USD amounts are primary. Select currency to auto-fill rate (1 USD = X local). Local amount = USD × rate.</p>
-          <div class="budget-categories-table budget-categories-table--edit">
-          <div class="budget-categories-table-heading">
-            <span>Category</span>
-            <span>USD Amount</span>
-            <span>Currency</span>
-            <span>Exch Rate</span>
-            <span>Local Amt</span>
-            <span></span>
-          </div>
-          <div id="editBudgetCategoriesContainer"></div>
+          <div id="editBudgetCategoriesContainer" class="budget-line-cards"></div>
           <div class="btn-group">
             <button type="button" class="secondary" id="addEditCatBtn" onclick="window.addEditCategoryRow()">+ Add Category</button>
             <button type="submit" class="success" id="saveEditBudgetBtn">Save Changes</button>
@@ -592,8 +580,8 @@ function renderBudgetSummaryTable(container, budgets) {
         <td data-label="Remaining" class="${isOver ? 'negative' : 'positive'}" style="font-weight: bold;">$${remaining.toFixed(2)}</td>
         <td data-label="Health">${healthBadge}</td>
         <td data-label="Actions" class="action-buttons">
-          ${canEdit ? `<button class="info small" onclick="event.stopPropagation(); window.editBudgetPlan('${budget.id}')">Edit</button>` : ''}
-          ${canDelete ? `<button class="danger small" onclick="event.stopPropagation(); window.deleteBudgetPlan('${budget.id}')">Delete</button>` : ''}
+          ${canEdit ? btnIconEdit(`event.stopPropagation(); window.editBudgetPlan('${budget.id}')`) : ''}
+          ${canDelete ? btnIconDelete(`event.stopPropagation(); window.deleteBudgetPlan('${budget.id}')`) : ''}
         </td>
       </tr>
     `;
@@ -602,18 +590,16 @@ function renderBudgetSummaryTable(container, budgets) {
       <article class="data-card data-card--compact data-card--clickable" onclick="window.viewBudgetDetail('${budget.id}')">
         <div class="data-card-top">
           <span class="data-card-title">${budget.name}</span>
-          <span class="data-card-badges">${healthBadge}</span>
+          <span class="action-icon-group" onclick="event.stopPropagation()">
+            ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
+            ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
+          </span>
         </div>
-        <div class="data-card-summary">
-          ${statusBadge} · Budgeted $${totalBudgetedUSD.toFixed(2)} · Spent $${totalSpentUSD.toFixed(2)}
-        </div>
-        <div class="data-card-footer" onclick="event.stopPropagation()">
-          <span class="data-card-hint ${isOver ? 'negative' : 'positive'}">Remaining $${remaining.toFixed(2)}</span>
-          <div class="data-card-actions">
-            ${canEdit ? `<button class="info small" onclick="window.editBudgetPlan('${budget.id}')">Edit</button>` : ''}
-            ${canDelete ? `<button class="danger small" onclick="window.deleteBudgetPlan('${budget.id}')">Delete</button>` : ''}
-          </div>
-        </div>
+        ${cardRow('Status', statusBadge)}
+        ${cardRow('Budgeted', `$${totalBudgetedUSD.toFixed(2)}`)}
+        ${cardRow('Spent', `$${totalSpentUSD.toFixed(2)}`)}
+        ${cardRow('Remaining', `$${remaining.toFixed(2)}`, isOver ? 'negative' : 'positive')}
+        ${cardRow('Health', healthBadge)}
       </article>
     `;
   });
@@ -638,10 +624,9 @@ function renderBudgetSummaryTable(container, budgets) {
       <div class="data-card-top">
         <span class="data-card-title">Grand Total</span>
       </div>
-      <div class="data-card-summary">
-        Budgeted $${grandTotalBudgeted.toFixed(2)} · Spent $${grandTotalSpent.toFixed(2)} ·
-        Remaining $${grandRemaining.toFixed(2)}
-      </div>
+      ${cardRow('Budgeted', `$${grandTotalBudgeted.toFixed(2)}`)}
+      ${cardRow('Spent', `$${grandTotalSpent.toFixed(2)}`)}
+      ${cardRow('Remaining', `$${grandRemaining.toFixed(2)}`, grandOver ? 'negative' : 'positive')}
     </article>
   `;
 
@@ -705,17 +690,13 @@ function renderBudgetDetailCards(container, budgets) {
       const rateDisplay = cat.rate ? ` @ ${cat.rate}` : '';
 
       categoriesHtml += `
-        <div style="margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <strong>${cat.name}</strong>
-            <span>$${budgetedUSD.toFixed(2)} USD${localDisplay ? ' = ' + localDisplay + rateDisplay : ''}</span>
-          </div>
-          <div class="progress-bar" style="height: 15px;">
+        <div class="budget-line-card">
+          <div class="budget-line-card-title">${cat.name}</div>
+          ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)} USD${localDisplay ? ' = ' + localDisplay + rateDisplay : ''}`)}
+          ${cardRow('Spent', `$${spentUSD.toFixed(2)}`)}
+          ${cardRow('Remaining', `$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)`)}
+          <div class="progress-bar" style="height: 15px; margin-top: 8px;">
             <div class="progress-fill ${progressClass}" style="width: ${Math.min(percent, 100)}%"></div>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.85em; color: #666;">
-            <span>Spent: $${spentUSD.toFixed(2)}</span>
-            <span>Remaining: $${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)</span>
           </div>
         </div>
       `;
@@ -732,10 +713,10 @@ function renderBudgetDetailCards(container, budgets) {
       <div class="budget-plan-card">
         <h3>
           <span>${budget.name} ${statusBadge}</span>
-          <div>
-            ${canEdit ? `<button class="info small" onclick="window.editBudgetPlan('${budget.id}')" style="margin-right: 5px;">Edit</button>` : ''}
-            ${canDelete ? `<button class="danger small" onclick="window.deleteBudgetPlan('${budget.id}')">Delete</button>` : ''}
-          </div>
+          <span class="action-icon-group">
+            ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
+            ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
+          </span>
         </h3>
         <div class="budget-plan-stats">
           <div class="budget-plan-stat">
@@ -893,35 +874,46 @@ window.addEditCategoryRow = function(categoryData = null, options = {}) {
   const catRate = categoryData ? (categoryData.rate || '') : '';
   const catLocal = categoryData ? formatLocalInput(categoryData.local_amount ?? categoryData.localAmount ?? '') : '';
 
-  const removeHtml = isTemplate
-    ? '<span class="budget-cat-no-remove" aria-hidden="true"></span>'
-    : '<button type="button" class="cat-remove-btn" onclick="window.removeEditCategoryRow(this)" title="Remove">×</button>';
+  const removeBtn = isTemplate
+    ? ''
+    : `<div class="budget-line-card-actions">${btnIconDelete('window.removeEditCategoryRow(this)', 'Remove')}</div>`;
 
-  let nameCell;
+  let nameFields;
   if (isTemplate || (normalized && normalized.category && !isCustom)) {
-    nameCell = `
+    nameFields = `
       <input type="hidden" class="edit-budget-cat-category" value="${escapeHtmlAttr(normalized?.category || '')}">
       <input type="hidden" class="edit-budget-cat-subcategory" value="${escapeHtmlAttr(normalized?.subcategory || '')}">
       <input type="hidden" class="edit-budget-cat-name-value" value="${escapeHtmlAttr(displayName)}">
-      <span class="budget-cat-label ${normalized?.subcategory ? 'budget-cat-label--sub' : ''}">${escapeHtmlAttr(displayName)}</span>`;
+      <div class="budget-line-card-title">${escapeHtmlAttr(displayName)}</div>`;
   } else {
-    nameCell = `<input type="text" class="edit-budget-cat-name-input" value="${escapeHtmlAttr(displayName)}" required placeholder="Category name">`;
+    nameFields = `
+      <div class="field-labeled"><span>Category</span>
+        <input type="text" class="edit-budget-cat-name-input" value="${escapeHtmlAttr(displayName)}" required placeholder="Category name">
+      </div>`;
   }
 
   const row = document.createElement('div');
-  row.className = 'category-row';
+  row.className = 'budget-line-card category-row';
   if (isTemplate) row.dataset.template = 'true';
   if (isCustom && categoryData) row.dataset.custom = 'true';
 
   row.innerHTML = `
-    <div class="edit-budget-cat-name-cell">${nameCell}</div>
-    <input type="number" class="edit-budget-cat-usd" step="0.01" placeholder="USD" value="${catUsd}" required oninput="window.onEditBudgetUSDChange(this)">
-    <select class="edit-budget-cat-currency" required onchange="window.onEditBudgetCurrencyChange(this)" data-selected="${escapeHtmlAttr(catCurrency)}">
-      <option value="">Currency</option>
-    </select>
-    <input type="number" class="edit-budget-cat-rate" step="0.000001" placeholder="Rate" value="${catRate}" oninput="window.onEditBudgetRateChange(this)">
-    <input type="number" class="edit-budget-cat-local" step="0.01" placeholder="Local" value="${catLocal}" readonly>
-    <button type="button" class="cat-remove-btn" onclick="window.removeEditCategoryRow(this)">×</button>
+    <div class="edit-budget-cat-name-cell">${nameFields}</div>
+    <div class="field-labeled"><span>USD Amount</span>
+      <input type="number" class="edit-budget-cat-usd" step="0.01" placeholder="USD" value="${catUsd}" required oninput="window.onEditBudgetUSDChange(this)">
+    </div>
+    <div class="field-labeled"><span>Currency</span>
+      <select class="edit-budget-cat-currency" required onchange="window.onEditBudgetCurrencyChange(this)" data-selected="${escapeHtmlAttr(catCurrency)}">
+        <option value="">Currency</option>
+      </select>
+    </div>
+    <div class="field-labeled"><span>Exchange Rate</span>
+      <input type="number" class="edit-budget-cat-rate" step="0.000001" placeholder="Rate" value="${catRate}" oninput="window.onEditBudgetRateChange(this)">
+    </div>
+    <div class="field-labeled"><span>Local Amount</span>
+      <input type="number" class="edit-budget-cat-local" step="0.01" placeholder="Local" value="${catLocal}" readonly>
+    </div>
+    ${removeBtn}
   `;
   container.appendChild(row);
 
