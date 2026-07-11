@@ -13,7 +13,8 @@ import {
   roundUsd,
   formatUsdDisplay,
   allocationsExceedIncome,
-  ALLOCATION_TOLERANCE
+  ALLOCATION_TOLERANCE,
+  localToUsd
 } from '../utils/currency.js';
 import { applyDefaultsToIncomeForm, loadUserTeamDefaultsForCurrentTeam } from '../utils/userTeamDefaults.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
@@ -72,46 +73,6 @@ async function loadExchangeRates() {
 
   exchangeRatesCache = (result.data || []).filter(r => !r.is_deleted);
   return exchangeRatesCache;
-}
-
-/**
- * Find exchange rate between two currencies.
- * Tries direct match first, then inverse.
- * Returns null if no rate found.
- */
-function findExchangeRate(fromCurrency, toCurrency) {
-  if (!fromCurrency || !toCurrency || fromCurrency === toCurrency) return 1;
-
-  // USD-Multiplier convention: rate is always "1 USD = X local"
-  // We ONLY look for rates where from_currency = 'USD' and to_currency = local currency
-  // Never invert. If not found, return null and let user enter manually.
-
-  if (fromCurrency === 'USD') {
-    // USD → local: look for USD → local rate directly
-    const direct = exchangeRatesCache.find(r =>
-      r.from_currency === 'USD' && 
-      r.to_currency === toCurrency &&
-      !r.is_deleted
-    );
-    if (direct) return parseFloat(direct.rate);
-    return null;
-  }
-
-  if (toCurrency === 'USD') {
-    // local → USD: we still need the USD → local rate (e.g., 3.67)
-    // Because the formula is: local_amount = usd_amount * rate
-    // So rate should still be 3.67, not 0.2724
-    const direct = exchangeRatesCache.find(r =>
-      r.from_currency === 'USD' && 
-      r.to_currency === fromCurrency &&
-      !r.is_deleted
-    );
-    if (direct) return parseFloat(direct.rate);
-    return null;
-  }
-
-  // Cross-local transfer (non-USD to non-USD): not supported by this convention
-  return null;
 }
 
 /**
@@ -278,9 +239,9 @@ window.onIncomeBucketChange = function(selectEl) {
   if (currency === 'USD') {
     if (rateInput && !rateInput.value) rateInput.value = '1';
   } else {
-    const rate = findExchangeRate(currency, 'USD');
+    const rate = getLatestUsdRate(exchangeRatesCache, currency);
     if (rateInput && !rateInput.value && rate !== null) {
-      rateInput.value = rate.toFixed(6);
+      rateInput.value = rateForInput(rate);
     }
   }
 
@@ -295,10 +256,10 @@ window.onIncomeMathFieldsChange = function() {
   const rate = parseFloat(document.getElementById('incExchangeRate')?.value) || 0;
   const localInput = document.getElementById('incLocalAmount');
 
-  // Local = USD / Rate (per confirmed architecture formula)
+  // Bucket amount is in local currency; show USD equivalent = local ÷ rate.
   if (localInput) {
     if (amount > 0 && rate > 0) {
-      localInput.value = (amount / rate).toFixed(2);
+      localInput.value = formatUsdDisplay(localToUsd(amount, rate));
     } else {
       localInput.value = '';
     }
@@ -910,7 +871,7 @@ window.onEditIncomeMathChange = function() {
 
   if (localInput) {
     if (amount > 0 && rate > 0) {
-      localInput.value = (amount / rate).toFixed(2);
+      localInput.value = formatUsdDisplay(localToUsd(amount, rate));
     } else {
       localInput.value = '';
     }

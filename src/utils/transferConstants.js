@@ -10,7 +10,13 @@ export const TRANSFER_FLOW = {
   OTL_OPERATIONAL: 'otl_operational',
   OTL_TO_MEMBER: 'otl_to_member',
   OTM_TO_TEAM: 'otm_to_team',
-  OTM_TO_MEMBER: 'otm_to_member'
+  OTM_TO_MEMBER: 'otm_to_member',
+  CROSS_TEAM_PERSONAL: 'cross_team_personal'
+};
+
+export const PENDING_STEP = {
+  OHF: 'ohf',
+  RECEIVER: 'receiver'
 };
 
 export const MEMO_MAX_LENGTH = 30;

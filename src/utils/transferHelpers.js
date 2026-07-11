@@ -4,12 +4,13 @@ import { sbUpdate } from '../db.js';
 import {
   TRANSFER_STATUS,
   TRANSFER_FLOW,
+  PENDING_STEP,
   MEMO_MAX_LENGTH,
   isAcceptedTransfer,
   isPendingTransfer
 } from './transferConstants.js';
 
-export { TRANSFER_STATUS, TRANSFER_FLOW, MEMO_MAX_LENGTH, isAcceptedTransfer, isPendingTransfer };
+export { TRANSFER_STATUS, TRANSFER_FLOW, PENDING_STEP, MEMO_MAX_LENGTH, isAcceptedTransfer, isPendingTransfer };
 
 export function isOperationalBucket(bucket) {
   return bucket && !bucket.owner_user_id;
@@ -135,8 +136,33 @@ export function getTransferStatusBadge(status) {
   return { label: 'Accepted', class: 'badge-success' };
 }
 
+export function isOhfApprover(state) {
+  const role = state.user?.role || 'user';
+  return ['caoh', 'oh', 'ceo'].includes(role);
+}
+
+export function isCrossTeamTransfer(transfer) {
+  return transfer?.flow_type === TRANSFER_FLOW.CROSS_TEAM_PERSONAL
+    || !!transfer?.dest_team_id;
+}
+
+export function userCanApproveOhf(transfer, state) {
+  if (!isPendingTransfer(transfer)) return false;
+  if (transfer.pending_step !== PENDING_STEP.OHF) return false;
+  return isOhfApprover(state);
+}
+
 export function userCanReceivePendingTransfer(transfer, state) {
   if (!isPendingTransfer(transfer)) return false;
+
+  if (transfer.pending_step === PENDING_STEP.OHF) {
+    return userCanApproveOhf(transfer, state);
+  }
+
+  if (transfer.pending_step === PENDING_STEP.RECEIVER) {
+    return transfer.receiver_user_id === state.user?.id;
+  }
+
   if (transfer.receiver_user_id && transfer.receiver_user_id === state.user?.id) return true;
   if (transfer.receiver_kind === 'otl' && isTeamLeadAccess(state)) return true;
   return false;

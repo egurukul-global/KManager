@@ -140,8 +140,16 @@ export function normalizeUsdMultiplierRate(rate, currency) {
   if (!currency || currency === 'USD') return 1;
   const r = parseFloat(rate);
   if (!r || r <= 0) return 1;
-  if (r < 1) return 1 / r;
+  // Only high-multiplier currencies use sub-1 legacy "1 local = X USD" rates.
+  if (HIGH_MULTIPLIER_CURRENCIES.has(currency) && r < 1) return 1 / r;
   return r;
+}
+
+/** Format local amount for form inputs after USD × rate conversion. */
+export function formatLocalAmountInput(amount) {
+  const n = parseFloat(amount);
+  if (!n || Number.isNaN(n)) return '';
+  return n.toFixed(2);
 }
 
 /** Format a rate for form inputs — same as formatRate but returns empty string for invalid. */

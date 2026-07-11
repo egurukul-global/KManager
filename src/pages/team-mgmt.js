@@ -4,6 +4,7 @@ import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { btnIconEdit } from '../utils/uiHelpers.js';
 import { refreshAccessibleTeams } from '../utils/teamAccess.js';
+import { ensurePersonalTeamForUser } from '../utils/personalTeamHelpers.js';
 
 const ACCESS_LEVELS = [
   { value: 'view', label: 'View' },
@@ -417,6 +418,17 @@ async function addTeamMember(e) {
         return;
       }
       throw error;
+    }
+
+    const user = usersCache.find(u => u.id === userId);
+    try {
+      const pt = await ensurePersonalTeamForUser(userId, user?.name || user?.email, state.user?.id);
+      if (pt.created) {
+        showToast(`Personal team "${pt.team.name}" created`, 'success');
+      }
+    } catch (ptErr) {
+      console.warn('Personal team setup:', ptErr);
+      showToast('Member added; personal team setup failed — run migration 014', 'warning');
     }
 
     showToast('Member added', 'success');

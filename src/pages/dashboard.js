@@ -216,13 +216,15 @@ export async function initDashboardPage() {
       pendingTransfers.forEach(t => {
         const fromName = bucketName[t.from_bucket_id] || 'Source';
         const amount = parseFloat(t.amount) || 0;
+        const isOhf = t.pending_step === 'ohf';
         alerts.unshift({
           level: 'warning',
-          icon: '💸',
-          title: 'Confirm money received',
+          icon: isOhf ? '✅' : '💸',
+          title: isOhf ? 'Approve cross-team transfer' : 'Confirm money received',
           message: `${amount.toFixed(2)} ${t.currency || ''} from ${fromName} — ${t.description || ''}`,
           transferId: t.id,
-          isTransfer: true
+          isTransfer: true,
+          transferIsOhf: isOhf
         });
       });
     } catch (pendingErr) {
@@ -296,7 +298,7 @@ function renderAlerts(alerts) {
       </div>
       ${a.isTransfer ? `
         <div class="dash-alert-actions">
-          <button type="button" class="dash-alert-action dash-alert-action--accept" onclick="window.acceptDashboardTransfer('${a.transferId}')">Accept</button>
+          <button type="button" class="dash-alert-action dash-alert-action--accept" onclick="window.acceptDashboardTransfer('${a.transferId}')">${a.transferIsOhf ? 'Approve' : 'Accept'}</button>
           <button type="button" class="dash-alert-action dash-alert-action--reject" onclick="window.rejectDashboardTransfer('${a.transferId}')">Reject</button>
         </div>
       ` : ''}

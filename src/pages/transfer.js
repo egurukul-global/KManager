@@ -6,6 +6,8 @@ import { rateForInput, getLatestUsdRate, formatRate } from '../utils/currency.js
 import { applyDefaultsToTransferForm, loadUserTeamDefaultsForCurrentTeam } from '../utils/userTeamDefaults.js';
 import {
   TRANSFER_STATUS,
+  TRANSFER_FLOW,
+  PENDING_STEP,
   MEMO_MAX_LENGTH,
   isTeamLeadAccess,
   classifyTransferFlow,
@@ -18,6 +20,7 @@ import {
   isOperationalBucket,
   isMemberBucket
 } from '../utils/transferHelpers.js';
+import { getMemberPersonalWallet, ensurePersonalTeamForUser } from '../utils/personalTeamHelpers.js';
 import {
   acceptTransfer,
   rejectTransfer,
@@ -28,6 +31,8 @@ import {
 let teamBucketsCache = [];
 let exchangeRatesCache = [];
 let sentTransfersCache = [];
+let teamMembersCache = [];
+let teamBudgetsCache = [];
 let destFilterState = { showMembers: false, showTeam: false };
 
 async function loadTeamBuckets() {
@@ -114,8 +119,79 @@ function updateDestFilterVisibility() {
   const lead = isTeamLeadAccess(state);
   const memberFilters = document.getElementById('trMemberFilters');
   const otmFilters = document.getElementById('trOtmFilters');
+  const crossSection = document.getElementById('trCrossTeamSection');
   if (memberFilters) memberFilters.style.display = lead ? '' : 'none';
   if (otmFilters) otmFilters.style.display = lead ? 'none' : '';
+  if (crossSection) crossSection.style.display = lead ? '' : 'none';
+}
+
+async function loadTeamMembers() {
+  const teamId = state.currentTeam?.team_id;
+  if (!teamId) {
+    teamMembersCache = [];
+    return [];
+  }
+  const { data, error } = await supabaseClient
+    .from('user_teams')
+    .select('user_id, access_level, users:user_id(id, name, email)')
+    .eq('team_id', teamId);
+
+  if (error) throw error;
+  teamMembersCache = (data || [])
+    .map(m => m.users)
+    .filter(u => u && u.id !== state.user?.id);
+  return teamMembersCache;
+}
+
+async function loadTeamBudgets() {
+  const teamId = state.currentTeam?.team_id;
+  if (!teamId) {
+    teamBudgetsCache = [];
+    return [];
+  }
+  const { data, error } = await supabaseClient
+    .from('budget_plans')
+    .select('id, name, status, budget_type')
+    .eq('team_id', teamId)
+    .eq('is_deleted', false)
+    .neq('status', 'archive')
+    .order('name');
+
+  if (error) throw error;
+  teamBudgetsCache = data || [];
+  return teamBudgetsCache;
+}
+
+function populateCrossTeamSelects() {
+  const memberSelect = document.getElementById('trCrossMemberId');
+  const budgetSelect = document.getElementById('trCrossBudgetId');
+  if (memberSelect) {
+    memberSelect.innerHTML = '<option value="">Select member</option>';
+    teamMembersCache.forEach(u => {
+      const label = u.name || u.email || u.id;
+      memberSelect.innerHTML += `<option value="${u.id}">${escapeHtml(label)}</option>`;
+    });
+  }
+  if (budgetSelect) {
+    budgetSelect.innerHTML = '<option value="">Select budget</option>';
+    teamBudgetsCache.forEach(b => {
+      budgetSelect.innerHTML += `<option value="${b.id}">${escapeHtml(b.name)} (${escapeHtml(b.budget_type || '')})</option>`;
+    });
+  }
+}
+
+function onCrossTeamToggle() {
+  const cross = !!document.getElementById('trCrossTeam')?.checked;
+  const crossFields = document.getElementById('trCrossTeamFields');
+  const destGroup = document.getElementById('trDestBucketId')?.closest('.form-group');
+  const memberFilters = document.getElementById('trMemberFilters');
+
+  if (crossFields) crossFields.style.display = cross ? '' : 'none';
+  if (destGroup) destGroup.style.display = cross ? 'none' : '';
+  if (memberFilters) memberFilters.style.display = cross ? 'none' : (isTeamLeadAccess(state) ? '' : 'none');
+
+  const destSelect = document.getElementById('trDestBucketId');
+  if (destSelect) destSelect.required = !cross;
 }
 
 export function getTransferFundsPage() {
@@ -147,6 +223,16 @@ export function getTransferFundsPage() {
             <label class="checkbox-inline"><input type="checkbox" id="trShowMemberPeers" onchange="window.onTransferDestFilterChange()"> Member wallets</label>
           </div>
 
+          <div id="trCrossTeamSection" class="transfer-filter-row" style="display:none;">
+            <label class="checkbox-inline"><input type="checkbox" id="trCrossTeam" onchange="window.onCrossTeamToggle()"> Send to member personal wallet (cross-team)</label>
+          </div>
+          <div id="trCrossTeamFields" style="display:none;">
+            <div class="form-grid-row form-grid-row--transfer-buckets">
+              <div class="form-group"><label>Member *</label><select id="trCrossMemberId"><option value="">Select member</option></select></div>
+              <div class="form-group"><label>Budget *</label><select id="trCrossBudgetId"><option value="">Select budget</option></select></div>
+            </div>
+          </div>
+
           <div class="form-grid-row form-grid-row--transfer-buckets">
             <div class="form-group"><label>Transfer Date</label><input type="date" id="trDate" required></div>
             <div class="form-group"><label>Source Bucket</label><select id="trSourceBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trSourceCurrency">Currency: —</span></div>
@@ -166,7 +252,7 @@ export function getTransferFundsPage() {
         <div id="trValidationError" class="form-error-inline" style="display:none;"></div>
         <button type="submit" id="trSubmitBtn" class="btn-block">Send Transfer</button>
       </form>
-      ${lead ? '<p class="form-hint">Team operational transfers complete immediately. Transfers to member wallets wait for member confirmation.</p>' : '<p class="form-hint">Transfers to team or members wait for confirmation. You can only send from your personal wallet.</p>'}
+      ${lead ? '<p class="form-hint">Team operational transfers complete immediately. Member/cross-team transfers need confirmation. Cross-team requires OHF approval then receiver confirm.</p>' : '<p class="form-hint">Transfers to team or members wait for confirmation. You can only send from your personal wallet.</p>'}
     </div>
 
     <div class="card">
@@ -212,6 +298,10 @@ export async function initTransferFundsPage() {
 
   await loadTeamBuckets();
   await loadExchangeRates();
+  if (isTeamLeadAccess(state)) {
+    await Promise.all([loadTeamMembers(), loadTeamBudgets()]);
+    populateCrossTeamSelects();
+  }
 
   destFilterState = { showMembers: false, showTeam: false };
   updateDestFilterVisibility();
@@ -227,6 +317,7 @@ export async function initTransferFundsPage() {
   window.onTransferBucketChange = onTransferBucketChange;
   window.onTransferAmountChange = onTransferAmountChange;
   window.onTransferDestFilterChange = onTransferDestFilterChange;
+  window.onCrossTeamToggle = onCrossTeamToggle;
   window.executeFundsTransfer = executeFundsTransfer;
   window.refreshSentTransfersList = refreshSentTransfersList;
   window.cancelSentTransfer = cancelSentTransfer;
@@ -423,8 +514,11 @@ function onTransferAmountChange() {
 async function executeFundsTransfer(e) {
   e.preventDefault();
 
+  const crossTeam = !!document.getElementById('trCrossTeam')?.checked;
   const srcId = document.getElementById('trSourceBucketId').value;
-  const destId = document.getElementById('trDestBucketId').value;
+  let destId = document.getElementById('trDestBucketId').value;
+  const crossMemberId = document.getElementById('trCrossMemberId')?.value;
+  const crossBudgetId = document.getElementById('trCrossBudgetId')?.value;
   const amount = parseFloat(document.getElementById('trAmount').value) || 0;
   const rate = parseFloat(document.getElementById('trRate').value) || 0;
   const memoCheck = validateTransferMemo(document.getElementById('trMemo')?.value);
@@ -441,8 +535,8 @@ async function executeFundsTransfer(e) {
     showError(memoCheck.message);
     return;
   }
-  if (!srcId || !destId || srcId === destId) {
-    showError('Select different source and destination buckets.');
+  if (!srcId) {
+    showError('Select a source bucket.');
     return;
   }
   if (amount <= 0) {
@@ -451,14 +545,66 @@ async function executeFundsTransfer(e) {
   }
 
   const srcBucket = getBucketById(srcId);
-  const destBucket = getBucketById(destId);
-  if (!srcBucket || !destBucket) {
-    showError('Invalid buckets.');
+  if (!srcBucket) {
+    showError('Invalid source bucket.');
     return;
   }
 
   const senderIsOtl = isTeamLeadAccess(state);
-  const flow = classifyTransferFlow(srcBucket, destBucket, senderIsOtl);
+  let destBucket = null;
+  let crossWallet = null;
+  let flow = null;
+
+  if (crossTeam) {
+    if (!senderIsOtl) {
+      showError('Only team leads can send cross-team transfers.');
+      return;
+    }
+    if (!crossMemberId || !crossBudgetId) {
+      showError('Select member and budget for cross-team transfer.');
+      return;
+    }
+    if (!isOperationalBucket(srcBucket)) {
+      showError('Cross-team transfers must come from a team operational bucket.');
+      return;
+    }
+
+    const member = teamMembersCache.find(u => u.id === crossMemberId);
+    crossWallet = await getMemberPersonalWallet(crossMemberId);
+    if (!crossWallet) {
+      try {
+        await ensurePersonalTeamForUser(crossMemberId, member?.name || member?.email, state.user?.id);
+        crossWallet = await getMemberPersonalWallet(crossMemberId);
+      } catch (walletErr) {
+        showError(walletErr.message || 'Could not load member personal wallet.');
+        return;
+      }
+    }
+    if (!crossWallet?.bucket) {
+      showError('Member personal wallet not found.');
+      return;
+    }
+
+    destBucket = crossWallet.bucket;
+    destId = destBucket.id;
+    flow = {
+      flow: TRANSFER_FLOW.CROSS_TEAM_PERSONAL,
+      status: TRANSFER_STATUS.PENDING,
+      receiver_user_id: crossMemberId,
+      receiver_kind: 'member'
+    };
+  } else {
+    if (!destId || srcId === destId) {
+      showError('Select different source and destination buckets.');
+      return;
+    }
+    destBucket = getBucketById(destId);
+    if (!destBucket) {
+      showError('Invalid destination bucket.');
+      return;
+    }
+    flow = classifyTransferFlow(srcBucket, destBucket, senderIsOtl);
+  }
 
   if (!senderIsOtl && isOperationalBucket(srcBucket)) {
     showError('Members can only send from their personal wallet.');
@@ -496,6 +642,7 @@ async function executeFundsTransfer(e) {
   const transferPayload = {
     id: transferId,
     team_id: teamId,
+    dest_team_id: crossTeam ? crossWallet.team.id : null,
     date: document.getElementById('trDate').value,
     from_bucket_id: srcId,
     to_bucket_id: destId,
@@ -509,6 +656,8 @@ async function executeFundsTransfer(e) {
     flow_type: flow.flow,
     receiver_user_id: flow.receiver_user_id,
     receiver_kind: flow.receiver_kind,
+    pending_step: crossTeam ? PENDING_STEP.OHF : null,
+    linked_budget_id: crossTeam ? crossBudgetId : null,
     created_by: state.user?.id,
     created_at: new Date().toISOString(),
     is_deleted: false
@@ -534,7 +683,7 @@ async function executeFundsTransfer(e) {
     await auditLog('INSERT', saved.id, null, saved);
 
     if (flow.status === TRANSFER_STATUS.PENDING) {
-      showToast('Transfer sent — waiting for confirmation', 'success');
+      showToast(crossTeam ? 'Cross-team transfer sent — awaiting OHF approval' : 'Transfer sent — waiting for confirmation', 'success');
     } else {
       showToast(`Transferred ${amount.toFixed(2)} ${srcCurr} successfully`, 'success');
     }

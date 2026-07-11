@@ -373,6 +373,12 @@ export async function loadBucketForEdit(bucketId) {
 }
 
 export function confirmDeleteBucket(bucketId, bucketName) {
+  const bucket = allBuckets.find(b => b.id === bucketId);
+  if (bucket?.is_protected) {
+    showToast('This bucket is protected and cannot be deleted.', 'error');
+    return;
+  }
+
   showConfirm(
     `Are you sure you want to delete <strong>${bucketName}</strong>?<br><br>The bucket will be soft-deleted and can be restored later.`,
     async () => {

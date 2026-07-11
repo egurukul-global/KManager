@@ -2,7 +2,13 @@
 import { state } from '../state.js';
 import { supabaseClient, localGetAll, localPut, sbInsert, sbUpdate, sbSoftDelete, sbSelect } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
-import { getLatestUsdRate, getLocalCurrenciesFromRates, usdToLocal, rateForInput } from '../utils/currency.js';
+import {
+  getLatestUsdRate,
+  getLocalCurrenciesFromRates,
+  usdToLocal,
+  rateForInput,
+  formatLocalAmountInput
+} from '../utils/currency.js';
 import { loadCategoryMasterLines, normalizeBudgetCategory, formatCategoryLabel } from '../utils/categoryMaster.js';
 import { formatDisplayDate, isDateCnBudgetName, DATE_CN_BUDGET_NAME_WARNING, filterOpenCalendarEntries, isCalendarEntryOpen } from '../utils/budgetCalendar.js';
 import {
@@ -488,16 +494,8 @@ window.onBudgetCurrencyChange = function(currencySelect) {
     return;
   }
 
-  const rates = state.exchangeRates || [];
-  const currencyRates = rates
-    .filter(r => r.currency === currency && !r.is_deleted)
-    .sort((a, b) => new Date(b.date || b.created_at) - new Date(a.date || a.created_at));
-
-  if (currencyRates.length > 0) {
-    rateInput.value = currencyRates[0].rate;
-  } else {
-    rateInput.value = '';
-  }
+  const rate = getLatestUsdRate(state.exchangeRates || [], currency);
+  rateInput.value = rate !== null ? rateForInput(rate) : '';
   recalculateBudgetLocal(row);
 };
 
@@ -517,7 +515,7 @@ function recalculateBudgetLocal(row) {
   const rate = parseFloat(rateInput.value) || 0;
 
   if (usdAmount > 0 && rate > 0) {
-    localInput.value = (usdAmount / rate).toFixed(2);
+    localInput.value = formatLocalAmountInput(usdToLocal(usdAmount, rate));
   } else {
     localInput.value = '';
   }
@@ -645,7 +643,7 @@ window.createBudget = async function(e) {
         subcategory: catSub,
         name: formatCategoryLabel(catCategory, catSub),
         usdAmount: usdAmount,
-        localAmount: localAmount || (currency === 'USD' ? usdAmount : usdAmount / (rate || 1)),
+        localAmount: localAmount || (currency === 'USD' ? usdAmount : usdToLocal(usdAmount, rate || 1)),
         currency: currency,
         rate: rate || (currency === 'USD' ? 1 : 0)
       });
@@ -1268,16 +1266,8 @@ window.onEditBudgetCurrencyChange = function(currencySelect) {
     return;
   }
 
-  const rates = state.exchangeRates || [];
-  const currencyRates = rates
-    .filter(r => r.currency === currency && !r.is_deleted)
-    .sort((a, b) => new Date(b.date || b.created_at) - new Date(a.date || a.created_at));
-
-  if (currencyRates.length > 0) {
-    rateInput.value = currencyRates[0].rate;
-  } else {
-    rateInput.value = '';
-  }
+  const rate = getLatestUsdRate(state.exchangeRates || [], currency);
+  rateInput.value = rate !== null ? rateForInput(rate) : '';
   recalculateEditBudgetLocal(row);
 };
 
@@ -1297,7 +1287,7 @@ function recalculateEditBudgetLocal(row) {
   const rate = parseFloat(rateInput.value) || 0;
 
   if (usdAmount > 0 && rate > 0) {
-    localInput.value = (usdAmount / rate).toFixed(2);
+    localInput.value = formatLocalAmountInput(usdToLocal(usdAmount, rate));
   } else {
     localInput.value = '';
   }

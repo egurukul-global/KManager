@@ -31,6 +31,8 @@ import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js'
 import { getDisplayName } from './utils/displayName.js';
 import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher } from './utils/teamAccess.js';
 import { getTeamMgmtPage, initTeamMgmtPage } from './pages/team-mgmt.js';
+import { getMyFinancesPage, initMyFinancesPage } from './pages/my-finances.js';
+import { getMyIncomePage, initMyIncomePage } from './pages/my-income.js';
 import swamijiImg from './Swamiji.png';
 
 // ==================== APP CONTAINER ====================
@@ -365,6 +367,7 @@ function renderAppShell() {
               <div class="nav-subitem" data-page="add-funds" onclick="window.showPage('add-funds')">Add Income</div>
               <div class="nav-subitem" data-page="income-manager" onclick="window.showPage('income-manager')">Income Manager</div>
               <div class="nav-subitem" data-page="transfer" onclick="window.showPage('transfer')">Transfer Funds</div>
+              <div class="nav-subitem" data-page="my-income" onclick="window.showPage('my-income')">My Income</div>
             </div>
           </div>
 
@@ -389,6 +392,7 @@ function renderAppShell() {
             </div>
             <div class="nav-subitems">
               <div class="nav-subitem" data-page="expense-reports" onclick="window.showPage('expense-reports')">Reports</div>
+              <div class="nav-subitem" data-page="my-finances" onclick="window.showPage('my-finances')">My Finances</div>
               <div class="nav-subitem" data-page="financial-status" onclick="window.showPage('financial-status')">Financial Status</div>
             </div>
           </div>
@@ -495,7 +499,9 @@ const PAGE_TO_TAB = {
   'expense-manager': 'expenses',
   'generate-receipt': 'expenses',
   'expense-reports': 'reports',
-  'financial-status': 'reports'
+  'my-finances': 'reports',
+  'financial-status': 'reports',
+  'my-income': 'reports'
 };
 
 function updateBottomNavActive(pageName) {
@@ -547,6 +553,8 @@ export function showPage(pageName) {
     'expense-manager': { html: getExpenseManagerPage, init: initExpenseManagerPage },
     'generate-receipt': { html: getGenerateReceiptPage, init: initGenerateReceiptPage },
     'expense-reports': { html: getExpenseReportsPage, init: initExpenseReportsPage },
+    'my-finances': { html: getMyFinancesPage, init: initMyFinancesPage },
+    'my-income': { html: getMyIncomePage, init: initMyIncomePage },
     'financial-status': { html: getFinancialStatusPage, init: initFinancialStatusPage },
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
