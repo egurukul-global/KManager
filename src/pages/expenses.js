@@ -587,16 +587,18 @@ async function handleAddExpenseSubmit(e) {
 // ========== EXPENSE MANAGER ==========
 
 export function getExpenseManagerPage() {
-  if (!state.canManageExpenses) {
+  if (!state.canManageExpenses && !state.canViewAllExpenses) {
     return `
       <h1 class="page-title">Expense Manager</h1>
       <div class="card"><h2>⛔ Access Denied</h2><p>You do not have permission to view expenses.</p></div>
     `;
   }
 
-  const scopeNote = canViewAllExpenses()
-    ? 'Showing all team expenses.'
-    : 'Showing your expenses only. Team lead sees all team entries.';
+  const scopeNote = state.isReadOnlyTeamAccess
+    ? 'Read-only view — all team expenses.'
+    : canViewAllExpenses()
+      ? 'Showing all team expenses.'
+      : 'Showing your expenses only. Team lead sees all team entries.';
 
   return `
     <h1 class="page-title">Expense Manager</h1>
@@ -616,12 +618,14 @@ export function getExpenseManagerPage() {
         </div>
         <button type="button" class="secondary" style="margin-top:12px;" onclick="window.resetExpenseFilters()">Reset filters</button>
       </div>
+      ${state.canManageExpenses ? `
       <div class="bulk-actions" id="expBulkActions">
         <span id="expSelectedCount">0 selected</span>
         <button type="button" class="info" id="expEditSelectedBtn" disabled onclick="window.editSelectedExpense()">Edit selected</button>
         <button type="button" class="danger" onclick="window.deleteSelectedExpenses()">Delete selected</button>
         <button type="button" class="secondary" onclick="window.clearExpenseSelection()">Clear</button>
       </div>
+      ` : ''}
       <h3>Expenses <span id="expenseCount" style="font-size:0.85em;color:#666;font-weight:normal;"></span></h3>
       <div class="table-container show-desktop">
         <table>
@@ -675,7 +679,7 @@ export function getExpenseManagerPage() {
 }
 
 export async function initExpenseManagerPage() {
-  if (!state.canManageExpenses) return;
+  if (!state.canManageExpenses && !state.canViewAllExpenses) return;
 
   await Promise.all([
     loadTeamBuckets(),

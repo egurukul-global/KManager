@@ -5,11 +5,14 @@ import { showToast, showConfirm } from '../components/toasts.js';
 import { btnIconEdit } from '../utils/uiHelpers.js';
 import { refreshAccessibleTeams } from '../utils/teamAccess.js';
 import { ensurePersonalTeamForUser } from '../utils/personalTeamHelpers.js';
+import { ensureMemberBucketOnWorkTeam } from '../utils/memberBucketHelpers.js';
+import { findNonZeroBucketsOnTeam, formatNonZeroBucketList } from '../utils/balanceGuards.js';
 
 const ACCESS_LEVELS = [
-  { value: 'view', label: 'View' },
-  { value: 'member', label: 'Member' },
-  { value: 'lead', label: 'Lead' },
+  { value: 'view', label: 'View (read-only)' },
+  { value: 'member', label: 'Member (OTM)' },
+  { value: 'oht', label: 'Ops Head (OHT, read-only)' },
+  { value: 'lead', label: 'Lead (OTL)' },
   { value: 'admin', label: 'Admin' }
 ];
 
@@ -317,7 +320,27 @@ async function openTeamMembers(teamId) {
 
   await loadTeamMembers(teamId);
   populateAddMemberUserSelect(teamId);
+  await backfillMemberBucketsForTeam(teamId);
   panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function backfillMemberBucketsForTeam(teamId) {
+  const team = teamsCache.find(t => t.id === teamId);
+  if (!team) return;
+
+  for (const member of membersCache) {
+    const user = member.user || usersCache.find(u => u.id === member.user_id);
+    try {
+      await ensureMemberBucketOnWorkTeam(
+        teamId,
+        member.user_id,
+        user?.name || user?.email,
+        state.user?.id
+      );
+    } catch (err) {
+      console.warn('Backfill member bucket:', member.user_id, err);
+    }
+  }
 }
 
 function populateAddMemberUserSelect(teamId) {
@@ -431,6 +454,21 @@ async function addTeamMember(e) {
       showToast('Member added; personal team setup failed — run migration 014', 'warning');
     }
 
+    try {
+      const mb = await ensureMemberBucketOnWorkTeam(
+        teamId,
+        userId,
+        user?.name || user?.email,
+        state.user?.id
+      );
+      if (mb.created) {
+        showToast(`Member bucket "${mb.bucket.name}" created on this team`, 'success');
+      }
+    } catch (mbErr) {
+      console.warn('Member bucket setup:', mbErr);
+      showToast('Member added; work-team wallet setup failed', 'warning');
+    }
+
     showToast('Member added', 'success');
     document.getElementById('addMemberForm')?.reset();
     document.getElementById('memberTeamId').value = teamId;
@@ -510,6 +548,17 @@ function removeTeamMember(membershipId) {
 
   showConfirm(`Remove ${label} from this team?`, async () => {
     try {
+      if (activeTeamId && member?.user_id) {
+        const nonZero = await findNonZeroBucketsOnTeam(activeTeamId, member.user_id);
+        if (nonZero.length) {
+          showToast(
+            `Cannot remove: member has non-zero balance — ${formatNonZeroBucketList(nonZero)}`,
+            'error'
+          );
+          return;
+        }
+      }
+
       const { error } = await supabaseClient
         .from('user_teams')
         .delete()

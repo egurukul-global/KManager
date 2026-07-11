@@ -9,6 +9,7 @@ import {
   sumBucketBalancesToUsd,
   formatUsdDisplay
 } from '../utils/currency.js';
+import { hasNonZeroBalance } from '../utils/balanceGuards.js';
 
 let allBuckets = [];
 let exchangeRates = [];
@@ -376,6 +377,14 @@ export function confirmDeleteBucket(bucketId, bucketName) {
   const bucket = allBuckets.find(b => b.id === bucketId);
   if (bucket?.is_protected) {
     showToast('This bucket is protected and cannot be deleted.', 'error');
+    return;
+  }
+
+  if (hasNonZeroBalance(bucket?.balance)) {
+    showToast(
+      `Cannot delete "${bucketName}": balance must be zero (current: ${(parseFloat(bucket.balance) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${bucket.currency || ''})`,
+      'error'
+    );
     return;
   }
 

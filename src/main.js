@@ -30,6 +30,7 @@ import { getGenerateReceiptPage, initGenerateReceiptPage } from './pages/generat
 import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js';
 import { getDisplayName } from './utils/displayName.js';
 import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher } from './utils/teamAccess.js';
+import { applyNavPermissions, canAccessPage, defaultPageForRole, defaultPageForTab } from './utils/navPermissions.js';
 import { getTeamMgmtPage, initTeamMgmtPage } from './pages/team-mgmt.js';
 import { getMyFinancesPage, initMyFinancesPage } from './pages/my-finances.js';
 import { getMyIncomePage, initMyIncomePage } from './pages/my-income.js';
@@ -157,7 +158,8 @@ async function initializeApp() {
     populateTeamSwitcher();
 
     // 11. Load initial page
-    showPage('dashboard');
+    applyNavPermissions();
+    showPage(defaultPageForRole());
 
     // 12. Setup auth state listener
     supabaseClient.auth.onAuthStateChange((event, session) => {
@@ -252,6 +254,7 @@ export async function switchTeam(teamId) {
     granted_at: team.granted_at
   };
   computePermissions();
+  applyNavPermissions();
 
   await loadUserTeamDefaultsForCurrentTeam();
 
@@ -263,7 +266,8 @@ export async function switchTeam(teamId) {
 
   // Refresh current page
   const currentPage = document.querySelector('.nav-subitem.active')?.dataset.page || 'dashboard';
-  showPage(currentPage);
+  const targetPage = canAccessPage(currentPage) ? currentPage : defaultPageForRole();
+  showPage(targetPage);
 
   // Sync new team data
   if (navigator.onLine) {
@@ -519,11 +523,16 @@ export function navToTab(tab) {
     });
     return;
   }
-  const page = TAB_DEFAULT_PAGES[tab];
+  const page = defaultPageForTab(tab);
   if (page) showPage(page);
 }
 
 export function showPage(pageName) {
+  if (!canAccessPage(pageName)) {
+    showToast('You do not have access to that page on this team.', 'warning');
+    pageName = defaultPageForRole();
+  }
+
   // Update active nav state
   document.querySelectorAll('.nav-subitem').forEach(item => {
     item.classList.remove('active');

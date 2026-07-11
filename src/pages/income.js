@@ -542,18 +542,21 @@ window.createIncomeRecord = async function(e) {
 // ==========================================
 
 export function getIncomeManagerPage() {
-  if (!state.canManageIncome) {
+  if (!state.canManageIncome && !state.canViewTeamIncome) {
     return `
       <h1 class="page-title">Income Manager</h1>
       <div class="card">
         <h2>⛔ Access Denied</h2>
-        <p>You do not have administrative permission to view ledger transaction entries.</p>
+        <p>You do not have permission to view team income entries.</p>
       </div>
     `;
   }
 
+  const readOnly = !state.canManageIncome;
+
   return `
     <h1 class="page-title">Income Manager</h1>
+    ${readOnly ? '<p class="page-intro">Read-only view — team income ledger.</p>' : ''}
     <div class="card">
       <h2>🔍 Filter Transactions</h2>
       <div class="filter-section">
@@ -657,7 +660,7 @@ export function getIncomeManagerPage() {
 }
 
 export async function initIncomeManagerPage() {
-  if (!state.canManageIncome) return;
+  if (!state.canManageIncome && !state.canViewTeamIncome) return;
 
   const tbody = document.getElementById('incomeLedgerBody');
   const mobile = document.getElementById('incomeMobileList');
@@ -747,6 +750,10 @@ export async function initIncomeManagerPage() {
           return `${name}: $${(a.amount_usd || 0).toFixed(2)}`;
         }).join(' · ');
 
+    const actionButtons = state.canManageIncome
+      ? `${btnIconEdit(`window.openEditIncomeRecord('${rec.id}')`)}${btnIconDelete(`window.deleteIncomeRecord('${rec.id}')`)}`
+      : '—';
+
     tableHtml += `
       <tr>
         <td data-label="Date"><strong>${rec.date}</strong></td>
@@ -755,9 +762,7 @@ export async function initIncomeManagerPage() {
         <td data-label="USD"><strong>$${(rec.amount_usd || 0).toFixed(2)}</strong></td>
         <td data-label="Foreign">${valDisplay}</td>
         <td data-label="Allocations">${allocSummaryText}</td>
-        <td data-label="Actions" class="action-buttons">
-          ${btnIconEdit(`window.openEditIncomeRecord('${rec.id}')`)}${btnIconDelete(`window.deleteIncomeRecord('${rec.id}')`)}
-        </td>
+        <td data-label="Actions" class="action-buttons">${actionButtons}</td>
       </tr>
     `;
 
@@ -765,9 +770,7 @@ export async function initIncomeManagerPage() {
       <article class="data-card data-card--compact">
         <div class="data-card-top">
           <span class="data-card-title">${rec.payment_from || 'Unknown'}</span>
-          <span class="action-icon-group">
-            ${btnIconEdit(`window.openEditIncomeRecord('${rec.id}')`)}${btnIconDelete(`window.deleteIncomeRecord('${rec.id}')`)}
-          </span>
+          ${state.canManageIncome ? `<span class="action-icon-group">${actionButtons}</span>` : ''}
         </div>
         ${cardRow('Date', rec.date)}
         ${cardRow('Bucket', `${bucketName} (${bucketCurrency})`)}
