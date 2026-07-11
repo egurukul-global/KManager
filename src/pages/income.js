@@ -217,6 +217,20 @@ export async function initRecordIncomePage() {
 /**
  * When bucket selection changes, update currency display and auto-fetch rate.
  */
+function updateIncomeAmountCurrencyLabel(currency, labelId) {
+  const el = document.getElementById(labelId);
+  if (el) el.textContent = `(${currency || 'USD'})`;
+}
+
+function getIncomeUsdEquivalent(amountElId, rateElId, bucketId) {
+  const amount = parseFloat(document.getElementById(amountElId)?.value) || 0;
+  const rate = parseFloat(document.getElementById(rateElId)?.value) || 0;
+  const bucket = getBucketById(bucketId);
+  const currency = bucket?.currency || 'USD';
+  if (currency === 'USD') return amount;
+  return rate > 0 ? localToUsd(amount, rate) : 0;
+}
+
 window.onIncomeBucketChange = function(selectEl) {
   const bucketId = selectEl.value;
   const bucket = getBucketById(bucketId);
@@ -226,14 +240,15 @@ window.onIncomeBucketChange = function(selectEl) {
 
   if (!bucket) {
     if (currencyDisplay) currencyDisplay.value = 'USD';
+    updateIncomeAmountCurrencyLabel('USD', 'incCurrencyLabel');
     if (rateInput) rateInput.value = '1';
     window.onIncomeMathFieldsChange();
     return;
   }
 
   const currency = bucket.currency || 'USD';
-  // Currency display shows the BUCKET's currency (for reference)
   if (currencyDisplay) currencyDisplay.value = currency;
+  updateIncomeAmountCurrencyLabel(currency, 'incCurrencyLabel');
 
   // Only auto-populate rate if field is empty — respect user's manual edits
   if (currency === 'USD') {
@@ -266,13 +281,16 @@ window.onIncomeMathFieldsChange = function() {
   }
 
   const lblTotalIncome = document.getElementById('lblTotalIncomeDisplay');
-  if (lblTotalIncome) lblTotalIncome.textContent = amount.toFixed(2);
+  const bucketId = document.getElementById('incBucketId')?.value;
+  const incomeUsd = getIncomeUsdEquivalent('incAmount', 'incExchangeRate', bucketId);
+  if (lblTotalIncome) lblTotalIncome.textContent = formatUsdDisplay(incomeUsd);
 
   recalculateAllocationSummaries();
 };
 
 function recalculateAllocationSummaries() {
-  const totalIncome = parseFloat(document.getElementById('incAmount')?.value) || 0;
+  const bucketId = document.getElementById('incBucketId')?.value;
+  const totalIncomeUsd = getIncomeUsdEquivalent('incAmount', 'incExchangeRate', bucketId);
   const rows = document.querySelectorAll('#incomeAllocationsContainer .income-alloc-row');
 
   let totalAllocated = 0;
@@ -281,7 +299,7 @@ function recalculateAllocationSummaries() {
     totalAllocated += val;
   });
 
-  const unallocated = totalIncome - totalAllocated;
+  const unallocated = totalIncomeUsd - totalAllocated;
 
   const lblAllocated = document.getElementById('lblTotalAllocatedDisplay');
   const lblUnallocated = document.getElementById('lblUnallocatedDisplay');
@@ -465,7 +483,7 @@ window.createIncomeRecord = async function(e) {
     }
   });
 
-  if (totalAllocated > totalIncome) {
+  if (allocationsExceedIncome(totalAllocated, amount_usd)) {
     showToast('Cannot save. Allocations exceed your registered income amount.', 'error');
     return;
   }
@@ -787,8 +805,8 @@ window.openEditIncomeRecord = async function(id) {
     });
     bucketSelect.value = rec.bucket_id || '';
 
-    document.getElementById('editIncAmount').value = rec.amount_usd || 0;
-    document.getElementById('editIncExchangeRate').value = rec.exchange_rate || 1;
+    document.getElementById('editIncAmount').value = bucketAmountForEdit(rec);
+    document.getElementById('editIncExchangeRate').value = rateForInput(rec.exchange_rate || 1);
     document.getElementById('editIncDescription').value = rec.description || '';
 
     window.onEditIncomeBucketChange(bucketSelect, { preserveRate: true });
@@ -822,11 +840,13 @@ window.onEditIncomeBucketChange = function(selectEl, options = {}) {
 
   if (!bucket) {
     if (currencyDisplay) currencyDisplay.value = 'USD';
+    updateIncomeAmountCurrencyLabel('USD', 'editIncCurrencyLabel');
     return;
   }
 
   const currency = bucket.currency || 'USD';
   if (currencyDisplay) currencyDisplay.value = currency;
+  updateIncomeAmountCurrencyLabel(currency, 'editIncCurrencyLabel');
 
   if (!preserveRate) {
     if (currency === 'USD') {
@@ -877,16 +897,19 @@ window.onEditIncomeMathChange = function() {
     }
   }
 
+  const bucketId = document.getElementById('editIncBucketId')?.value;
+  const incomeUsd = getIncomeUsdEquivalent('editIncAmount', 'editIncExchangeRate', bucketId);
+
   const rows = document.querySelectorAll('#editIncomeAllocationsContainer .income-alloc-row');
   let allocated = 0;
   rows.forEach(row => {
     allocated += parseFloat(row.dataset.amountUsd) || parseFloat(row.querySelector('.edit-alloc-usd-input')?.value) || 0;
   });
 
-  document.getElementById('lblEditTotalIncome').textContent = amount.toFixed(2);
+  document.getElementById('lblEditTotalIncome').textContent = formatUsdDisplay(incomeUsd);
   document.getElementById('lblEditAllocated').textContent = allocated.toFixed(2);
 
-  const unallocated = amount - allocated;
+  const unallocated = incomeUsd - allocated;
   const unallocEl = document.getElementById('lblEditUnallocated');
   unallocEl.textContent = unallocated.toFixed(2);
   const unallocRow = unallocEl.closest('.data-card-row-value');
