@@ -1,6 +1,11 @@
 // ==================== ROLE-BASED NAV VISIBILITY (Phase 3) ====================
 import { state } from '../state.js';
 
+/** Only system admin bypasses team-level role restrictions. */
+export function isSystemAdmin() {
+  return state.user?.role === 'admin';
+}
+
 /** Pages an OTM (team member) may open. Team income/budgets/setup are hidden. */
 const OTM_ALLOWED_PAGES = new Set([
   'dashboard',
@@ -12,7 +17,7 @@ const OTM_ALLOWED_PAGES = new Set([
   'my-finances'
 ]);
 
-/** Pages a view-only user may open. */
+/** Pages a view-only user may open (read-only team finance). */
 const VIEW_ALLOWED_PAGES = new Set([
   'dashboard',
   'view-budgets',
@@ -22,7 +27,8 @@ const VIEW_ALLOWED_PAGES = new Set([
   'financial-status',
   'my-finances',
   'my-income',
-  'buckets'
+  'buckets',
+  'rates'
 ]);
 
 /** Sub-items hidden for OTM inside sections that stay partially visible. */
@@ -45,44 +51,49 @@ const OHT_HIDDEN_PAGES = new Set([
   'transfer',
   'add-expense',
   'generate-receipt',
-  'categories',
-  'rates'
+  'categories'
 ]);
 
-function isOrgAdmin() {
-  return ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role);
+export function teamAccessLevel() {
+  return String(state.userTeamAccess?.access_level || 'member').toLowerCase().trim();
 }
 
 export function isOtmOnly() {
-  if (isOrgAdmin()) return false;
-  return (state.userTeamAccess?.access_level || 'member') === 'member';
+  if (isSystemAdmin()) return false;
+  return teamAccessLevel() === 'member';
 }
 
 export function isOhtReadOnly() {
-  if (isOrgAdmin()) return false;
-  return state.userTeamAccess?.access_level === 'oht';
+  if (isSystemAdmin()) return false;
+  return teamAccessLevel() === 'oht';
 }
 
 export function isViewOnly() {
-  if (isOrgAdmin()) return false;
-  return state.userTeamAccess?.access_level === 'view';
+  if (isSystemAdmin()) return false;
+  return teamAccessLevel() === 'view';
 }
 
 export function canAccessPage(pageName) {
-  if (isOrgAdmin()) return true;
+  if (isSystemAdmin()) return true;
 
-  const level = state.userTeamAccess?.access_level || 'member';
+  const level = teamAccessLevel();
 
   if (level === 'view') {
     return VIEW_ALLOWED_PAGES.has(pageName);
   }
 
   if (level === 'oht') {
-    return !OHT_HIDDEN_PAGES.has(pageName);
+    if (OHT_HIDDEN_PAGES.has(pageName)) return false;
+    if (pageName === 'team-roster') return !!state.canManageTeamRoster;
+    return true;
   }
 
   if (level === 'member') {
     return OTM_ALLOWED_PAGES.has(pageName);
+  }
+
+  if (pageName === 'team-roster') {
+    return !!state.canManageTeamRoster;
   }
 
   return true;
@@ -102,6 +113,7 @@ export function applyNavPermissions() {
     if (otm && !OTM_ALLOWED_PAGES.has(page)) hide = true;
     if (viewOnly && !VIEW_ALLOWED_PAGES.has(page)) hide = true;
     if (oht && OHT_HIDDEN_PAGES.has(page)) hide = true;
+    if (page === 'team-roster' && !state.canManageTeamRoster) hide = true;
 
     el.style.display = hide ? 'none' : '';
   });
@@ -111,7 +123,8 @@ export function applyNavPermissions() {
     budgets: ['create-budget', 'view-budgets'],
     income: ['add-funds', 'income-manager', 'transfer', 'my-income'],
     expense: ['add-expense', 'expense-manager', 'generate-receipt'],
-    reports: ['expense-reports', 'my-finances', 'financial-status']
+    reports: ['expense-reports', 'my-finances', 'financial-status'],
+    teamadmin: ['team-roster']
   };
 
   Object.entries(sectionPages).forEach(([section, pages]) => {
@@ -123,6 +136,14 @@ export function applyNavPermissions() {
     });
     navItem.style.display = anyVisible ? '' : 'none';
   });
+
+  const teamAdminNav = document.getElementById('teamAdminNav');
+  if (teamAdminNav && state.canManageTeamRoster) {
+    const rosterEl = teamAdminNav.querySelector('[data-page="team-roster"]');
+    if (rosterEl && rosterEl.style.display !== 'none') {
+      teamAdminNav.style.display = '';
+    }
+  }
 
   updateBottomNavForRole();
 }
@@ -136,7 +157,7 @@ function updateBottomNavForRole() {
     if (budgetsTab) budgetsTab.style.display = 'none';
     if (reportsTab) reportsTab.style.display = 'none';
     if (expensesTab) expensesTab.style.display = '';
-  } else if (isViewOnly()) {
+  } else if (isViewOnly() || isOhtReadOnly()) {
     if (budgetsTab) budgetsTab.style.display = '';
     if (expensesTab) expensesTab.style.display = '';
     if (reportsTab) reportsTab.style.display = '';
@@ -147,17 +168,14 @@ function updateBottomNavForRole() {
   }
 }
 
-/** Default page when a tab or role blocks the usual target. */
 export function defaultPageForRole() {
-  if (isOtmOnly()) return 'dashboard';
-  if (isViewOnly()) return 'dashboard';
   return 'dashboard';
 }
 
 export function defaultPageForTab(tab) {
   if (tab === 'budgets' && isOtmOnly()) return 'my-finances';
   if (tab === 'reports' && isOtmOnly()) return 'my-finances';
-  if (tab === 'expenses' && isViewOnly()) return 'expense-manager';
+  if (tab === 'expenses' && (isViewOnly() || isOhtReadOnly())) return 'expense-manager';
   const map = {
     dashboard: 'dashboard',
     budgets: 'view-budgets',

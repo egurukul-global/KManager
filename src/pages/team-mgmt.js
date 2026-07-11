@@ -582,3 +582,278 @@ function removeTeamMember(membershipId) {
     }
   });
 }
+
+// ========== OHT TEAM ROSTER (current team + create teams) ==========
+
+const OHT_ASSIGNABLE_LEVELS = [
+  { value: 'view', label: 'View (read-only)' },
+  { value: 'member', label: 'Member (OTM)' },
+  { value: 'lead', label: 'Lead (OTL)' },
+  { value: 'oht', label: 'Ops Head (OHT)' }
+];
+
+function ohtAccessLevelOptions(selected = 'member') {
+  return OHT_ASSIGNABLE_LEVELS.map(l => {
+    const sel = l.value === selected ? ' selected' : '';
+    return `<option value="${l.value}"${sel}>${l.label}</option>`;
+  }).join('');
+}
+
+export function getTeamRosterPage() {
+  if (!state.canManageTeamRoster) {
+    return `
+      <h1 class="page-title">Team Members</h1>
+      <div class="card"><h2>⛔ Access Denied</h2><p>Only OHT or system admin can manage team rosters.</p></div>
+    `;
+  }
+
+  const teamName = state.currentTeam?.team_name || 'Current team';
+  const createTeamCard = state.canCreateOhtTeam ? `
+    <div class="card">
+      <h2>➕ Create Work Team</h2>
+      <p class="page-intro" style="margin-bottom:12px;">New teams are created under your OHT scope. You are auto-assigned as OHT on the new team.</p>
+      <form id="ohtCreateTeamForm" onsubmit="window.createOhtTeam(event)">
+        <div class="form-group">
+          <label>Team Name *</label>
+          <input type="text" id="ohtNewTeamName" required placeholder="e.g. Lagos Outreach" maxlength="120">
+        </div>
+        <div class="btn-group">
+          <button type="submit">Create Team</button>
+        </div>
+      </form>
+    </div>
+  ` : '';
+
+  return `
+    <h1 class="page-title">Team Members</h1>
+    <p class="page-intro">Manage who has access to <strong>${escapeHtml(teamName)}</strong>. OHT can add/remove members and set access levels (up to Lead).</p>
+    ${createTeamCard}
+    <div class="card team-members-panel">
+      <h2>👥 ${escapeHtml(teamName)}</h2>
+      <form id="rosterAddMemberForm" class="team-add-member-form" onsubmit="window.addRosterMember(event)">
+        <div class="form-grid-row form-grid-row--team-member">
+          <div class="form-group">
+            <label>Add User *</label>
+            <select id="rosterMemberUserId" required>
+              <option value="">Select user…</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Access Level *</label>
+            <select id="rosterMemberAccessLevel" required>
+              ${ohtAccessLevelOptions('member')}
+            </select>
+          </div>
+          <div class="form-group team-add-member-form__actions">
+            <label>&nbsp;</label>
+            <button type="submit">Add Member</button>
+          </div>
+        </div>
+      </form>
+      <div class="table-container">
+        <table class="table-stack-mobile team-mgmt-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Access</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rosterMembersBody">
+            <tr><td colspan="3" class="empty-state">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+export async function initTeamRosterPage() {
+  if (!state.canManageTeamRoster) return;
+
+  activeTeamId = state.currentTeam?.team_id;
+  if (!activeTeamId) return;
+
+  window.addRosterMember = addRosterMember;
+  window.updateRosterMemberAccess = updateRosterMemberAccess;
+  window.removeRosterMember = removeRosterMember;
+  window.createOhtTeam = createOhtTeam;
+
+  if (usersCache.length === 0) await loadUsersCache();
+  await loadRosterMembers(activeTeamId);
+  populateRosterUserSelect(activeTeamId);
+}
+
+async function loadRosterMembers(teamId) {
+  const tbody = document.getElementById('rosterMembersBody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Loading…</td></tr>';
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('user_teams')
+      .select('id, user_id, team_id, access_level, users:user_id(id, name, email)')
+      .eq('team_id', teamId)
+      .order('access_level');
+
+    if (error) throw error;
+
+    membersCache = (data || []).map(row => ({
+      ...row,
+      user: row.users || usersCache.find(u => u.id === row.user_id)
+    }));
+
+    if (!membersCache.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No members yet.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = membersCache.map(member => {
+      const user = member.user;
+      const isSelf = member.user_id === state.user?.id;
+      return `
+        <tr>
+          <td data-label="User">
+            <strong>${escapeHtml(user?.name || '—')}</strong><br>
+            <span style="font-size:0.85em;color:var(--text-secondary);">${escapeHtml(user?.email || '')}</span>
+          </td>
+          <td data-label="Access">
+            <select class="team-access-select" onchange="window.updateRosterMemberAccess('${member.id}', this.value)" ${isSelf ? 'disabled' : ''}>
+              ${ohtAccessLevelOptions(member.access_level || 'member')}
+            </select>
+          </td>
+          <td data-label="Actions" class="action-buttons">
+            ${isSelf ? '<span class="badge badge-info">You</span>' : `<button type="button" class="danger small" onclick="window.removeRosterMember('${member.id}')">Remove</button>`}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Load roster error:', err);
+    tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}. Run migration 016 if policies are missing.</td></tr>`;
+  }
+}
+
+function populateRosterUserSelect(teamId) {
+  const select = document.getElementById('rosterMemberUserId');
+  if (!select) return;
+  const assignedIds = new Set(membersCache.map(m => m.user_id));
+  const available = usersCache.filter(u => !assignedIds.has(u.id));
+  select.innerHTML = '<option value="">Select user…</option>';
+  available.forEach(user => {
+    select.innerHTML += `<option value="${user.id}">${escapeHtml(userLabel(user))}</option>`;
+  });
+}
+
+async function addRosterMember(e) {
+  e.preventDefault();
+  const teamId = state.currentTeam?.team_id;
+  const userId = document.getElementById('rosterMemberUserId')?.value;
+  const access_level = document.getElementById('rosterMemberAccessLevel')?.value || 'member';
+  if (!teamId || !userId) {
+    showToast('Select a user', 'error');
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient.from('user_teams').insert({
+      id: crypto.randomUUID(),
+      user_id: userId,
+      team_id: teamId,
+      access_level,
+      is_primary: false
+    });
+    if (error) throw error;
+
+    const user = usersCache.find(u => u.id === userId);
+    try {
+      await ensurePersonalTeamForUser(userId, user?.name || user?.email, state.user?.id);
+      await ensureMemberBucketOnWorkTeam(teamId, userId, user?.name || user?.email, state.user?.id);
+    } catch (setupErr) {
+      console.warn('Member setup:', setupErr);
+    }
+
+    showToast('Member added', 'success');
+    document.getElementById('rosterAddMemberForm')?.reset();
+    await loadRosterMembers(teamId);
+    populateRosterUserSelect(teamId);
+    if (userId === state.user.id) await refreshAccessibleTeams();
+  } catch (err) {
+    showToast(err.message || 'Failed to add member', 'error');
+  }
+}
+
+async function updateRosterMemberAccess(membershipId, accessLevel) {
+  try {
+    const { error } = await supabaseClient
+      .from('user_teams')
+      .update({ access_level: accessLevel })
+      .eq('id', membershipId);
+    if (error) throw error;
+    showToast('Access updated', 'success');
+    const member = membersCache.find(m => m.id === membershipId);
+    if (member?.user_id === state.user.id) await refreshAccessibleTeams();
+  } catch (err) {
+    showToast(err.message || 'Failed to update access', 'error');
+    if (activeTeamId) await loadRosterMembers(activeTeamId);
+  }
+}
+
+function removeRosterMember(membershipId) {
+  const member = membersCache.find(m => m.id === membershipId);
+  if (member?.user_id === state.user?.id) {
+    showToast('You cannot remove yourself from the team', 'error');
+    return;
+  }
+  removeTeamMember(membershipId);
+}
+
+async function createOhtTeam(e) {
+  e.preventDefault();
+  if (!state.canCreateOhtTeam) return;
+
+  const name = document.getElementById('ohtNewTeamName')?.value?.trim();
+  if (!name) {
+    showToast('Enter a team name', 'error');
+    return;
+  }
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  const original = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Creating…';
+  }
+
+  try {
+    const teamId = crypto.randomUUID();
+    const { error: teamError } = await supabaseClient.from('teams').insert({
+      id: teamId,
+      name,
+      is_personal_team: false,
+      created_by_oht_user_id: state.user.id
+    });
+    if (teamError) throw teamError;
+
+    const { error: memError } = await supabaseClient.from('user_teams').insert({
+      id: crypto.randomUUID(),
+      user_id: state.user.id,
+      team_id: teamId,
+      access_level: 'oht',
+      is_primary: false
+    });
+    if (memError) throw memError;
+
+    showToast(`Team "${name}" created — switch teams to manage it`, 'success');
+    document.getElementById('ohtCreateTeamForm')?.reset();
+    await refreshAccessibleTeams();
+  } catch (err) {
+    console.error('Create OHT team:', err);
+    showToast(err.message || 'Failed to create team. Run migration 016.', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = original || 'Create Team';
+    }
+  }
+}

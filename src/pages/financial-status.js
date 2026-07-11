@@ -26,11 +26,36 @@ let lastFilters = { fromDate: '', toDate: '', scope: 'all' };
 
 export function getFinancialStatusPage() {
   const teamName = state.currentTeam?.team_name || 'your team';
+  const readOnly = !state.canSubmitReconciliation;
+  const reconcileCard = readOnly ? `
+    <div class="card">
+      <p class="page-intro">Read-only view — daily reconciliation can be submitted by team members with write access (Member, Lead, or Team Admin).</p>
+    </div>
+  ` : `
+    <div class="card">
+      <div class="btn-group">
+        <button type="button" id="showReconcileBtn" onclick="window.showReconcilePanel()">Reconcile</button>
+      </div>
+      <div id="reconcilePanel" style="display:none; margin-top:20px;">
+        <h3>Daily Reconciliation — ${todayDateStr()}</h3>
+        <p style="color:var(--text-secondary); font-size:0.9em; margin-bottom:12px;">
+          Enter actual counts for every bucket with funds. Submit once to record today's reconciliation.
+        </p>
+        <div id="reconcileFormBody"></div>
+        <div class="btn-group" style="margin-top:16px;">
+          <button type="button" class="success" onclick="window.submitReconciliation()">Submit Reconciliation</button>
+          <button type="button" class="secondary" onclick="window.hideReconcilePanel()">Cancel</button>
+        </div>
+      </div>
+    </div>
+  `;
+
   return `
     <h1 class="page-title">Financial Status</h1>
     <p style="color: var(--text-secondary); margin-bottom: 16px;">
       Daily reconciliation for <strong>${teamName}</strong>. One submission per day covers all team and personal buckets with funds.
     </p>
+    ${readOnly ? '<p class="page-intro">Read-only access — you can generate reports and view reconciliation history.</p>' : ''}
 
     <div id="reconStatusBanner" class="dash-alert" style="margin-bottom:16px;">Loading…</div>
 
@@ -61,22 +86,7 @@ export function getFinancialStatusPage() {
       <div id="financialStatusResults"></div>
     </div>
 
-    <div class="card">
-      <div class="btn-group">
-        <button type="button" id="showReconcileBtn" onclick="window.showReconcilePanel()">Reconcile</button>
-      </div>
-      <div id="reconcilePanel" style="display:none; margin-top:20px;">
-        <h3>Daily Reconciliation — ${todayDateStr()}</h3>
-        <p style="color:var(--text-secondary); font-size:0.9em; margin-bottom:12px;">
-          Enter actual counts for every bucket with funds. Submit once to record today's reconciliation.
-        </p>
-        <div id="reconcileFormBody"></div>
-        <div class="btn-group" style="margin-top:16px;">
-          <button type="button" class="success" onclick="window.submitReconciliation()">Submit Reconciliation</button>
-          <button type="button" class="secondary" onclick="window.hideReconcilePanel()">Cancel</button>
-        </div>
-      </div>
-    </div>
+    ${reconcileCard}
 
     <div class="card">
       <h2>Reconciliation History</h2>
@@ -231,7 +241,9 @@ function generateFinancialStatus() {
       </tr>
     </tbody></table></div>
     <div class="recon-help-box">
-      <strong>How to reconcile:</strong> Use the <strong>Reconcile</strong> button below to enter actual counts and submit one daily reconciliation.
+      ${state.canSubmitReconciliation
+    ? '<strong>How to reconcile:</strong> Use the <strong>Reconcile</strong> button below to enter actual counts and submit one daily reconciliation.'
+    : '<strong>Read-only:</strong> Reconciliation history is below. Submitting reconciliations requires Member, Lead, or Team Admin access.'}
     </div>
   `;
 
@@ -273,6 +285,10 @@ function buildReconcileRows() {
 }
 
 function showReconcilePanel() {
+  if (!state.canSubmitReconciliation) {
+    showToast('Read-only access — you cannot submit reconciliations on this team.', 'warning');
+    return;
+  }
   const panel = document.getElementById('reconcilePanel');
   const body = document.getElementById('reconcileFormBody');
   if (!panel || !body) return;
@@ -348,6 +364,10 @@ function onReconcileActualInput(index) {
 }
 
 async function submitReconciliation() {
+  if (!state.canSubmitReconciliation) {
+    showToast('Read-only access — you cannot submit reconciliations on this team.', 'warning');
+    return;
+  }
   const panel = document.getElementById('reconcilePanel');
   const rows = panel?._reconcileRows || buildReconcileRows();
   if (!rows.length) {

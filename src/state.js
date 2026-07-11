@@ -22,7 +22,10 @@ export const state = {
   canViewAllExpenses: false,
   canViewTeamIncome: false,
   canViewTeamBudgets: false,
+  canManageTeamRoster: false,
+  canCreateOhtTeam: false,
   isReadOnlyTeamAccess: false,
+  canSubmitReconciliation: false,
   showDeleted: false,
   pendingDeleteId: null,
   isOnline: navigator.onLine,
@@ -34,12 +37,12 @@ export const state = {
 
 // ==================== PERMISSIONS ====================
 export function computePermissions() {
-  const level = state.userTeamAccess?.access_level || 'member';
+  const level = String(state.userTeamAccess?.access_level || 'member').toLowerCase().trim();
   const role = state.user?.role || 'user';
   state.isReadOnlyTeamAccess = level === 'oht' || level === 'view';
 
-  // Admin/CAOH/OH/CEO can do everything
-  if (['admin', 'caoh', 'oh', 'ceo'].includes(role)) {
+  // System admin can do everything on any team
+  if (role === 'admin') {
     state.canCreateBuckets = true;
     state.canEditBuckets = true;
     state.canDeleteBuckets = true;
@@ -55,12 +58,19 @@ export function computePermissions() {
     state.canViewAllExpenses = true;
     state.canViewTeamIncome = true;
     state.canViewTeamBudgets = true;
+    state.canManageTeamRoster = true;
+    state.canCreateOhtTeam = true;
     state.isReadOnlyTeamAccess = false;
+    state.canSubmitReconciliation = true;
     return;
   }
 
+  // Org roles (CAOH/OH/CEO) follow team access_level on each team — no bypass here.
   state.canViewTeamIncome = level === 'lead' || level === 'admin' || level === 'oht' || level === 'view';
   state.canViewTeamBudgets = state.canViewTeamIncome;
+  state.canManageTeamRoster = level === 'oht';
+  state.canCreateOhtTeam = level === 'oht';
+  state.canSubmitReconciliation = level === 'member' || level === 'lead' || level === 'admin';
 
   state.canManageExpenses = level === 'member' || level === 'lead' || level === 'admin';
   state.canTransferFunds = level === 'member' || level === 'lead' || level === 'admin';
@@ -80,6 +90,8 @@ export function computePermissions() {
       state.canDeleteBudgets = true;
       state.canManageIncome = true;
       state.canTransferFunds = true;
+      state.canManageTeamRoster = true;
+      state.canCreateOhtTeam = true;
       break;
     case 'lead':
       state.canCreateBuckets = true;
@@ -93,6 +105,8 @@ export function computePermissions() {
       state.canDeleteBudgets = false;
       state.canManageIncome = true;
       state.canTransferFunds = true;
+      state.canManageTeamRoster = false;
+      state.canCreateOhtTeam = false;
       break;
     case 'oht':
       state.canCreateBuckets = false;
@@ -108,6 +122,8 @@ export function computePermissions() {
       state.canTransferFunds = false;
       state.canManageExpenses = false;
       state.canViewAllExpenses = true;
+      state.canManageTeamRoster = true;
+      state.canCreateOhtTeam = true;
       break;
     case 'member':
       state.canCreateBuckets = false;
@@ -153,8 +169,9 @@ export function computePermissions() {
 }
 
 export function hasAccess(minLevel) {
-  const levels = { 'view': 1, 'member': 2, 'lead': 3, 'oh': 4, 'admin': 5 };
-  const current = levels[state.userTeamAccess?.access_level || 'member'] || 2;
+  const level = String(state.userTeamAccess?.access_level || 'member').toLowerCase().trim();
+  const levels = { 'view': 1, 'member': 2, 'oht': 2.5, 'lead': 3, 'oh': 4, 'admin': 5 };
+  const current = levels[level] || 2;
   const target = levels[minLevel] || 2;
   return current >= target;
 }

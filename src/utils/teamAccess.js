@@ -51,7 +51,7 @@ export function syncCurrentTeamAfterReload(preferredTeamId = state.currentTeam?.
 
   state.currentTeam = match || state.teams.find(t => t.is_primary) || state.teams[0];
   state.userTeamAccess = {
-    access_level: state.currentTeam.access_level || 'member',
+    access_level: String(state.currentTeam.access_level || 'member').toLowerCase().trim(),
     granted_by: state.currentTeam.granted_by,
     granted_at: state.currentTeam.granted_at
   };

@@ -31,7 +31,7 @@ import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js'
 import { getDisplayName } from './utils/displayName.js';
 import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher } from './utils/teamAccess.js';
 import { applyNavPermissions, canAccessPage, defaultPageForRole, defaultPageForTab } from './utils/navPermissions.js';
-import { getTeamMgmtPage, initTeamMgmtPage } from './pages/team-mgmt.js';
+import { getTeamMgmtPage, initTeamMgmtPage, getTeamRosterPage, initTeamRosterPage } from './pages/team-mgmt.js';
 import { getMyFinancesPage, initMyFinancesPage } from './pages/my-finances.js';
 import { getMyIncomePage, initMyIncomePage } from './pages/my-income.js';
 import swamijiImg from './Swamiji.png';
@@ -148,8 +148,8 @@ async function initializeApp() {
     // 8. Render app shell
     renderAppShell();
 
-    // 9. Show admin nav if applicable
-    if (['admin', 'caoh', 'oh', 'ceo'].includes(state.user.role)) {
+    // 9. Show org admin nav if applicable
+    if (['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role)) {
       const adminNav = document.getElementById('adminNav');
       if (adminNav) adminNav.style.display = 'block';
     }
@@ -157,7 +157,7 @@ async function initializeApp() {
     // 10. Populate team switcher
     populateTeamSwitcher();
 
-    // 11. Load initial page
+    // 11. Apply role-based nav + load initial page
     applyNavPermissions();
     showPage(defaultPageForRole());
 
@@ -249,7 +249,7 @@ export async function switchTeam(teamId) {
 
   state.currentTeam = team;
   state.userTeamAccess = {
-    access_level: team.access_level || 'member',
+    access_level: String(team.access_level || 'member').toLowerCase().trim(),
     granted_by: team.granted_by,
     granted_at: team.granted_at
   };
@@ -398,6 +398,17 @@ function renderAppShell() {
               <div class="nav-subitem" data-page="expense-reports" onclick="window.showPage('expense-reports')">Reports</div>
               <div class="nav-subitem" data-page="my-finances" onclick="window.showPage('my-finances')">My Finances</div>
               <div class="nav-subitem" data-page="financial-status" onclick="window.showPage('financial-status')">Financial Status</div>
+            </div>
+          </div>
+
+          <div class="nav-item" data-section="teamadmin" id="teamAdminNav" style="display: none;">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">👥</span>
+              <span>Team Admin</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="team-roster" onclick="window.showPage('team-roster')">Team Members</div>
             </div>
           </div>
 
@@ -568,6 +579,7 @@ export function showPage(pageName) {
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
     'user-mgmt': { html: () => placeholderPage('User Management', 'Session 8'), init: () => {} },
+    'team-roster': { html: getTeamRosterPage, init: initTeamRosterPage },
     'team-mgmt': { html: getTeamMgmtPage, init: initTeamMgmtPage }
   };
 

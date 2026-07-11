@@ -7,15 +7,18 @@ import { LOCAL_CURRENCIES, rateDisplayLabel, normalizeRateRecord } from '../util
 
 let allRates = [];
 
+function canEditRates() {
+  return !state.isReadOnlyTeamAccess && (state.canCreateCategories || state.user?.role === 'admin');
+}
+
 function currencyOptionsHtml() {
   return LOCAL_CURRENCIES.map(c => `<option value="${c}">${c}</option>`).join('');
 }
 
 export function getRatesPage() {
   const currencyOptions = currencyOptionsHtml();
-  return `
-    <h1 class="page-title">Exchange Rates</h1>
-
+  const readOnly = !canEditRates();
+  const addForm = readOnly ? '' : `
     <div class="card">
       <h2>💱 Add Exchange Rate</h2>
       <form id="rateForm" onsubmit="window.addRate(event)">
@@ -42,6 +45,12 @@ export function getRatesPage() {
         </div>
       </form>
     </div>
+  `;
+
+  return `
+    <h1 class="page-title">Exchange Rates</h1>
+    ${readOnly ? '<p class="page-intro">Read-only view — exchange rate history for this team.</p>' : ''}
+    ${addForm}
 
     <div class="card">
       <h2>📋 Exchange Rate History</h2>
@@ -52,7 +61,7 @@ export function getRatesPage() {
               <th>Date</th>
               <th>Currency</th>
               <th>Rate</th>
-              <th>Actions</th>
+              ${readOnly ? '' : '<th>Actions</th>'}
             </tr>
           </thead>
           <tbody id="ratesList"></tbody>
@@ -63,10 +72,13 @@ export function getRatesPage() {
 }
 
 export async function initRatesPage() {
-  document.getElementById('rateDate').valueAsDate = new Date();
+  const dateEl = document.getElementById('rateDate');
+  if (dateEl) dateEl.valueAsDate = new Date();
 
-  window.addRate = addRate;
-  window.deleteRate = deleteRate;
+  if (canEditRates()) {
+    window.addRate = addRate;
+    window.deleteRate = deleteRate;
+  }
 
   await loadRates();
 }
@@ -96,9 +108,10 @@ async function loadRates() {
 
 function renderRates() {
   const tbody = document.getElementById('ratesList');
+  const editable = canEditRates();
 
   if (allRates.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No exchange rates set for this team yet.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${editable ? 4 : 3}" class="empty-state">No exchange rates set for this team yet.</td></tr>`;
     return;
   }
 
@@ -112,9 +125,7 @@ function renderRates() {
         <td data-label="Date">${rate.date}</td>
         <td data-label="Currency"><span class="badge badge-info">${currency}</span></td>
         <td data-label="Rate">${rateDisplayLabel(currency, displayRate)}</td>
-        <td data-label="Actions">
-          ${btnIconDelete(`window.deleteRate('${rate.id}')`)}
-        </td>
+        ${editable ? `<td data-label="Actions">${btnIconDelete(`window.deleteRate('${rate.id}')`)}</td>` : ''}
       </tr>
     `;
   });
@@ -124,6 +135,10 @@ function renderRates() {
 
 async function addRate(e) {
   e.preventDefault();
+  if (!canEditRates()) {
+    showToast('Read-only access — cannot add rates', 'error');
+    return;
+  }
 
   const currency = document.getElementById('rateLocalCurrency').value;
   const rateValue = parseFloat(document.getElementById('rateValue').value);
@@ -165,6 +180,10 @@ async function addRate(e) {
 }
 
 async function deleteRate(rateId) {
+  if (!canEditRates()) {
+    showToast('Read-only access — cannot delete rates', 'error');
+    return;
+  }
   showConfirm('Delete this exchange rate?', async () => {
     try {
       const { error } = await sbSoftDelete('exchange_rates', rateId);
