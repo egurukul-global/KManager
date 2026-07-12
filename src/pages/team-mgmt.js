@@ -91,13 +91,12 @@ export function getTeamMgmtPage() {
       <h2>➕ New Team</h2>
       ${isOrgAdmin() ? `
         <form id="teamForm" onsubmit="window.saveTeam(event)">
-          <input type="hidden" id="teamEditId">
           <div class="form-group">
             <label>Team Name *</label>
-            <input type="text" id="teamName" required placeholder="e.g. Mumbai Outreach" maxlength="120">
+            <input type="text" id="teamCreateName" required placeholder="e.g. Mumbai Outreach" maxlength="120">
           </div>
           <div class="btn-group">
-            <button type="submit">Save Team</button>
+            <button type="submit">Create Team</button>
             <button type="button" class="secondary" onclick="window.toggleTeamsCreateCard(false)">Cancel</button>
           </div>
         </form>
@@ -117,23 +116,6 @@ export function getTeamMgmtPage() {
     </div>
   ` : '';
 
-  const renameBlock = isOrgAdmin() ? `
-    <div class="card" id="teamsRenameCard" style="display:none;">
-      <h2>✏️ Rename Team</h2>
-      <form id="teamRenameForm" onsubmit="window.saveTeam(event)">
-        <input type="hidden" id="teamEditId">
-        <div class="form-group">
-          <label>Team Name *</label>
-          <input type="text" id="teamName" required maxlength="120">
-        </div>
-        <div class="btn-group">
-          <button type="submit">Save</button>
-          <button type="button" class="secondary" onclick="window.toggleTeamsRenameCard(false)">Cancel</button>
-        </div>
-      </form>
-    </div>
-  ` : '';
-
   return `
     <h1 class="page-title">Teams</h1>
     <p class="page-intro">Select a team to manage members. Create teams if your role allows.</p>
@@ -150,14 +132,26 @@ export function getTeamMgmtPage() {
           <label>&nbsp;</label>
           <div class="btn-group">
             ${canCreateTeamsOnPage() ? '<button type="button" class="success" onclick="window.toggleTeamsCreateCard(true)">+ New team</button>' : ''}
-            ${isOrgAdmin() ? '<button type="button" class="secondary" onclick="window.toggleTeamsRenameCard(true)">Rename</button>' : ''}
           </div>
         </div>
       </div>
+      ${isOrgAdmin() ? `
+        <form id="teamRenameForm" class="team-rename-row" style="display:none;" onsubmit="window.saveTeamRename(event)">
+          <div class="form-grid-row form-grid-row--team-rename">
+            <div class="form-group">
+              <label for="teamRenameName">Team name</label>
+              <input type="text" id="teamRenameName" required maxlength="120" placeholder="Edit team name">
+            </div>
+            <div class="form-group team-rename-actions">
+              <label>&nbsp;</label>
+              <button type="submit">Save name</button>
+            </div>
+          </div>
+        </form>
+      ` : ''}
     </div>
 
     ${createBlock}
-    ${renameBlock}
 
     <div class="card team-members-panel" id="teamMembersPanel">
       <h2 id="teamMembersTitle">Members</h2>
@@ -172,9 +166,9 @@ export function getTeamMgmtPage() {
               <option value="">Select user…</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-group form-group--access-level">
             <label>Access Level *</label>
-            <select id="memberAccessLevel" required>
+            <select id="memberAccessLevel" class="team-access-select" required>
               ${memberAccessOptions('member')}
             </select>
           </div>
@@ -209,6 +203,7 @@ export async function initTeamMgmtPage() {
   if (!canAccessTeamsPage()) return;
 
   window.saveTeam = saveTeam;
+  window.saveTeamRename = saveTeamRename;
   window.resetTeamForm = resetTeamForm;
   window.addTeamMember = addTeamMember;
   window.updateMemberAccess = updateMemberAccess;
@@ -216,7 +211,6 @@ export async function initTeamMgmtPage() {
   window.removeTeamMember = removeTeamMember;
   window.onTeamsPageSelectChange = onTeamsPageSelectChange;
   window.toggleTeamsCreateCard = toggleTeamsCreateCard;
-  window.toggleTeamsRenameCard = toggleTeamsRenameCard;
   window.createOhtTeam = createOhtTeam;
 
   await loadUsersCache();
@@ -266,6 +260,8 @@ async function onTeamsPageSelectChange() {
   const form = document.getElementById('addMemberForm');
   const hint = document.getElementById('teamsMembersHint');
   const title = document.getElementById('teamMembersTitle');
+  const renameRow = document.getElementById('teamRenameForm');
+  const renameInput = document.getElementById('teamRenameName');
 
   if (!teamId) {
     activeTeamId = null;
@@ -273,6 +269,7 @@ async function onTeamsPageSelectChange() {
     if (form) form.style.display = 'none';
     if (hint) hint.style.display = '';
     if (title) title.textContent = 'Members';
+    if (renameRow) renameRow.style.display = 'none';
     const tbody = document.getElementById('teamMembersBody');
     if (tbody) {
       const cols = isOrgAdmin() ? 4 : 3;
@@ -288,6 +285,10 @@ async function onTeamsPageSelectChange() {
   if (title) title.textContent = `Members — ${team?.name || 'Team'}`;
   if (hint) hint.style.display = 'none';
   if (form) form.style.display = '';
+  if (renameRow && renameInput && isOrgAdmin()) {
+    renameRow.style.display = '';
+    renameInput.value = team?.name || '';
+  }
   document.getElementById('memberTeamId').value = teamId;
 
   await loadTeamMembers(teamId);
@@ -298,25 +299,6 @@ async function onTeamsPageSelectChange() {
 function toggleTeamsCreateCard(show) {
   const card = document.getElementById('teamsCreateCard');
   if (card) card.style.display = show ? '' : 'none';
-  if (show) toggleTeamsRenameCard(false);
-}
-
-function toggleTeamsRenameCard(show) {
-  const card = document.getElementById('teamsRenameCard');
-  if (!card) return;
-  card.style.display = show ? '' : 'none';
-  if (show) {
-    toggleTeamsCreateCard(false);
-    const teamId = document.getElementById('teamsPageSelect')?.value;
-    const team = teamsCache.find(t => t.id === teamId);
-    if (!team) {
-      showToast('Select a team first', 'warning');
-      card.style.display = 'none';
-      return;
-    }
-    document.getElementById('teamEditId').value = team.id;
-    document.getElementById('teamName').value = team.name || '';
-  }
 }
 
 export function getTeamRosterPage() {
@@ -361,24 +343,76 @@ async function backfillMemberBucketsForTeam(teamId) {
 }
 
 function resetTeamForm() {
-  const editId = document.getElementById('teamEditId');
-  if (editId) editId.value = '';
   document.getElementById('teamForm')?.reset();
-  document.getElementById('teamRenameForm')?.reset();
 }
 
 async function saveTeam(e) {
   e.preventDefault();
-  const id = document.getElementById('teamEditId').value;
-  const name = document.getElementById('teamName').value.trim();
+  const name = document.getElementById('teamCreateName')?.value?.trim();
 
   if (!name) {
     showToast('Enter a team name', 'error');
     return;
   }
 
+  const duplicate = teamsCache.find(t => t.name.toLowerCase() === name.toLowerCase());
+  if (duplicate) {
+    showToast('A team with this name already exists', 'error');
+    return;
+  }
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  const originalText = btn.textContent;
+  btn.textContent = 'Creating…';
+  btn.disabled = true;
+
+  try {
+    const newId = crypto.randomUUID();
+    const { error } = await supabaseClient.from('teams').insert({ id: newId, name });
+    if (error) throw error;
+    showToast('Team created', 'success');
+
+    await supabaseClient.from('user_teams').insert({
+      id: crypto.randomUUID(),
+      user_id: state.user.id,
+      team_id: newId,
+      access_level: 'admin',
+      is_primary: false
+    });
+    activeTeamId = newId;
+
+    resetTeamForm();
+    toggleTeamsCreateCard(false);
+    await loadManageableTeams();
+    const select = document.getElementById('teamsPageSelect');
+    if (select) select.value = newId;
+    await onTeamsPageSelectChange();
+    await refreshAccessibleTeams();
+  } catch (err) {
+    console.error('Save team error:', err);
+    showToast(err.message || 'Failed to create team', 'error');
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+async function saveTeamRename(e) {
+  e.preventDefault();
+  const teamId = activeTeamId || document.getElementById('teamsPageSelect')?.value;
+  const name = document.getElementById('teamRenameName')?.value?.trim();
+
+  if (!teamId) {
+    showToast('Select a team first', 'warning');
+    return;
+  }
+  if (!name) {
+    showToast('Enter a team name', 'error');
+    return;
+  }
+
   const duplicate = teamsCache.find(t =>
-    t.name.toLowerCase() === name.toLowerCase() && t.id !== id
+    t.name.toLowerCase() === name.toLowerCase() && t.id !== teamId
   );
   if (duplicate) {
     showToast('A team with this name already exists', 'error');
@@ -391,43 +425,24 @@ async function saveTeam(e) {
   btn.disabled = true;
 
   try {
-    if (id) {
-      const { error } = await supabaseClient
-        .from('teams')
-        .update({ name })
-        .eq('id', id);
-      if (error) throw error;
-      showToast('Team updated', 'success');
-    } else {
-      const newId = crypto.randomUUID();
-      const { error } = await supabaseClient.from('teams').insert({ id: newId, name });
-      if (error) throw error;
-      showToast('Team created', 'success');
+    const { error } = await supabaseClient
+      .from('teams')
+      .update({ name })
+      .eq('id', teamId);
+    if (error) throw error;
 
-      await supabaseClient.from('user_teams').insert({
-        id: crypto.randomUUID(),
-        user_id: state.user.id,
-        team_id: newId,
-        access_level: 'admin',
-        is_primary: false
-      });
-      activeTeamId = newId;
-    }
+    const team = teamsCache.find(t => t.id === teamId);
+    if (team) team.name = name;
 
-    resetTeamForm();
-    toggleTeamsCreateCard(false);
-    toggleTeamsRenameCard(false);
-    const savedId = id || activeTeamId;
+    showToast('Team name updated', 'success');
     await loadManageableTeams();
-    if (savedId) {
-      const select = document.getElementById('teamsPageSelect');
-      if (select) select.value = savedId;
-      await onTeamsPageSelectChange();
-    }
+    const select = document.getElementById('teamsPageSelect');
+    if (select) select.value = teamId;
+    await onTeamsPageSelectChange();
     await refreshAccessibleTeams();
   } catch (err) {
-    console.error('Save team error:', err);
-    showToast(err.message || 'Failed to save team', 'error');
+    console.error('Rename team error:', err);
+    showToast(err.message || 'Failed to rename team', 'error');
   } finally {
     btn.textContent = originalText;
     btn.disabled = false;

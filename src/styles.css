@@ -1123,9 +1123,29 @@ tr.selected { background: #F5EDE8 !important; }
 .form-grid-row--team-member {
   grid-template-columns:
     minmax(12rem, 2fr)
-    minmax(9rem, 1fr)
+    minmax(18rem, 1.75fr)
     auto;
   align-items: end;
+}
+
+.form-grid-row--team-rename {
+  grid-template-columns: minmax(12rem, 1fr) auto;
+  align-items: end;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border, #e9ecef);
+}
+
+.team-rename-row {
+  margin-top: 0;
+}
+
+.team-rename-actions button {
+  white-space: nowrap;
+}
+
+.form-group--access-level {
+  min-width: 0;
 }
 
 .team-members-panel__header {
@@ -1156,8 +1176,14 @@ tr.selected { background: #F5EDE8 !important; }
 
 .team-access-select {
   width: 100%;
-  max-width: 10rem;
+  max-width: 22rem;
+  min-width: 14rem;
   min-height: 40px;
+}
+
+.team-mgmt-table th:nth-child(2),
+.team-mgmt-table td[data-label="Access"] {
+  min-width: 16rem;
 }
 
 @media (max-width: 768px) {

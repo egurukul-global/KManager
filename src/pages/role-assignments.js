@@ -8,6 +8,23 @@ import { canManageRoleAssignments } from '../utils/approvalAccess.js';
 const EXTENDED_ROLES = ['FIN', 'LEG', 'LEH', 'GUT', 'GUH'];
 const ORG_ASSIGNABLE_ROLES = ['FIH', 'CAO'];
 
+let usersCache = [];
+
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
+}
+
+function userLabel(user) {
+  if (!user) return 'Unknown';
+  const name = user.name?.trim();
+  const email = user.email?.trim();
+  if (name && email) return `${name} (${email})`;
+  return name || email || 'Unknown';
+}
+
 function getAssignableRoles() {
   const role = String(state.user?.role || 'user').toLowerCase();
   if (role === 'admin') return [...ORG_ASSIGNABLE_ROLES, ...EXTENDED_ROLES];
@@ -41,8 +58,10 @@ export function getRoleAssignmentsPage() {
       <form id="roleAssignForm" onsubmit="window.saveRoleAssignment(event)">
         <div class="form-grid">
           <div class="form-group">
-            <label>User email</label>
-            <input type="email" id="roleAssignEmail" required placeholder="user@example.com">
+            <label>User</label>
+            <select id="roleAssignUserId" required>
+              <option value="">Loading users…</option>
+            </select>
           </div>
           <div class="form-group">
             <label>Role code</label>
@@ -90,11 +109,43 @@ export function getRoleAssignmentsPage() {
   `;
 }
 
+async function loadUsersCache() {
+  try {
+    const { data, error } = await supabaseClient
+      .from('users')
+      .select('id, name, email')
+      .order('name');
+
+    usersCache = error ? [] : (data || []);
+  } catch (err) {
+    console.warn('Failed to load users for role assignments:', err);
+    usersCache = [];
+  }
+}
+
+function populateUserSelect() {
+  const select = document.getElementById('roleAssignUserId');
+  if (!select) return;
+
+  if (!usersCache.length) {
+    select.innerHTML = '<option value="">No users available</option>';
+    return;
+  }
+
+  select.innerHTML = '<option value="">Select user…</option>';
+  usersCache.forEach(user => {
+    select.innerHTML += `<option value="${user.id}">${escapeHtml(userLabel(user))}</option>`;
+  });
+}
+
 export async function initRoleAssignmentsPage() {
   window.saveRoleAssignment = saveRoleAssignment;
   window.deactivateRoleAssignment = deactivateRoleAssignment;
 
   if (!canManageRoleAssignments()) return;
+
+  await loadUsersCache();
+  populateUserSelect();
 
   const teamSelect = document.getElementById('roleAssignTeam');
   if (teamSelect) {
@@ -104,7 +155,7 @@ export async function initRoleAssignmentsPage() {
       .eq('is_personal_team', false)
       .order('name');
     (teams || []).forEach(t => {
-      teamSelect.innerHTML += `<option value="${t.id}">${t.name}</option>`;
+      teamSelect.innerHTML += `<option value="${t.id}">${escapeHtml(t.name)}</option>`;
     });
   }
 
@@ -157,10 +208,10 @@ async function loadAssignments() {
 
       tableHtml += `
         <tr>
-          <td data-label="User">${name}</td>
-          <td data-label="Email">${email}</td>
+          <td data-label="User">${escapeHtml(name)}</td>
+          <td data-label="Email">${escapeHtml(email)}</td>
           <td data-label="Role"><span class="badge badge-info">${row.role_code}</span></td>
-          <td data-label="Team">${teamName}</td>
+          <td data-label="Team">${escapeHtml(teamName)}</td>
           <td data-label="Request type">${row.request_type || 'All'}</td>
           <td data-label="Actions">
             <button type="button" class="secondary small danger" onclick="window.deactivateRoleAssignment('${row.id}')">Remove</button>
@@ -171,7 +222,7 @@ async function loadAssignments() {
       mobileHtml += `
         <article class="data-card data-card--compact">
           <div class="data-card-top">
-            <span class="data-card-title">${name}</span>
+            <span class="data-card-title">${escapeHtml(name)}</span>
             <span class="badge badge-info">${row.role_code}</span>
           </div>
           ${cardRow('Email', email)}
@@ -197,10 +248,15 @@ async function saveRoleAssignment(e) {
   e.preventDefault();
   if (!canManageRoleAssignments()) return;
 
-  const email = document.getElementById('roleAssignEmail')?.value?.trim();
+  const userId = document.getElementById('roleAssignUserId')?.value;
   const roleCode = document.getElementById('roleAssignCode')?.value;
   const teamId = document.getElementById('roleAssignTeam')?.value || null;
   const requestType = document.getElementById('roleAssignType')?.value || null;
+
+  if (!userId) {
+    showToast('Select a user', 'error');
+    return;
+  }
 
   const allowed = getAssignableRoles();
   if (!allowed.includes(roleCode)) {
@@ -208,19 +264,11 @@ async function saveRoleAssignment(e) {
     return;
   }
 
+  const user = usersCache.find(u => u.id === userId);
+
   try {
-    const { data: users, error: userErr } = await supabaseClient
-      .from('users')
-      .select('id, email')
-      .ilike('email', email)
-      .limit(1);
-
-    if (userErr) throw userErr;
-    const user = users?.[0];
-    if (!user) throw new Error('User not found with that email');
-
     const { error } = await supabaseClient.from('request_role_assignments').insert({
-      user_id: user.id,
+      user_id: userId,
       role_code: roleCode,
       team_id: teamId || null,
       request_type: requestType || null,
@@ -233,8 +281,9 @@ async function saveRoleAssignment(e) {
       throw error;
     }
 
-    showToast(`Assigned ${roleCode} to ${user.email}`, 'success');
+    showToast(`Assigned ${roleCode} to ${user?.email || 'user'}`, 'success');
     document.getElementById('roleAssignForm')?.reset();
+    populateUserSelect();
     await loadAssignments();
   } catch (err) {
     showToast(err.message || 'Failed to save assignment', 'error');
