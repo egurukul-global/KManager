@@ -35,7 +35,7 @@ export function getReconcilePage() {
 
   return `
     <h1 class="page-title">Reconcile</h1>
-    <p class="page-intro">Daily reconciliation for <strong>${teamName}</strong>. Enter actual balances for buckets with funds and submit once per day.</p>
+    <p class="page-intro">Daily reconciliation for <strong>${teamName}</strong>. Enter actual balances for buckets with funds and submit once per day. A comment is required when actual differs from balance.</p>
     ${readOnly ? '<p class="page-intro">Read-only — you cannot submit reconciliations on this team.</p>' : ''}
 
     <div id="reconStatusBanner" class="dash-alert" style="margin-bottom:16px;">Loading…</div>
@@ -181,7 +181,8 @@ function showReconcilePanel() {
         <td data-label="Difference"><span id="reconDiff_${index}">—</span></td>
         <td data-label="USD Equiv">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
         <td data-label="Comments">
-          <textarea id="reconComments_${index}" rows="2" placeholder="Optional" class="recon-comments-input"></textarea>
+          <textarea id="reconComments_${index}" rows="2" placeholder="Required if difference ≠ 0" class="recon-comments-input"
+            oninput="window.syncReconcileField(${index}, 'comments', false)"></textarea>
         </td>
       </tr>
     `;
@@ -207,7 +208,7 @@ function showReconcilePanel() {
         ${cardRow('USD Equiv', row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—')}
         <div class="data-card-row recon-field-row recon-field-row--stacked">
           <span class="data-card-row-label">Comments</span>
-          <textarea id="reconComments_m_${index}" rows="2" placeholder="Reason (optional)" class="recon-comments-input"
+          <textarea id="reconComments_m_${index}" rows="2" placeholder="Required if difference ≠ 0" class="recon-comments-input"
             oninput="window.syncReconcileField(${index}, 'comments', true)"></textarea>
         </div>
       </article>
@@ -293,15 +294,23 @@ async function submitReconciliation() {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const actualInput = getReconcileInput(i, 'actual', false) || getReconcileInput(i, 'actual', true);
-    const commentsInput = document.getElementById(`reconComments_${i}`) || document.getElementById(`reconComments_m_${i}`);
     const actualRaw = actualInput?.value;
     if (actualRaw === '' || actualRaw === undefined) {
       showToast(`Enter actual balance for ${row.bucketName}.`, 'error');
       return;
     }
     const actual = parseFloat(actualRaw);
+    const comments = (
+      document.getElementById(`reconComments_${i}`)?.value ||
+      document.getElementById(`reconComments_m_${i}`)?.value ||
+      ''
+    ).trim();
     const { diff } = formatDifference(actual, row.closing, row.currency);
-    lineData.push({ row, actual, difference: diff, comments: commentsInput?.value?.trim() || null });
+    if (Math.abs(diff) >= 0.01 && !comments) {
+      showToast(`Add a comment for ${row.bucketName} — actual differs from balance.`, 'error');
+      return;
+    }
+    lineData.push({ row, actual, difference: diff, comments: comments || null });
   }
 
   try {
