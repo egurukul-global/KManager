@@ -6,6 +6,17 @@ export function isSystemAdmin() {
   return state.user?.role === 'admin';
 }
 
+function isOrgAdmin() {
+  return ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role);
+}
+
+const ORG_ADMIN_ONLY_PAGES = new Set([
+  'user-mgmt',
+  'budget-calendar',
+  'category-master',
+  'role-assignments'
+]);
+
 /** Pages an OTM (team member / OPS) may open. Team income/budgets/setup are hidden. */
 const OTM_ALLOWED_PAGES = new Set([
   'dashboard',
@@ -18,6 +29,7 @@ const OTM_ALLOWED_PAGES = new Set([
   'expense-manager',
   'generate-receipt',
   'my-finances',
+  'reconcile',
   'reconciliation-overview'
 ]);
 
@@ -31,6 +43,7 @@ const VIEW_ALLOWED_PAGES = new Set([
   'expense-manager',
   'expense-reports',
   'financial-status',
+  'reconcile',
   'reconciliation-overview',
   'my-finances',
   'my-income',
@@ -79,12 +92,27 @@ export function isViewOnly() {
   return teamAccessLevel() === 'view';
 }
 
-export function canAccessPage(pageName) {
+function canAccessTeamsPage() {
   if (isSystemAdmin()) return true;
+  return isOrgAdmin() || !!state.canManageTeamRoster;
+}
+
+export function canAccessPage(pageName) {
+  if (pageName === 'team-roster') pageName = 'team-mgmt';
+
+  if (isSystemAdmin()) return true;
+
+  if (pageName === 'team-mgmt') {
+    return canAccessTeamsPage();
+  }
 
   if (pageName === 'role-assignments') {
     const role = String(state.user?.role || 'user').toLowerCase();
     return ['admin', 'oh', 'caoh'].includes(role);
+  }
+
+  if (ORG_ADMIN_ONLY_PAGES.has(pageName)) {
+    return isOrgAdmin();
   }
 
   const level = teamAccessLevel();
@@ -95,16 +123,11 @@ export function canAccessPage(pageName) {
 
   if (level === 'oht') {
     if (OHT_HIDDEN_PAGES.has(pageName)) return false;
-    if (pageName === 'team-roster') return !!state.canManageTeamRoster;
     return true;
   }
 
   if (level === 'member') {
     return OTM_ALLOWED_PAGES.has(pageName);
-  }
-
-  if (pageName === 'team-roster') {
-    return !!state.canManageTeamRoster;
   }
 
   return true;
@@ -124,7 +147,8 @@ export function applyNavPermissions() {
     if (otm && !OTM_ALLOWED_PAGES.has(page)) hide = true;
     if (viewOnly && !VIEW_ALLOWED_PAGES.has(page)) hide = true;
     if (oht && OHT_HIDDEN_PAGES.has(page)) hide = true;
-    if (page === 'team-roster' && !state.canManageTeamRoster) hide = true;
+    if (page === 'team-mgmt' && !canAccessTeamsPage()) hide = true;
+    if (ORG_ADMIN_ONLY_PAGES.has(page) && !isOrgAdmin() && !isSystemAdmin()) hide = true;
     if (page === 'role-assignments') {
       const role = String(state.user?.role || 'user').toLowerCase();
       if (!['admin', 'oh', 'caoh'].includes(role)) hide = true;
@@ -138,9 +162,9 @@ export function applyNavPermissions() {
     budgets: ['create-budget', 'view-budgets'],
     income: ['add-funds', 'income-manager', 'transfer', 'my-income'],
     expense: ['add-expense', 'expense-manager', 'generate-receipt'],
-    financials: ['financial-status', 'reconciliation-overview'],
+    financials: ['financial-status', 'reconcile', 'reconciliation-overview'],
     reports: ['expense-reports', 'my-finances'],
-    teamadmin: ['team-roster'],
+    admin: ['team-mgmt', 'role-assignments', 'user-mgmt', 'budget-calendar', 'category-master'],
     dashboard: ['dashboard', 'profile', 'approval-portal']
   };
 
@@ -154,12 +178,10 @@ export function applyNavPermissions() {
     navItem.style.display = anyVisible ? '' : 'none';
   });
 
-  const teamAdminNav = document.getElementById('teamAdminNav');
-  if (teamAdminNav && state.canManageTeamRoster) {
-    const rosterEl = teamAdminNav.querySelector('[data-page="team-roster"]');
-    if (rosterEl && rosterEl.style.display !== 'none') {
-      teamAdminNav.style.display = '';
-    }
+  const adminNav = document.getElementById('adminNav');
+  if (adminNav) {
+    const showAdmin = isSystemAdmin() || isOrgAdmin() || state.canManageTeamRoster;
+    adminNav.style.display = showAdmin ? '' : 'none';
   }
 
   updateBottomNavForRole();
@@ -191,7 +213,7 @@ export function defaultPageForRole() {
 
 export function defaultPageForTab(tab) {
   if (tab === 'budgets' && isOtmOnly()) return 'my-finances';
-  if (tab === 'reports' && isOtmOnly()) return 'reconciliation-overview';
+  if (tab === 'reports' && isOtmOnly()) return 'reconcile';
   if (tab === 'expenses' && (isViewOnly() || isOhtReadOnly())) return 'expense-manager';
   const map = {
     dashboard: 'dashboard',

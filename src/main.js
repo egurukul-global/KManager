@@ -24,6 +24,7 @@ import {
 import { getBudgetCalendarPage, initBudgetCalendarPage } from './pages/budget-calendar.js';
 import { getCategoryMasterPage, initCategoryMasterPage } from './pages/category-master.js';
 import { getFinancialStatusPage, initFinancialStatusPage } from './pages/financial-status.js';
+import { getReconcilePage, initReconcilePage } from './pages/reconcile.js';
 import { getReconciliationOverviewPage, initReconciliationOverviewPage } from './pages/reconciliation-overview.js';
 import { getProfilePage, initProfilePage } from './pages/profile.js';
 import { getApprovalPortalPage, initApprovalPortalPage } from './pages/approval-portal.js';
@@ -35,7 +36,7 @@ import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js'
 import { getDisplayName } from './utils/displayName.js';
 import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher, updateAccessBadge } from './utils/teamAccess.js';
 import { applyNavPermissions, canAccessPage, defaultPageForRole, defaultPageForTab } from './utils/navPermissions.js';
-import { getTeamMgmtPage, initTeamMgmtPage, getTeamRosterPage, initTeamRosterPage } from './pages/team-mgmt.js';
+import { getTeamMgmtPage, initTeamMgmtPage } from './pages/team-mgmt.js';
 import { getMyFinancesPage, initMyFinancesPage } from './pages/my-finances.js';
 import { getMyIncomePage, initMyIncomePage } from './pages/my-income.js';
 import swamijiImg from './Swamiji.png';
@@ -152,8 +153,9 @@ async function initializeApp() {
     // 8. Render app shell
     renderAppShell();
 
-    // 9. Show org admin nav if applicable
-    if (['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role)) {
+    // 9. Show admin nav for org admins and OPH team managers
+    const showAdminNav = ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role) || state.canManageTeamRoster;
+    if (showAdminNav) {
       const adminNav = document.getElementById('adminNav');
       if (adminNav) adminNav.style.display = 'block';
     }
@@ -399,8 +401,10 @@ function renderAppShell() {
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
-              <div class="nav-subitem" data-page="financial-status" onclick="window.showPage('financial-status')">Financial Status</div>
-              <div class="nav-subitem" data-page="reconciliation-overview" onclick="window.showPage('reconciliation-overview')">Reconciliation</div>
+              <div class="nav-subitem" data-page="financial-status" onclick="window.showPage('financial-status')">Treasury</div>
+              <div class="nav-subitem-label">Reconciliation</div>
+              <div class="nav-subitem" data-page="reconcile" onclick="window.showPage('reconcile')">Reconcile</div>
+              <div class="nav-subitem" data-page="reconciliation-overview" onclick="window.showPage('reconciliation-overview')">Overview</div>
             </div>
           </div>
 
@@ -416,17 +420,6 @@ function renderAppShell() {
             </div>
           </div>
 
-          <div class="nav-item" data-section="teamadmin" id="teamAdminNav" style="display: none;">
-            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
-              <span class="icon">👥</span>
-              <span>Team Admin</span>
-              <span class="arrow">▶</span>
-            </div>
-            <div class="nav-subitems">
-              <div class="nav-subitem" data-page="team-roster" onclick="window.showPage('team-roster')">Team Members</div>
-            </div>
-          </div>
-
           <div class="nav-item" data-section="admin" id="adminNav" style="display: none;">
             <div class="nav-item-header" onclick="window.toggleNavItem(this)">
               <span class="icon">⚙️</span>
@@ -434,9 +427,9 @@ function renderAppShell() {
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
+              <div class="nav-subitem" data-page="team-mgmt" onclick="window.showPage('team-mgmt')">Teams</div>
               <div class="nav-subitem" data-page="role-assignments" onclick="window.showPage('role-assignments')">Role Assignments</div>
               <div class="nav-subitem" data-page="user-mgmt" onclick="window.showPage('user-mgmt')">Users</div>
-              <div class="nav-subitem" data-page="team-mgmt" onclick="window.showPage('team-mgmt')">Teams</div>
               <div class="nav-subitem" data-page="budget-calendar" onclick="window.showPage('budget-calendar')">Budget Calendar</div>
               <div class="nav-subitem" data-page="category-master" onclick="window.showPage('category-master')">Category Master</div>
             </div>
@@ -533,6 +526,7 @@ const PAGE_TO_TAB = {
   'my-finances': 'reports',
   'my-income': 'reports',
   'financial-status': 'reports',
+  'reconcile': 'reports',
   'reconciliation-overview': 'reports',
   profile: 'dashboard',
   'approval-portal': 'dashboard',
@@ -559,6 +553,8 @@ export function navToTab(tab) {
 }
 
 export function showPage(pageName) {
+  if (pageName === 'team-roster') pageName = 'team-mgmt';
+
   if (!canAccessPage(pageName)) {
     showToast('You do not have access to that page on this team.', 'warning');
     pageName = defaultPageForRole();
@@ -596,6 +592,7 @@ export function showPage(pageName) {
     'my-finances': { html: getMyFinancesPage, init: initMyFinancesPage },
     'my-income': { html: getMyIncomePage, init: initMyIncomePage },
     'financial-status': { html: getFinancialStatusPage, init: initFinancialStatusPage },
+    'reconcile': { html: getReconcilePage, init: initReconcilePage },
     'reconciliation-overview': { html: getReconciliationOverviewPage, init: initReconciliationOverviewPage },
     profile: { html: getProfilePage, init: initProfilePage },
     'approval-portal': { html: getApprovalPortalPage, init: initApprovalPortalPage },
@@ -603,7 +600,6 @@ export function showPage(pageName) {
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
     'user-mgmt': { html: () => placeholderPage('User Management', 'Session 8'), init: () => {} },
-    'team-roster': { html: getTeamRosterPage, init: initTeamRosterPage },
     'team-mgmt': { html: getTeamMgmtPage, init: initTeamMgmtPage }
   };
 

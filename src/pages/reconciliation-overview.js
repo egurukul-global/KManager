@@ -18,8 +18,8 @@ let detailRowId = null;
 
 export function getReconciliationOverviewPage() {
   return `
-    <h1 class="page-title">Reconciliation Overview</h1>
-    <p class="page-intro">Summary by team — tap a row for bucket-level detail. Access limits what you see.</p>
+    <h1 class="page-title">Overview</h1>
+    <p class="page-intro">Reconciliation summary by team — click a row for bucket-level detail. Access limits what you see.</p>
 
     <div class="card">
       <h2>Filters</h2>
@@ -56,7 +56,27 @@ export function getReconciliationOverviewPage() {
       </div>
     </div>
 
-    <div id="reconOverviewSummary" class="data-card-list"></div>
+    <div class="card">
+      <h2>Summary</h2>
+      <div class="table-container show-desktop">
+        <table class="table-stack-mobile" id="reconOverviewTable">
+          <thead>
+            <tr>
+              <th>Team</th>
+              <th>Date</th>
+              <th>Progress</th>
+              <th>Status</th>
+              <th>Discrepancy</th>
+              <th>Awaiting</th>
+            </tr>
+          </thead>
+          <tbody id="reconOverviewTableBody">
+            <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="reconOverviewSummary" class="show-mobile data-card-list"></div>
+    </div>
     <div id="reconOverviewDetail" style="display:none; margin-top:16px;"></div>
   `;
 }
@@ -86,14 +106,17 @@ function populateTeamFilter() {
 
 async function loadOverview() {
   const summaryEl = document.getElementById('reconOverviewSummary');
-  if (!summaryEl) return;
+  const tableBody = document.getElementById('reconOverviewTableBody');
+  if (!summaryEl && !tableBody) return;
 
   const teamFilter = document.getElementById('reconOverviewTeam')?.value || 'all';
   const date = document.getElementById('reconOverviewDate')?.value || todayDateStr();
   const statusFilter = document.getElementById('reconOverviewStatus')?.value || 'all';
   const discrepancyFilter = document.getElementById('reconOverviewDiscrepancy')?.value || 'all';
 
-  summaryEl.innerHTML = '<p class="empty-state">Loading…</p>';
+  const loading = '<p class="empty-state">Loading…</p>';
+  if (summaryEl) summaryEl.innerHTML = loading;
+  if (tableBody) tableBody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading…</td></tr>';
 
   try {
     const teams = teamFilter === 'all'
@@ -115,19 +138,39 @@ async function loadOverview() {
     }
 
     if (!overviewRows.length) {
-      summaryEl.innerHTML = '<p class="empty-state">No reconciliation data for these filters.</p>';
+      const empty = '<p class="empty-state">No reconciliation data for these filters.</p>';
+      if (summaryEl) summaryEl.innerHTML = empty;
+      if (tableBody) tableBody.innerHTML = '<tr><td colspan="6" class="empty-state">No reconciliation data for these filters.</td></tr>';
       closeReconOverviewDetail();
       return;
     }
 
-    summaryEl.innerHTML = overviewRows.map((row, idx) => {
+    let tableHtml = '';
+    let mobileHtml = '';
+
+    overviewRows.forEach((row, idx) => {
       const statusClass = row.progress.pending === 0 && row.progress.required > 0 ? 'badge-success' : 'badge-warning';
       const statusText = row.progress.required === 0
         ? 'No buckets need reconcile'
         : row.progress.pending === 0
           ? 'Complete'
           : 'Pending';
-      return `
+      const awaiting = row.pendingMembers.length ? row.pendingMembers.join(', ') : '—';
+      const discrepancy = row.hasDiscrepancy ? 'Yes' : 'No';
+      const discClass = row.hasDiscrepancy ? 'negative' : '';
+
+      tableHtml += `
+        <tr class="row-clickable" onclick="window.toggleReconOverviewDetail(${idx})">
+          <td data-label="Team"><strong>${row.teamName}</strong></td>
+          <td data-label="Date">${formatDisplayDate(date)}</td>
+          <td data-label="Progress">${row.progress.label}</td>
+          <td data-label="Status"><span class="badge ${statusClass}">${statusText}</span></td>
+          <td data-label="Discrepancy" class="${discClass}">${discrepancy}</td>
+          <td data-label="Awaiting">${awaiting}</td>
+        </tr>
+      `;
+
+      mobileHtml += `
         <article class="data-card data-card--compact data-card--clickable" onclick="window.toggleReconOverviewDetail(${idx})">
           <div class="data-card-top">
             <span class="data-card-title">${row.teamName}</span>
@@ -141,10 +184,15 @@ async function loadOverview() {
           <span class="data-card-expand-hint">Tap for bucket detail</span>
         </article>
       `;
-    }).join('');
+    });
+
+    if (tableBody) tableBody.innerHTML = tableHtml;
+    if (summaryEl) summaryEl.innerHTML = mobileHtml;
   } catch (err) {
     console.error('Reconciliation overview:', err);
-    summaryEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${err.message}</p>`;
+    const errMsg = err.message;
+    if (summaryEl) summaryEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${errMsg}</p>`;
+    if (tableBody) tableBody.innerHTML = `<tr><td colspan="6" class="empty-state" style="color:#dc3545;">${errMsg}</td></tr>`;
   }
 }
 
@@ -277,7 +325,8 @@ function toggleReconOverviewDetail(index) {
     <div class="card">
       <div class="btn-group" style="margin-bottom:12px;">
         <button type="button" class="secondary" onclick="window.closeReconOverviewDetail()">Close detail</button>
-        ${canAccessPage('financial-status') ? '<button type="button" onclick="window.showPage(\'financial-status\')">Open Financial Status</button>' : ''}
+        ${canAccessPage('reconcile') ? '<button type="button" onclick="window.showPage(\'reconcile\')">Open Reconcile</button>' : ''}
+        ${canAccessPage('financial-status') ? '<button type="button" class="secondary" onclick="window.showPage(\'financial-status\')">Open Treasury</button>' : ''}
       </div>
       <h3>${row.teamName} — ${formatDisplayDate(document.getElementById('reconOverviewDate')?.value || todayDateStr())}</h3>
       <div class="show-mobile data-card-list">${linesHtml || '<p class="empty-state">No buckets require reconciliation.</p>'}</div>

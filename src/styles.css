@@ -268,6 +268,17 @@ body {
 }
 .nav-subitem:hover { background: rgba(255,255,255,0.05); border-left-color: rgba(255,255,255,0.3); }
 .nav-subitem.active { background: rgba(212, 175, 55, 0.18); border-left-color: var(--accent-gold); color: #fff; }
+.nav-subitem-label {
+  padding: 6px 16px 4px 48px;
+  font-size: 0.72em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: default;
+  border-left: 3px solid transparent;
+  user-select: none;
+}
 
 /* ===== MOBILE HEADER ===== */
 .mobile-header {

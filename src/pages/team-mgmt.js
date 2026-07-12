@@ -2,7 +2,7 @@
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
-import { btnIconEdit, cardRow } from '../utils/uiHelpers.js';
+import { cardRow } from '../utils/uiHelpers.js';
 import { refreshAccessibleTeams } from '../utils/teamAccess.js';
 import { ensurePersonalTeamForUser } from '../utils/personalTeamHelpers.js';
 import { ensureMemberBucketOnWorkTeam } from '../utils/memberBucketHelpers.js';
@@ -51,63 +51,119 @@ function accessLevelOptions(selected = 'member') {
   }).join('');
 }
 
+const OHT_ASSIGNABLE_LEVELS = [
+  { value: 'view', label: 'View (read-only)' },
+  { value: 'member', label: 'Member (OTM)' },
+  { value: 'lead', label: 'Lead (OTL)' },
+  { value: 'oht', label: 'Ops Head (OHT)' }
+];
+
+function ohtAccessLevelOptions(selected = 'member') {
+  return OHT_ASSIGNABLE_LEVELS.map(l => {
+    const sel = l.value === selected ? ' selected' : '';
+    return `<option value="${l.value}"${sel}>${l.label}</option>`;
+  }).join('');
+}
+
+function canAccessTeamsPage() {
+  return isOrgAdmin() || !!state.canManageTeamRoster;
+}
+
+function canCreateTeamsOnPage() {
+  return isOrgAdmin() || !!state.canCreateOhtTeam;
+}
+
+function memberAccessOptions(selected = 'member') {
+  if (isOrgAdmin()) return accessLevelOptions(selected);
+  return ohtAccessLevelOptions(selected);
+}
+
 export function getTeamMgmtPage() {
-  if (!isOrgAdmin()) {
+  if (!canAccessTeamsPage()) {
     return `
       <h1 class="page-title">Teams</h1>
-      <div class="card"><h2>⛔ Access Denied</h2><p>Only org admins can manage teams.</p></div>
+      <div class="card"><h2>⛔ Access Denied</h2><p>You do not have permission to manage teams.</p></div>
     `;
   }
 
-  return `
-    <h1 class="page-title">Teams</h1>
-    <p class="page-intro">Create and rename teams, then assign members with access levels. Users see assigned teams in the sidebar team switcher.</p>
-
-    <div class="card">
-      <h2>➕ Add / Edit Team</h2>
-      <form id="teamForm" onsubmit="window.saveTeam(event)">
-        <input type="hidden" id="teamEditId">
-        <div class="form-stack">
-          <div class="form-grid-row form-grid-row--team-meta">
-            <div class="form-group">
-              <label>Team Name *</label>
-              <input type="text" id="teamName" required placeholder="e.g. Mumbai Outreach" maxlength="120">
-            </div>
+  const createBlock = canCreateTeamsOnPage() ? `
+    <div class="card" id="teamsCreateCard" style="display:none;">
+      <h2>➕ New Team</h2>
+      ${isOrgAdmin() ? `
+        <form id="teamForm" onsubmit="window.saveTeam(event)">
+          <input type="hidden" id="teamEditId">
+          <div class="form-group">
+            <label>Team Name *</label>
+            <input type="text" id="teamName" required placeholder="e.g. Mumbai Outreach" maxlength="120">
           </div>
+          <div class="btn-group">
+            <button type="submit">Save Team</button>
+            <button type="button" class="secondary" onclick="window.toggleTeamsCreateCard(false)">Cancel</button>
+          </div>
+        </form>
+      ` : `
+        <p class="page-intro">New teams are created under your OPH scope. You are assigned as OPH on the new team.</p>
+        <form id="ohtCreateTeamForm" onsubmit="window.createOhtTeam(event)">
+          <div class="form-group">
+            <label>Team Name *</label>
+            <input type="text" id="ohtNewTeamName" required placeholder="e.g. Lagos Outreach" maxlength="120">
+          </div>
+          <div class="btn-group">
+            <button type="submit">Create Team</button>
+            <button type="button" class="secondary" onclick="window.toggleTeamsCreateCard(false)">Cancel</button>
+          </div>
+        </form>
+      `}
+    </div>
+  ` : '';
+
+  const renameBlock = isOrgAdmin() ? `
+    <div class="card" id="teamsRenameCard" style="display:none;">
+      <h2>✏️ Rename Team</h2>
+      <form id="teamRenameForm" onsubmit="window.saveTeam(event)">
+        <input type="hidden" id="teamEditId">
+        <div class="form-group">
+          <label>Team Name *</label>
+          <input type="text" id="teamName" required maxlength="120">
         </div>
         <div class="btn-group">
-          <button type="submit">Save Team</button>
-          <button type="button" class="secondary" onclick="window.resetTeamForm()">Clear</button>
+          <button type="submit">Save</button>
+          <button type="button" class="secondary" onclick="window.toggleTeamsRenameCard(false)">Cancel</button>
         </div>
       </form>
     </div>
+  ` : '';
+
+  return `
+    <h1 class="page-title">Teams</h1>
+    <p class="page-intro">Select a team to manage members. Create teams if your role allows.</p>
 
     <div class="card">
-      <h2>🏢 All Teams</h2>
-      <div class="table-container show-desktop">
-        <table class="table-stack-mobile team-mgmt-table">
-          <thead>
-            <tr>
-              <th>Team</th>
-              <th>Members</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="teamsListBody">
-            <tr><td colspan="3" class="empty-state">Loading…</td></tr>
-          </tbody>
-        </table>
+      <div class="form-grid-row form-grid-row--team-picker">
+        <div class="form-group" style="flex:1;">
+          <label>Team</label>
+          <select id="teamsPageSelect" onchange="window.onTeamsPageSelectChange()">
+            <option value="">Loading teams…</option>
+          </select>
+        </div>
+        <div class="form-group team-picker-actions">
+          <label>&nbsp;</label>
+          <div class="btn-group">
+            ${canCreateTeamsOnPage() ? '<button type="button" class="success" onclick="window.toggleTeamsCreateCard(true)">+ New team</button>' : ''}
+            ${isOrgAdmin() ? '<button type="button" class="secondary" onclick="window.toggleTeamsRenameCard(true)">Rename</button>' : ''}
+          </div>
+        </div>
       </div>
-      <div id="teamsListMobile" class="show-mobile data-card-list"></div>
     </div>
 
-    <div class="card team-members-panel" id="teamMembersPanel" style="display:none;">
-      <div class="team-members-panel__header">
-        <h2 id="teamMembersTitle">Team Members</h2>
-        <button type="button" class="secondary small" onclick="window.closeTeamMembersPanel()">Close</button>
-      </div>
+    ${createBlock}
+    ${renameBlock}
 
-      <form id="addMemberForm" class="team-add-member-form" onsubmit="window.addTeamMember(event)">
+    <div class="card team-members-panel" id="teamMembersPanel">
+      <h2 id="teamMembersTitle">Members</h2>
+      <p id="teamsMembersHint" class="page-intro">Select a team above.</p>
+
+      <form id="addMemberForm" class="team-add-member-form" onsubmit="window.addTeamMember(event)" style="display:none;">
         <input type="hidden" id="memberTeamId">
         <div class="form-grid-row form-grid-row--team-member">
           <div class="form-group">
@@ -119,7 +175,7 @@ export function getTeamMgmtPage() {
           <div class="form-group">
             <label>Access Level *</label>
             <select id="memberAccessLevel" required>
-              ${accessLevelOptions('member')}
+              ${memberAccessOptions('member')}
             </select>
           </div>
           <div class="form-group team-add-member-form__actions">
@@ -135,12 +191,12 @@ export function getTeamMgmtPage() {
             <tr>
               <th>User</th>
               <th>Access</th>
-              <th>Default</th>
+              ${isOrgAdmin() ? '<th>Default</th>' : ''}
               <th>Actions</th>
             </tr>
           </thead>
           <tbody id="teamMembersBody">
-            <tr><td colspan="4" class="empty-state">Select a team to manage members.</td></tr>
+            <tr><td colspan="${isOrgAdmin() ? 4 : 3}" class="empty-state">Select a team.</td></tr>
           </tbody>
         </table>
       </div>
@@ -150,19 +206,125 @@ export function getTeamMgmtPage() {
 }
 
 export async function initTeamMgmtPage() {
-  if (!isOrgAdmin()) return;
+  if (!canAccessTeamsPage()) return;
 
   window.saveTeam = saveTeam;
   window.resetTeamForm = resetTeamForm;
-  window.editTeam = editTeam;
-  window.openTeamMembers = openTeamMembers;
-  window.closeTeamMembersPanel = closeTeamMembersPanel;
   window.addTeamMember = addTeamMember;
   window.updateMemberAccess = updateMemberAccess;
   window.setMemberPrimary = setMemberPrimary;
   window.removeTeamMember = removeTeamMember;
+  window.onTeamsPageSelectChange = onTeamsPageSelectChange;
+  window.toggleTeamsCreateCard = toggleTeamsCreateCard;
+  window.toggleTeamsRenameCard = toggleTeamsRenameCard;
+  window.createOhtTeam = createOhtTeam;
 
-  await Promise.all([loadUsersCache(), loadTeams()]);
+  await loadUsersCache();
+  await loadManageableTeams();
+}
+
+async function loadManageableTeams() {
+  const select = document.getElementById('teamsPageSelect');
+  if (!select) return;
+
+  try {
+    if (isOrgAdmin()) {
+      const { data: teams, error } = await supabaseClient
+        .from('teams')
+        .select('id, name, is_personal_team')
+        .eq('is_personal_team', false)
+        .order('name');
+      if (error) throw error;
+      teamsCache = (teams || []).map(t => ({ id: t.id, name: t.name, member_count: 0 }));
+    } else {
+      teamsCache = (state.teams || [])
+        .filter(t => String(t.access_level || '').toLowerCase() === 'oht')
+        .map(t => ({ id: t.team_id, name: t.team_name, member_count: 0 }));
+    }
+
+    select.innerHTML = teamsCache.length
+      ? '<option value="">Select a team…</option>'
+      : '<option value="">No teams available</option>';
+
+    teamsCache.forEach(team => {
+      select.innerHTML += `<option value="${team.id}">${escapeHtml(team.name)}</option>`;
+    });
+
+    const preferred = activeTeamId || state.currentTeam?.team_id;
+    if (preferred && teamsCache.some(t => t.id === preferred)) {
+      select.value = preferred;
+      await onTeamsPageSelectChange();
+    }
+  } catch (err) {
+    console.error('Load manageable teams:', err);
+    select.innerHTML = `<option value="">Error: ${escapeHtml(err.message)}</option>`;
+  }
+}
+
+async function onTeamsPageSelectChange() {
+  const teamId = document.getElementById('teamsPageSelect')?.value;
+  const form = document.getElementById('addMemberForm');
+  const hint = document.getElementById('teamsMembersHint');
+  const title = document.getElementById('teamMembersTitle');
+
+  if (!teamId) {
+    activeTeamId = null;
+    membersCache = [];
+    if (form) form.style.display = 'none';
+    if (hint) hint.style.display = '';
+    if (title) title.textContent = 'Members';
+    const tbody = document.getElementById('teamMembersBody');
+    if (tbody) {
+      const cols = isOrgAdmin() ? 4 : 3;
+      tbody.innerHTML = `<tr><td colspan="${cols}" class="empty-state">Select a team.</td></tr>`;
+    }
+    const mobile = document.getElementById('teamMembersMobile');
+    if (mobile) mobile.innerHTML = '';
+    return;
+  }
+
+  const team = teamsCache.find(t => t.id === teamId);
+  activeTeamId = teamId;
+  if (title) title.textContent = `Members — ${team?.name || 'Team'}`;
+  if (hint) hint.style.display = 'none';
+  if (form) form.style.display = '';
+  document.getElementById('memberTeamId').value = teamId;
+
+  await loadTeamMembers(teamId);
+  populateAddMemberUserSelect(teamId);
+  await backfillMemberBucketsForTeam(teamId);
+}
+
+function toggleTeamsCreateCard(show) {
+  const card = document.getElementById('teamsCreateCard');
+  if (card) card.style.display = show ? '' : 'none';
+  if (show) toggleTeamsRenameCard(false);
+}
+
+function toggleTeamsRenameCard(show) {
+  const card = document.getElementById('teamsRenameCard');
+  if (!card) return;
+  card.style.display = show ? '' : 'none';
+  if (show) {
+    toggleTeamsCreateCard(false);
+    const teamId = document.getElementById('teamsPageSelect')?.value;
+    const team = teamsCache.find(t => t.id === teamId);
+    if (!team) {
+      showToast('Select a team first', 'warning');
+      card.style.display = 'none';
+      return;
+    }
+    document.getElementById('teamEditId').value = team.id;
+    document.getElementById('teamName').value = team.name || '';
+  }
+}
+
+export function getTeamRosterPage() {
+  return getTeamMgmtPage();
+}
+
+export async function initTeamRosterPage() {
+  await initTeamMgmtPage();
 }
 
 async function loadUsersCache() {
@@ -179,87 +341,30 @@ async function loadUsersCache() {
   }
 }
 
-async function loadTeams() {
-  const tbody = document.getElementById('teamsListBody');
-  const mobile = document.getElementById('teamsListMobile');
-  if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Loading…</td></tr>';
+async function backfillMemberBucketsForTeam(teamId) {
+  const team = teamsCache.find(t => t.id === teamId);
+  if (!team) return;
 
-  try {
-    const { data: teams, error: teamsError } = await supabaseClient
-      .from('teams')
-      .select('id, name')
-      .order('name');
-
-    if (teamsError) throw teamsError;
-
-    const { data: memberships, error: memError } = await supabaseClient
-      .from('user_teams')
-      .select('id, team_id, user_id');
-
-    if (memError) throw memError;
-
-    const memberCounts = {};
-    (memberships || []).forEach(m => {
-      memberCounts[m.team_id] = (memberCounts[m.team_id] || 0) + 1;
-    });
-
-    teamsCache = (teams || []).map(t => ({
-      ...t,
-      member_count: memberCounts[t.id] || 0
-    }));
-
-    if (!teamsCache.length) {
-      const empty = '<tr><td colspan="3" class="empty-state">No teams yet. Add one above.</td></tr>';
-      tbody.innerHTML = empty;
-      if (mobile) mobile.innerHTML = '<p class="empty-state">No teams yet. Add one above.</p>';
-      return;
+  for (const member of membersCache) {
+    const user = member.user || usersCache.find(u => u.id === member.user_id);
+    try {
+      await ensureMemberBucketOnWorkTeam(
+        teamId,
+        member.user_id,
+        user?.name || user?.email,
+        state.user?.id
+      );
+    } catch (err) {
+      console.warn('Backfill member bucket:', member.user_id, err);
     }
-
-    let mobileHtml = '';
-    tbody.innerHTML = teamsCache.map(team => {
-      mobileHtml += `
-        <article class="data-card data-card--compact">
-          <div class="data-card-top">
-            <span class="data-card-title">${escapeHtml(team.name)}</span>
-            <span class="badge badge-info">${team.member_count} members</span>
-          </div>
-          <div class="data-card-actions">
-            ${btnIconEdit(`window.editTeam('${team.id}')`)}
-            <button type="button" class="secondary small" onclick="window.openTeamMembers('${team.id}')">Members</button>
-          </div>
-        </article>
-      `;
-      return `
-      <tr>
-        <td data-label="Team"><strong>${escapeHtml(team.name)}</strong></td>
-        <td data-label="Members">${team.member_count}</td>
-        <td data-label="Actions" class="action-buttons team-mgmt-actions">
-          ${btnIconEdit(`window.editTeam('${team.id}')`)}
-          <button type="button" class="secondary small" onclick="window.openTeamMembers('${team.id}')">Members</button>
-        </td>
-      </tr>
-    `;
-    }).join('');
-    if (mobile) mobile.innerHTML = mobileHtml;
-  } catch (err) {
-    console.error('Load teams error:', err);
-    tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}. Run migration 011 if policies are missing.</td></tr>`;
-    if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</p>`;
   }
 }
 
 function resetTeamForm() {
-  document.getElementById('teamEditId').value = '';
+  const editId = document.getElementById('teamEditId');
+  if (editId) editId.value = '';
   document.getElementById('teamForm')?.reset();
-}
-
-function editTeam(id) {
-  const team = teamsCache.find(t => t.id === id);
-  if (!team) return;
-  document.getElementById('teamEditId').value = team.id;
-  document.getElementById('teamName').value = team.name || '';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.getElementById('teamRenameForm')?.reset();
 }
 
 async function saveTeam(e) {
@@ -306,10 +411,19 @@ async function saveTeam(e) {
         access_level: 'admin',
         is_primary: false
       });
+      activeTeamId = newId;
     }
 
     resetTeamForm();
-    await loadTeams();
+    toggleTeamsCreateCard(false);
+    toggleTeamsRenameCard(false);
+    const savedId = id || activeTeamId;
+    await loadManageableTeams();
+    if (savedId) {
+      const select = document.getElementById('teamsPageSelect');
+      if (select) select.value = savedId;
+      await onTeamsPageSelectChange();
+    }
     await refreshAccessibleTeams();
   } catch (err) {
     console.error('Save team error:', err);
@@ -317,51 +431,6 @@ async function saveTeam(e) {
   } finally {
     btn.textContent = originalText;
     btn.disabled = false;
-  }
-}
-
-function closeTeamMembersPanel() {
-  const panel = document.getElementById('teamMembersPanel');
-  if (panel) panel.style.display = 'none';
-  activeTeamId = null;
-  membersCache = [];
-}
-
-async function openTeamMembers(teamId) {
-  const team = teamsCache.find(t => t.id === teamId);
-  if (!team) return;
-
-  activeTeamId = teamId;
-  const panel = document.getElementById('teamMembersPanel');
-  const title = document.getElementById('teamMembersTitle');
-  const teamIdInput = document.getElementById('memberTeamId');
-
-  if (title) title.textContent = `Members — ${team.name}`;
-  if (teamIdInput) teamIdInput.value = teamId;
-  if (panel) panel.style.display = '';
-
-  await loadTeamMembers(teamId);
-  populateAddMemberUserSelect(teamId);
-  await backfillMemberBucketsForTeam(teamId);
-  panel?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-async function backfillMemberBucketsForTeam(teamId) {
-  const team = teamsCache.find(t => t.id === teamId);
-  if (!team) return;
-
-  for (const member of membersCache) {
-    const user = member.user || usersCache.find(u => u.id === member.user_id);
-    try {
-      await ensureMemberBucketOnWorkTeam(
-        teamId,
-        member.user_id,
-        user?.name || user?.email,
-        state.user?.id
-      );
-    } catch (err) {
-      console.warn('Backfill member bucket:', member.user_id, err);
-    }
   }
 }
 
@@ -382,7 +451,8 @@ async function loadTeamMembers(teamId) {
   const tbody = document.getElementById('teamMembersBody');
   const mobile = document.getElementById('teamMembersMobile');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Loading…</td></tr>';
+  const colCount = isOrgAdmin() ? 4 : 3;
+  tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state">Loading…</td></tr>`;
 
   try {
     const { data, error } = await supabaseClient
@@ -399,7 +469,7 @@ async function loadTeamMembers(teamId) {
     }));
 
     if (!membersCache.length) {
-      const empty = '<tr><td colspan="4" class="empty-state">No members yet. Add a user above.</td></tr>';
+      const empty = `<tr><td colspan="${colCount}" class="empty-state">No members yet. Add a user above.</td></tr>`;
       tbody.innerHTML = empty;
       if (mobile) mobile.innerHTML = '<p class="empty-state">No members yet. Add a user above.</p>';
       return;
@@ -408,28 +478,30 @@ async function loadTeamMembers(teamId) {
     let mobileHtml = '';
     tbody.innerHTML = membersCache.map(member => {
       const user = member.user;
-      const primaryBadge = member.is_primary
-        ? '<span class="badge badge-success">★ Default</span>'
-        : `<button type="button" class="secondary small" onclick="window.setMemberPrimary('${member.id}')">Set default</button>`;
-      const accessSelect = `<select class="team-access-select" onchange="window.updateMemberAccess('${member.id}', this.value)">${accessLevelOptions(member.access_level || 'member')}</select>`;
+      const isSelf = member.user_id === state.user?.id;
+      const accessSelect = `<select class="team-access-select" onchange="window.updateMemberAccess('${member.id}', this.value)" ${isSelf && !isOrgAdmin() ? 'disabled' : ''}>${memberAccessOptions(member.access_level || 'member')}</select>`;
+      const primaryBadge = isOrgAdmin()
+        ? (member.is_primary
+          ? '<span class="badge badge-success">★ Default</span>'
+          : `<button type="button" class="secondary small" onclick="window.setMemberPrimary('${member.id}')">Set default</button>`)
+        : '';
+      const removeBtn = (isSelf && !isOrgAdmin())
+        ? '<span class="badge badge-info">You</span>'
+        : `<button type="button" class="danger small" onclick="window.removeTeamMember('${member.id}')">Remove</button>`;
 
       mobileHtml += `
         <article class="data-card data-card--compact">
           <div class="data-card-top">
             <span class="data-card-title">${escapeHtml(user?.name || '—')}</span>
+            ${isSelf ? '<span class="badge badge-info">You</span>' : ''}
           </div>
           ${cardRow('Email', escapeHtml(user?.email || '—'))}
           <div class="data-card-row">
             <span class="data-card-row-label">Access</span>
             <span class="data-card-row-value">${accessSelect}</span>
           </div>
-          <div class="data-card-row">
-            <span class="data-card-row-label">Default</span>
-            <span class="data-card-row-value">${primaryBadge}</span>
-          </div>
-          <div class="data-card-actions">
-            <button type="button" class="danger small" onclick="window.removeTeamMember('${member.id}')">Remove</button>
-          </div>
+          ${isOrgAdmin() ? `<div class="data-card-row"><span class="data-card-row-label">Default</span><span class="data-card-row-value">${primaryBadge}</span></div>` : ''}
+          ${!(isSelf && !isOrgAdmin()) ? `<div class="data-card-actions">${removeBtn}</div>` : ''}
         </article>
       `;
 
@@ -440,17 +512,15 @@ async function loadTeamMembers(teamId) {
             <span style="font-size:0.85em;color:var(--text-secondary);">${escapeHtml(user?.email || '')}</span>
           </td>
           <td data-label="Access">${accessSelect}</td>
-          <td data-label="Default">${primaryBadge}</td>
-          <td data-label="Actions" class="action-buttons">
-            <button type="button" class="danger small" onclick="window.removeTeamMember('${member.id}')">Remove</button>
-          </td>
+          ${isOrgAdmin() ? `<td data-label="Default">${primaryBadge}</td>` : ''}
+          <td data-label="Actions" class="action-buttons">${removeBtn}</td>
         </tr>
       `;
     }).join('');
     if (mobile) mobile.innerHTML = mobileHtml;
   } catch (err) {
     console.error('Load members error:', err);
-    tbody.innerHTML = `<tr><td colspan="4" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</td></tr>`;
     if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</p>`;
   }
 }
@@ -521,7 +591,6 @@ async function addTeamMember(e) {
 
     await loadTeamMembers(teamId);
     populateAddMemberUserSelect(teamId);
-    await loadTeams();
 
     if (userId === state.user.id) {
       await refreshAccessibleTeams();
@@ -589,6 +658,10 @@ async function setMemberPrimary(membershipId) {
 
 function removeTeamMember(membershipId) {
   const member = membersCache.find(m => m.id === membershipId);
+  if (member?.user_id === state.user?.id && !isOrgAdmin()) {
+    showToast('You cannot remove yourself from the team', 'error');
+    return;
+  }
   const label = userLabel(member?.user);
 
   showConfirm(`Remove ${label} from this team?`, async () => {
@@ -615,7 +688,6 @@ function removeTeamMember(membershipId) {
       if (activeTeamId) {
         await loadTeamMembers(activeTeamId);
         populateAddMemberUserSelect(activeTeamId);
-        await loadTeams();
       }
 
       if (member?.user_id === state.user.id) {
@@ -626,251 +698,6 @@ function removeTeamMember(membershipId) {
       showToast(err.message || 'Failed to remove member', 'error');
     }
   });
-}
-
-// ========== OHT TEAM ROSTER (current team + create teams) ==========
-
-const OHT_ASSIGNABLE_LEVELS = [
-  { value: 'view', label: 'View (read-only)' },
-  { value: 'member', label: 'Member (OTM)' },
-  { value: 'lead', label: 'Lead (OTL)' },
-  { value: 'oht', label: 'Ops Head (OHT)' }
-];
-
-function ohtAccessLevelOptions(selected = 'member') {
-  return OHT_ASSIGNABLE_LEVELS.map(l => {
-    const sel = l.value === selected ? ' selected' : '';
-    return `<option value="${l.value}"${sel}>${l.label}</option>`;
-  }).join('');
-}
-
-export function getTeamRosterPage() {
-  if (!state.canManageTeamRoster) {
-    return `
-      <h1 class="page-title">Team Members</h1>
-      <div class="card"><h2>⛔ Access Denied</h2><p>Only OHT or system admin can manage team rosters.</p></div>
-    `;
-  }
-
-  const teamName = state.currentTeam?.team_name || 'Current team';
-  const createTeamCard = state.canCreateOhtTeam ? `
-    <div class="card">
-      <h2>➕ Create Work Team</h2>
-      <p class="page-intro" style="margin-bottom:12px;">New teams are created under your OHT scope. You are auto-assigned as OHT on the new team.</p>
-      <form id="ohtCreateTeamForm" onsubmit="window.createOhtTeam(event)">
-        <div class="form-group">
-          <label>Team Name *</label>
-          <input type="text" id="ohtNewTeamName" required placeholder="e.g. Lagos Outreach" maxlength="120">
-        </div>
-        <div class="btn-group">
-          <button type="submit">Create Team</button>
-        </div>
-      </form>
-    </div>
-  ` : '';
-
-  return `
-    <h1 class="page-title">Team Members</h1>
-    <p class="page-intro">Manage who has access to <strong>${escapeHtml(teamName)}</strong>. OHT can add/remove members and set access levels (up to Lead).</p>
-    ${createTeamCard}
-    <div class="card team-members-panel">
-      <h2>👥 ${escapeHtml(teamName)}</h2>
-      <form id="rosterAddMemberForm" class="team-add-member-form" onsubmit="window.addRosterMember(event)">
-        <div class="form-grid-row form-grid-row--team-member">
-          <div class="form-group">
-            <label>Add User *</label>
-            <select id="rosterMemberUserId" required>
-              <option value="">Select user…</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Access Level *</label>
-            <select id="rosterMemberAccessLevel" required>
-              ${ohtAccessLevelOptions('member')}
-            </select>
-          </div>
-          <div class="form-group team-add-member-form__actions">
-            <label>&nbsp;</label>
-            <button type="submit">Add Member</button>
-          </div>
-        </div>
-      </form>
-      <div class="table-container show-desktop">
-        <table class="table-stack-mobile team-mgmt-table">
-          <thead>
-            <tr>
-              <th>User</th>
-              <th>Access</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="rosterMembersBody">
-            <tr><td colspan="3" class="empty-state">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div id="rosterMembersMobile" class="show-mobile data-card-list"></div>
-    </div>
-  `;
-}
-
-export async function initTeamRosterPage() {
-  if (!state.canManageTeamRoster) return;
-
-  activeTeamId = state.currentTeam?.team_id;
-  if (!activeTeamId) return;
-
-  window.addRosterMember = addRosterMember;
-  window.updateRosterMemberAccess = updateRosterMemberAccess;
-  window.removeRosterMember = removeRosterMember;
-  window.createOhtTeam = createOhtTeam;
-
-  if (usersCache.length === 0) await loadUsersCache();
-  await loadRosterMembers(activeTeamId);
-  populateRosterUserSelect(activeTeamId);
-}
-
-async function loadRosterMembers(teamId) {
-  const tbody = document.getElementById('rosterMembersBody');
-  const mobile = document.getElementById('rosterMembersMobile');
-  if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Loading…</td></tr>';
-
-  try {
-    const { data, error } = await supabaseClient
-      .from('user_teams')
-      .select('id, user_id, team_id, access_level, users:user_id(id, name, email)')
-      .eq('team_id', teamId)
-      .order('access_level');
-
-    if (error) throw error;
-
-    membersCache = (data || []).map(row => ({
-      ...row,
-      user: row.users || usersCache.find(u => u.id === row.user_id)
-    }));
-
-    if (!membersCache.length) {
-      const empty = '<tr><td colspan="3" class="empty-state">No members yet.</td></tr>';
-      tbody.innerHTML = empty;
-      if (mobile) mobile.innerHTML = '<p class="empty-state">No members yet.</p>';
-      return;
-    }
-
-    let mobileHtml = '';
-    tbody.innerHTML = membersCache.map(member => {
-      const user = member.user;
-      const isSelf = member.user_id === state.user?.id;
-      const accessSelect = `<select class="team-access-select" onchange="window.updateRosterMemberAccess('${member.id}', this.value)" ${isSelf ? 'disabled' : ''}>${ohtAccessLevelOptions(member.access_level || 'member')}</select>`;
-
-      mobileHtml += `
-        <article class="data-card data-card--compact">
-          <div class="data-card-top">
-            <span class="data-card-title">${escapeHtml(user?.name || '—')}</span>
-            ${isSelf ? '<span class="badge badge-info">You</span>' : ''}
-          </div>
-          ${cardRow('Email', escapeHtml(user?.email || ''))}
-          <div class="data-card-row">
-            <span class="data-card-row-label">Access</span>
-            <span class="data-card-row-value">${accessSelect}</span>
-          </div>
-          ${!isSelf ? `<div class="data-card-actions"><button type="button" class="danger small" onclick="window.removeRosterMember('${member.id}')">Remove</button></div>` : ''}
-        </article>
-      `;
-
-      return `
-        <tr>
-          <td data-label="User">
-            <strong>${escapeHtml(user?.name || '—')}</strong><br>
-            <span style="font-size:0.85em;color:var(--text-secondary);">${escapeHtml(user?.email || '')}</span>
-          </td>
-          <td data-label="Access">${accessSelect}</td>
-          <td data-label="Actions" class="action-buttons">
-            ${isSelf ? '<span class="badge badge-info">You</span>' : `<button type="button" class="danger small" onclick="window.removeRosterMember('${member.id}')">Remove</button>`}
-          </td>
-        </tr>
-      `;
-    }).join('');
-    if (mobile) mobile.innerHTML = mobileHtml;
-  } catch (err) {
-    console.error('Load roster error:', err);
-    tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}. Run migration 016 if policies are missing.</td></tr>`;
-    if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</p>`;
-  }
-}
-
-function populateRosterUserSelect(teamId) {
-  const select = document.getElementById('rosterMemberUserId');
-  if (!select) return;
-  const assignedIds = new Set(membersCache.map(m => m.user_id));
-  const available = usersCache.filter(u => !assignedIds.has(u.id));
-  select.innerHTML = '<option value="">Select user…</option>';
-  available.forEach(user => {
-    select.innerHTML += `<option value="${user.id}">${escapeHtml(userLabel(user))}</option>`;
-  });
-}
-
-async function addRosterMember(e) {
-  e.preventDefault();
-  const teamId = state.currentTeam?.team_id;
-  const userId = document.getElementById('rosterMemberUserId')?.value;
-  const access_level = document.getElementById('rosterMemberAccessLevel')?.value || 'member';
-  if (!teamId || !userId) {
-    showToast('Select a user', 'error');
-    return;
-  }
-
-  try {
-    const { error } = await supabaseClient.from('user_teams').insert({
-      id: crypto.randomUUID(),
-      user_id: userId,
-      team_id: teamId,
-      access_level,
-      is_primary: false
-    });
-    if (error) throw error;
-
-    const user = usersCache.find(u => u.id === userId);
-    try {
-      await ensurePersonalTeamForUser(userId, user?.name || user?.email, state.user?.id);
-      await ensureMemberBucketOnWorkTeam(teamId, userId, user?.name || user?.email, state.user?.id);
-    } catch (setupErr) {
-      console.warn('Member setup:', setupErr);
-    }
-
-    showToast('Member added', 'success');
-    document.getElementById('rosterAddMemberForm')?.reset();
-    await loadRosterMembers(teamId);
-    populateRosterUserSelect(teamId);
-    if (userId === state.user.id) await refreshAccessibleTeams();
-  } catch (err) {
-    showToast(err.message || 'Failed to add member', 'error');
-  }
-}
-
-async function updateRosterMemberAccess(membershipId, accessLevel) {
-  try {
-    const { error } = await supabaseClient
-      .from('user_teams')
-      .update({ access_level: accessLevel })
-      .eq('id', membershipId);
-    if (error) throw error;
-    showToast('Access updated', 'success');
-    const member = membersCache.find(m => m.id === membershipId);
-    if (member?.user_id === state.user.id) await refreshAccessibleTeams();
-  } catch (err) {
-    showToast(err.message || 'Failed to update access', 'error');
-    if (activeTeamId) await loadRosterMembers(activeTeamId);
-  }
-}
-
-function removeRosterMember(membershipId) {
-  const member = membersCache.find(m => m.id === membershipId);
-  if (member?.user_id === state.user?.id) {
-    showToast('You cannot remove yourself from the team', 'error');
-    return;
-  }
-  removeTeamMember(membershipId);
 }
 
 async function createOhtTeam(e) {
@@ -909,9 +736,17 @@ async function createOhtTeam(e) {
     });
     if (memError) throw memError;
 
-    showToast(`Team "${name}" created — switch teams to manage it`, 'success');
+    showToast(`Team "${name}" created`, 'success');
     document.getElementById('ohtCreateTeamForm')?.reset();
     await refreshAccessibleTeams();
+    activeTeamId = teamId;
+    await loadManageableTeams();
+    const select = document.getElementById('teamsPageSelect');
+    if (select) {
+      select.value = teamId;
+      await onTeamsPageSelectChange();
+    }
+    toggleTeamsCreateCard(false);
   } catch (err) {
     console.error('Create OHT team:', err);
     showToast(err.message || 'Failed to create team. Run migration 016.', 'error');
