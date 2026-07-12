@@ -3,14 +3,16 @@ import { state } from '../state.js';
 import { showToast } from '../components/toasts.js';
 import { cardRow } from '../utils/uiHelpers.js';
 import { approvalStatusBadge } from '../utils/approvalConstants.js';
-import { canManageRoleAssignments, clarifyRoleFromStatus, userCanActOnRequest } from '../utils/approvalAccess.js';
+import { canManageRoleAssignments, clarifyRoleFromStatus, userCanActOnRequest, canCancelRequest } from '../utils/approvalAccess.js';
 import {
   fetchApprovalInbox,
   loadRequestMessages,
+  loadReconciliationRequestLines,
   approveRequest,
   approveAndSendRequest,
   sendApprovedRequest,
   rejectRequest,
+  cancelRequest,
   clarifyRequest,
   replyClarification,
   sendApprovedBatch,
@@ -26,7 +28,8 @@ let detailMessages = [];
 
 const TYPE_LABELS = {
   budget: 'Budget',
-  money_transfer: 'Money Transfer'
+  money_transfer: 'Money Transfer',
+  reconciliation_adjustment: 'Reconciliation'
 };
 
 export function getApprovalPortalPage() {
@@ -58,6 +61,7 @@ export function getApprovalPortalPage() {
             <option value="all">All types</option>
             <option value="budget">Budget</option>
             <option value="money_transfer">Money Transfer</option>
+            <option value="reconciliation_adjustment">Reconciliation</option>
           </select>
         </div>
         <div class="form-group">
@@ -220,9 +224,49 @@ async function portalOpenDetail(requestId) {
   try {
     detailMessages = await loadRequestMessages(requestId);
     const canAct = await userCanActOnRequest(row);
+    const canCancel = canCancelRequest(row);
     const clarifyRole = clarifyRoleFromStatus(row.status);
     const badge = approvalStatusBadge(row.status);
     const teamName = row.teams?.name || '—';
+
+    let reconLinesHtml = '';
+    if (row.request_type === 'reconciliation_adjustment') {
+      const reconLines = await loadReconciliationRequestLines(requestId);
+      if (reconLines.length) {
+        reconLinesHtml = `
+          <h4 style="margin-top:16px;">Buckets to adjust (mismatch only)</h4>
+          <div class="table-container show-desktop">
+            <table class="table-stack-mobile">
+              <thead>
+                <tr><th>Bucket</th><th>Balance</th><th>Actual</th><th>Difference</th><th>Reason</th></tr>
+              </thead>
+              <tbody>
+                ${reconLines.map(line => `
+                  <tr>
+                    <td data-label="Bucket">${escapeHtml(line.bucket_name)}</td>
+                    <td data-label="Balance">${fmtPortal(line.closing_balance)} ${line.currency || ''}</td>
+                    <td data-label="Actual">${fmtPortal(line.actual_balance)}</td>
+                    <td data-label="Difference">${fmtPortal(line.difference)}</td>
+                    <td data-label="Reason">${escapeHtml(line.comments || '—')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="show-mobile data-card-list">
+            ${reconLines.map(line => `
+              <article class="data-card data-card--compact">
+                <div class="data-card-top"><span class="data-card-title">${escapeHtml(line.bucket_name)}</span></div>
+                ${cardRow('Balance', `${fmtPortal(line.closing_balance)} ${line.currency || ''}`)}
+                ${cardRow('Actual', fmtPortal(line.actual_balance))}
+                ${cardRow('Difference', fmtPortal(line.difference))}
+                ${cardRow('Reason', line.comments || '—')}
+              </article>
+            `).join('')}
+          </div>
+        `;
+      }
+    }
 
     const messagesHtml = detailMessages.length
       ? detailMessages.map(m => {
@@ -254,6 +298,15 @@ async function portalOpenDetail(requestId) {
         ${cardRow('Type', TYPE_LABELS[row.request_type] || row.request_type)}
         ${row.amount_usd != null ? cardRow('Amount', `$${parseFloat(row.amount_usd).toFixed(2)}`) : ''}
         ${row.current_role_code ? cardRow('Current step', row.current_role_code + (row.step_approved ? ' ✓ approved' : '')) : ''}
+
+        ${reconLinesHtml}
+
+        ${canCancel ? `
+          <div class="btn-group" style="margin-top:16px;">
+            <button type="button" class="secondary" onclick="window.portalAction('cancel','${row.id}')">Cancel request</button>
+          </div>
+          <p class="page-intro" style="margin-top:8px; font-size:0.9em;">Cancelling returns this request to <strong>Draft</strong> so you can edit and resubmit later.</p>
+        ` : ''}
 
         ${canAct ? `
           <div class="form-group" style="margin-top:16px;">
@@ -310,6 +363,10 @@ async function portalAction(action, requestId) {
     } else if (action === 'send') {
       await sendApprovedRequest(requestId, msg);
       showToast('Sent forward', 'success');
+    } else if (action === 'cancel') {
+      if (!window.confirm('Cancel this approval request and return it to draft?')) return;
+      await cancelRequest(requestId, msg || 'Cancelled by requester');
+      showToast('Request cancelled — now in draft', 'info');
     } else if (action === 'reject') {
       await rejectRequest(requestId, msg);
       showToast('Request rejected — returned to team', 'info');
@@ -392,4 +449,8 @@ function escapeHtml(text) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function fmtPortal(n) {
+  return (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }

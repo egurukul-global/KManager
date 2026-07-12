@@ -62,6 +62,7 @@ export function getRoleAssignmentsPage() {
               <option value="">All types</option>
               <option value="budget">Budget</option>
               <option value="money_transfer">Money Transfer</option>
+              <option value="reconciliation_adjustment">Reconciliation</option>
             </select>
           </div>
         </div>

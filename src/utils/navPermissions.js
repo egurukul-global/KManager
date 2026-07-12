@@ -30,7 +30,8 @@ const OTM_ALLOWED_PAGES = new Set([
   'generate-receipt',
   'my-finances',
   'reconcile',
-  'reconciliation-overview'
+  'reconciliation-overview',
+  'reconciliation-approval'
 ]);
 
 /** Pages a view-only user may open (read-only team finance). */
@@ -45,6 +46,7 @@ const VIEW_ALLOWED_PAGES = new Set([
   'financial-status',
   'reconcile',
   'reconciliation-overview',
+  'reconciliation-approval',
   'my-finances',
   'my-income',
   'buckets',
@@ -162,7 +164,7 @@ export function applyNavPermissions() {
     budgets: ['create-budget', 'view-budgets'],
     income: ['add-funds', 'income-manager', 'transfer', 'my-income'],
     expense: ['add-expense', 'expense-manager', 'generate-receipt'],
-    financials: ['financial-status', 'reconcile', 'reconciliation-overview'],
+    financials: ['financial-status', 'reconcile', 'reconciliation-overview', 'reconciliation-approval'],
     reports: ['expense-reports', 'my-finances'],
     admin: ['team-mgmt', 'role-assignments', 'user-mgmt', 'budget-calendar', 'category-master'],
     dashboard: ['dashboard', 'profile', 'approval-portal']

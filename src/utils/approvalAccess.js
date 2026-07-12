@@ -4,7 +4,8 @@ import { supabaseClient } from '../db.js';
 
 export const REQUEST_TYPES = {
   BUDGET: 'budget',
-  MONEY_TRANSFER: 'money_transfer'
+  MONEY_TRANSFER: 'money_transfer',
+  RECONCILIATION_ADJUSTMENT: 'reconciliation_adjustment'
 };
 
 export const ROLE_CODES = ['OPS', 'OPL', 'OPH', 'FIN', 'FIH', 'CAO', 'CEO', 'SYS', 'LEG', 'LEH', 'GUT', 'GUH'];
@@ -110,6 +111,16 @@ export async function userCanActOnRequest(request, userId = state.user?.id) {
 export function canManageRoleAssignments() {
   const role = String(state.user?.role || 'user').toLowerCase();
   return ['admin', 'oh', 'caoh'].includes(role);
+}
+
+export function canCancelRequest(request, userId = state.user?.id) {
+  if (!request || !userId) return false;
+  if (state.user?.role === 'admin') return true;
+  if (request.created_by !== userId) return false;
+  const status = String(request.status || '').toUpperCase();
+  if (status === 'DRAFT') return false;
+  if (isFinalStatus(status)) return false;
+  return isActiveStatus(status);
 }
 
 export function canSubmitBudgetApproval() {

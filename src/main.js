@@ -26,6 +26,7 @@ import { getCategoryMasterPage, initCategoryMasterPage } from './pages/category-
 import { getFinancialStatusPage, initFinancialStatusPage } from './pages/financial-status.js';
 import { getReconcilePage, initReconcilePage } from './pages/reconcile.js';
 import { getReconciliationOverviewPage, initReconciliationOverviewPage } from './pages/reconciliation-overview.js';
+import { getReconciliationApprovalPage, initReconciliationApprovalPage } from './pages/reconciliation-approval.js';
 import { getProfilePage, initProfilePage } from './pages/profile.js';
 import { getApprovalPortalPage, initApprovalPortalPage } from './pages/approval-portal.js';
 import { getRoleAssignmentsPage, initRoleAssignmentsPage } from './pages/role-assignments.js';
@@ -405,6 +406,7 @@ function renderAppShell() {
               <div class="nav-subitem-label">Reconciliation</div>
               <div class="nav-subitem" data-page="reconcile" onclick="window.showPage('reconcile')">Reconcile</div>
               <div class="nav-subitem" data-page="reconciliation-overview" onclick="window.showPage('reconciliation-overview')">Overview</div>
+              <div class="nav-subitem" data-page="reconciliation-approval" onclick="window.showPage('reconciliation-approval')">Approval</div>
             </div>
           </div>
 
@@ -528,6 +530,7 @@ const PAGE_TO_TAB = {
   'financial-status': 'reports',
   'reconcile': 'reports',
   'reconciliation-overview': 'reports',
+  'reconciliation-approval': 'reports',
   profile: 'dashboard',
   'approval-portal': 'dashboard',
   'role-assignments': 'dashboard'
@@ -594,6 +597,7 @@ export function showPage(pageName) {
     'financial-status': { html: getFinancialStatusPage, init: initFinancialStatusPage },
     'reconcile': { html: getReconcilePage, init: initReconcilePage },
     'reconciliation-overview': { html: getReconciliationOverviewPage, init: initReconciliationOverviewPage },
+    'reconciliation-approval': { html: getReconciliationApprovalPage, init: initReconciliationApprovalPage },
     profile: { html: getProfilePage, init: initProfilePage },
     'approval-portal': { html: getApprovalPortalPage, init: initApprovalPortalPage },
     'role-assignments': { html: getRoleAssignmentsPage, init: initRoleAssignmentsPage },

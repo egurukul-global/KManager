@@ -8,7 +8,8 @@ import {
   isActiveStatus,
   clarifyRoleFromStatus,
   getUserApprovalRoleCodes,
-  userCanActOnRequest
+  userCanActOnRequest,
+  canCancelRequest
 } from './approvalAccess.js';
 import { approveOhfTransfer } from './transferActions.js';
 
@@ -88,6 +89,24 @@ async function onTransferRequestCompleted(request) {
   }
 }
 
+async function onReconciliationRequestCompleted(request) {
+  if (request.request_type !== REQUEST_TYPES.RECONCILIATION_ADJUSTMENT) return;
+
+  const { error } = await supabaseClient.rpc('apply_reconciliation_adjustment_request', {
+    p_request_id: request.id
+  });
+  if (error) throw error;
+}
+
+async function onReconciliationRequestRejected(request) {
+  if (request.request_type !== REQUEST_TYPES.RECONCILIATION_ADJUSTMENT) return;
+
+  const { error } = await supabaseClient.rpc('reject_reconciliation_adjustment_request', {
+    p_request_id: request.id
+  });
+  if (error) console.warn('reject_reconciliation_adjustment_request:', error);
+}
+
 function firstStep(steps) {
   return steps?.[0] || null;
 }
@@ -111,12 +130,14 @@ export async function submitBudgetForApproval(budget) {
   if (!steps.length) throw new Error('No approval flow configured for budgets');
 
   const existing = budget.approval_request_id;
+  let prior = null;
   if (existing) {
-    const { data: prior } = await supabaseClient
+    const { data } = await supabaseClient
       .from('approval_requests')
-      .select('status')
+      .select('id, status')
       .eq('id', existing)
       .maybeSingle();
+    prior = data;
     if (prior && isActiveStatus(prior.status) && prior.status !== 'DRAFT') {
       throw new Error('This budget already has an active approval request');
     }
@@ -129,6 +150,22 @@ export async function submitBudgetForApproval(budget) {
   );
 
   const step = firstStep(steps);
+
+  if (prior?.status === 'DRAFT') {
+    const updated = await updateRequest(prior.id, {
+      status: 'SUBMITTED',
+      title: budget.name || 'Budget',
+      amount_usd: totalUsd,
+      current_step_order: step.step_order,
+      current_role_code: step.role_code,
+      step_approved: false,
+      rejected_at: null,
+      completed_at: null
+    });
+    await applyBudgetStatus(budget.id, 'SUBMITTED', prior.id);
+    return updated;
+  }
+
   const payload = {
     request_number: requestNumber,
     request_type: REQUEST_TYPES.BUDGET,
@@ -154,6 +191,114 @@ export async function submitBudgetForApproval(budget) {
 
   await applyBudgetStatus(budget.id, 'SUBMITTED', data.id);
   return data;
+}
+
+/** Create approval request to align bucket balances with reconciled actual counts. */
+export async function submitReconciliationAdjustment(lineIds, teamId) {
+  const ids = [...new Set((lineIds || []).filter(Boolean))];
+  if (!ids.length) throw new Error('Select at least one mismatched bucket');
+  if (!teamId) throw new Error('Team is required');
+
+  const { data: lines, error: linesErr } = await supabaseClient
+    .from('reconciliation_lines')
+    .select(`
+      id, bucket_id, bucket_name, currency,
+      closing_balance, actual_balance, difference, usd_equivalent, comments,
+      adjustment_status, submission_id,
+      reconciliation_submissions!inner ( id, team_id, reconciliation_date, is_deleted )
+    `)
+    .in('id', ids);
+
+  if (linesErr) throw linesErr;
+
+  const valid = (lines || []).filter(line => {
+    const sub = line.reconciliation_submissions;
+    if (!sub || sub.is_deleted || sub.team_id !== teamId) return false;
+    const diff = Math.abs(parseFloat(line.difference) || 0);
+    if (diff < 0.01) return false;
+    const status = String(line.adjustment_status || '').toLowerCase();
+    if (status === 'pending' || status === 'approved') return false;
+    return true;
+  });
+
+  if (!valid.length) {
+    throw new Error('No eligible mismatched buckets — they may already be pending or approved');
+  }
+
+  const steps = await resolveFlowSteps(REQUEST_TYPES.RECONCILIATION_ADJUSTMENT, teamId);
+  if (!steps.length) throw new Error('No approval flow configured for reconciliation adjustments');
+
+  const requestNumber = await allocateRequestNumber(state.user.id);
+  const amountUsd = valid.reduce((sum, line) => {
+    const usd = parseFloat(line.usd_equivalent);
+    const diff = Math.abs(parseFloat(line.difference) || 0);
+    return sum + (Number.isFinite(usd) ? Math.abs(usd) : diff);
+  }, 0);
+
+  const dates = [...new Set(valid.map(l => l.reconciliation_submissions.reconciliation_date))].sort();
+  const dateLabel = dates.length === 1 ? dates[0] : `${dates[0]} – ${dates[dates.length - 1]}`;
+  const step = firstStep(steps);
+
+  const payload = {
+    request_number: requestNumber,
+    request_type: REQUEST_TYPES.RECONCILIATION_ADJUSTMENT,
+    team_id: teamId,
+    status: 'SUBMITTED',
+    title: `Recon adjustment — ${valid.length} bucket${valid.length === 1 ? '' : 's'} (${dateLabel})`,
+    amount_usd: amountUsd,
+    created_by: state.user.id,
+    reconciliation_submission_id: valid.length === 1 ? valid[0].submission_id : null,
+    current_step_order: step.step_order,
+    current_role_code: step.role_code,
+    step_approved: false,
+    is_deleted: false
+  };
+
+  const { data: request, error: reqErr } = await supabaseClient
+    .from('approval_requests')
+    .insert(payload)
+    .select('*')
+    .single();
+
+  if (reqErr) throw reqErr;
+
+  const linkRows = valid.map(line => ({
+    request_id: request.id,
+    reconciliation_line_id: line.id,
+    reconciliation_submission_id: line.submission_id,
+    bucket_id: line.bucket_id,
+    bucket_name: line.bucket_name,
+    currency: line.currency,
+    closing_balance: line.closing_balance,
+    actual_balance: line.actual_balance,
+    difference: line.difference,
+    usd_equivalent: line.usd_equivalent,
+    comments: line.comments
+  }));
+
+  const { error: linkErr } = await supabaseClient
+    .from('approval_request_reconciliation_lines')
+    .insert(linkRows);
+
+  if (linkErr) throw linkErr;
+
+  const { error: pendingErr } = await supabaseClient.rpc('mark_reconciliation_adjustment_pending', {
+    p_line_ids: valid.map(l => l.id)
+  });
+  if (pendingErr) throw pendingErr;
+
+  return request;
+}
+
+export async function loadReconciliationRequestLines(requestId) {
+  const { data, error } = await supabaseClient
+    .from('approval_request_reconciliation_lines')
+    .select('*')
+    .eq('request_id', requestId)
+    .order('bucket_name');
+
+  if (error) throw error;
+  return data || [];
 }
 
 /** Create approval request for cross-team money transfer. */
@@ -218,6 +363,9 @@ async function advanceAfterSend(request, steps) {
     if (request.request_type === REQUEST_TYPES.MONEY_TRANSFER) {
       await onTransferRequestCompleted(updated);
     }
+    if (request.request_type === REQUEST_TYPES.RECONCILIATION_ADJUSTMENT) {
+      await onReconciliationRequestCompleted(updated);
+    }
     return updated;
   }
 
@@ -275,6 +423,37 @@ export async function sendApprovedRequest(requestId, message = '') {
   return advanceAfterSend(request, steps);
 }
 
+/** Withdraw an in-flight request back to DRAFT (requester only). */
+export async function cancelRequest(requestId, message = '') {
+  const request = await loadRequest(requestId);
+  if (!canCancelRequest(request)) {
+    throw new Error('You cannot cancel this request');
+  }
+
+  await insertMessage(requestId, message || 'Cancelled by requester');
+
+  const updated = await updateRequest(requestId, {
+    status: 'DRAFT',
+    current_step_order: null,
+    current_role_code: null,
+    step_approved: false,
+    rejected_at: null,
+    completed_at: null
+  });
+
+  if (request.budget_plan_id) {
+    await applyBudgetStatus(request.budget_plan_id, 'DRAFT', request.id);
+  }
+  if (request.request_type === REQUEST_TYPES.RECONCILIATION_ADJUSTMENT) {
+    const { error } = await supabaseClient.rpc('cancel_reconciliation_adjustment_request', {
+      p_request_id: request.id
+    });
+    if (error) throw error;
+  }
+
+  return updated;
+}
+
 export async function rejectRequest(requestId, message = '') {
   const request = await loadRequest(requestId);
   if (!(await userCanActOnRequest(request))) {
@@ -292,6 +471,9 @@ export async function rejectRequest(requestId, message = '') {
 
   if (request.budget_plan_id) {
     await applyBudgetStatus(request.budget_plan_id, 'REJECTED', request.id);
+  }
+  if (request.request_type === REQUEST_TYPES.RECONCILIATION_ADJUSTMENT) {
+    await onReconciliationRequestRejected(request);
   }
 
   return updated;
