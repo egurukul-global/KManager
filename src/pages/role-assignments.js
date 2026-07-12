@@ -5,7 +5,22 @@ import { showToast } from '../components/toasts.js';
 import { cardRow } from '../utils/uiHelpers.js';
 import { canManageRoleAssignments } from '../utils/approvalAccess.js';
 
-const ASSIGNABLE_ROLES = ['FIN', 'LEG', 'LEH', 'GUT', 'GUH'];
+const EXTENDED_ROLES = ['FIN', 'LEG', 'LEH', 'GUT', 'GUH'];
+const ORG_ASSIGNABLE_ROLES = ['FIH', 'CAO'];
+
+function getAssignableRoles() {
+  const role = String(state.user?.role || 'user').toLowerCase();
+  if (role === 'admin') return [...ORG_ASSIGNABLE_ROLES, ...EXTENDED_ROLES];
+  return EXTENDED_ROLES;
+}
+
+function roleAssignmentIntro() {
+  const role = String(state.user?.role || 'user').toLowerCase();
+  if (role === 'admin') {
+    return 'System admin can assign FIH, CAO, and extended request roles (FIN, LEG, etc.) per team.';
+  }
+  return 'Assign FIN and extended request roles per team. FIH and CAO are normally org roles on user accounts.';
+}
 
 export function getRoleAssignmentsPage() {
   if (!canManageRoleAssignments()) {
@@ -15,9 +30,11 @@ export function getRoleAssignmentsPage() {
     `;
   }
 
+  const roles = getAssignableRoles();
+
   return `
     <h1 class="page-title">Role Assignments</h1>
-    <p class="page-intro">Assign FIN and extended request roles per team. FIH and CAO are org roles — not assigned here.</p>
+    <p class="page-intro">${roleAssignmentIntro()}</p>
 
     <div class="card">
       <h2>Add assignment</h2>
@@ -30,7 +47,7 @@ export function getRoleAssignmentsPage() {
           <div class="form-group">
             <label>Role code</label>
             <select id="roleAssignCode" required>
-              ${ASSIGNABLE_ROLES.map(r => `<option value="${r}">${r}</option>`).join('')}
+              ${roles.map(r => `<option value="${r}">${r}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
@@ -57,7 +74,17 @@ export function getRoleAssignmentsPage() {
 
     <div class="card">
       <h2>Current assignments</h2>
-      <div id="roleAssignList" class="data-card-list"><p class="empty-state">Loading…</p></div>
+      <div class="table-container show-desktop">
+        <table class="table-stack-mobile">
+          <thead>
+            <tr><th>User</th><th>Email</th><th>Role</th><th>Team</th><th>Request type</th><th></th></tr>
+          </thead>
+          <tbody id="roleAssignTableBody">
+            <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="roleAssignList" class="show-mobile data-card-list"><p class="empty-state">Loading…</p></div>
     </div>
   `;
 }
@@ -70,8 +97,13 @@ export async function initRoleAssignmentsPage() {
 
   const teamSelect = document.getElementById('roleAssignTeam');
   if (teamSelect) {
-    (state.teams || []).forEach(t => {
-      teamSelect.innerHTML += `<option value="${t.team_id}">${t.team_name}</option>`;
+    const { data: teams } = await supabaseClient
+      .from('teams')
+      .select('id, name')
+      .eq('is_personal_team', false)
+      .order('name');
+    (teams || []).forEach(t => {
+      teamSelect.innerHTML += `<option value="${t.id}">${t.name}</option>`;
     });
   }
 
@@ -80,42 +112,83 @@ export async function initRoleAssignmentsPage() {
 
 async function loadAssignments() {
   const listEl = document.getElementById('roleAssignList');
-  if (!listEl) return;
+  const tableBody = document.getElementById('roleAssignTableBody');
+  if (!listEl && !tableBody) return;
 
   try {
     const { data, error } = await supabaseClient
       .from('request_role_assignments')
-      .select(`
-        id, role_code, team_id, request_type, is_active, created_at,
-        users:user_id ( id, name, email ),
-        teams:team_id ( name )
-      `)
+      .select('id, user_id, role_code, team_id, request_type, is_active, created_at')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
     if (!data?.length) {
-      listEl.innerHTML = '<p class="empty-state">No active assignments yet.</p>';
+      if (listEl) listEl.innerHTML = '<p class="empty-state">No active assignments yet.</p>';
+      if (tableBody) tableBody.innerHTML = '<tr><td colspan="6" class="empty-state">No active assignments yet.</td></tr>';
       return;
     }
 
-    listEl.innerHTML = data.map(row => `
-      <article class="data-card data-card--compact">
-        <div class="data-card-top">
-          <span class="data-card-title">${row.users?.name || row.users?.email || 'User'}</span>
-          <span class="badge badge-info">${row.role_code}</span>
-        </div>
-        ${cardRow('Email', row.users?.email || '—')}
-        ${cardRow('Team', row.teams?.name || 'Global')}
-        ${cardRow('Request type', row.request_type || 'All')}
-        <div class="btn-group" style="margin-top:8px;">
-          <button type="button" class="secondary small danger" onclick="window.deactivateRoleAssignment('${row.id}')">Remove</button>
-        </div>
-      </article>
-    `).join('');
+    const userIds = [...new Set(data.map(r => r.user_id).filter(Boolean))];
+    const teamIds = [...new Set(data.map(r => r.team_id).filter(Boolean))];
+
+    const [{ data: users }, { data: teams }] = await Promise.all([
+      userIds.length
+        ? supabaseClient.from('users').select('id, name, email').in('id', userIds)
+        : Promise.resolve({ data: [] }),
+      teamIds.length
+        ? supabaseClient.from('teams').select('id, name').in('id', teamIds)
+        : Promise.resolve({ data: [] })
+    ]);
+
+    const userMap = Object.fromEntries((users || []).map(u => [u.id, u]));
+    const teamMap = Object.fromEntries((teams || []).map(t => [t.id, t]));
+
+    let tableHtml = '';
+    let mobileHtml = '';
+
+    data.forEach(row => {
+      const user = userMap[row.user_id];
+      const teamName = row.team_id ? (teamMap[row.team_id]?.name || 'Team') : 'Global';
+      const name = user?.name || user?.email || row.user_id?.slice(0, 8) || 'User';
+      const email = user?.email || '—';
+
+      tableHtml += `
+        <tr>
+          <td data-label="User">${name}</td>
+          <td data-label="Email">${email}</td>
+          <td data-label="Role"><span class="badge badge-info">${row.role_code}</span></td>
+          <td data-label="Team">${teamName}</td>
+          <td data-label="Request type">${row.request_type || 'All'}</td>
+          <td data-label="Actions">
+            <button type="button" class="secondary small danger" onclick="window.deactivateRoleAssignment('${row.id}')">Remove</button>
+          </td>
+        </tr>
+      `;
+
+      mobileHtml += `
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${name}</span>
+            <span class="badge badge-info">${row.role_code}</span>
+          </div>
+          ${cardRow('Email', email)}
+          ${cardRow('Team', teamName)}
+          ${cardRow('Request type', row.request_type || 'All')}
+          <div class="btn-group" style="margin-top:8px;">
+            <button type="button" class="secondary small danger" onclick="window.deactivateRoleAssignment('${row.id}')">Remove</button>
+          </div>
+        </article>
+      `;
+    });
+
+    if (tableBody) tableBody.innerHTML = tableHtml;
+    if (listEl) listEl.innerHTML = mobileHtml;
   } catch (err) {
-    listEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${err.message}</p>`;
+    const msg = err.message || 'Failed to load assignments';
+    if (listEl) listEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${msg}</p>`;
+    if (tableBody) tableBody.innerHTML = `<tr><td colspan="6" class="empty-state" style="color:#dc3545;">${msg}</td></tr>`;
   }
 }
 
@@ -127,6 +200,12 @@ async function saveRoleAssignment(e) {
   const roleCode = document.getElementById('roleAssignCode')?.value;
   const teamId = document.getElementById('roleAssignTeam')?.value || null;
   const requestType = document.getElementById('roleAssignType')?.value || null;
+
+  const allowed = getAssignableRoles();
+  if (!allowed.includes(roleCode)) {
+    showToast('You cannot assign that role', 'error');
+    return;
+  }
 
   try {
     const { data: users, error: userErr } = await supabaseClient

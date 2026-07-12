@@ -1,6 +1,6 @@
-// ==================== TREASURY (reports & reconciliation history) ====================
+// ==================== TREASURY (bucket balance reports) ====================
 import { state } from '../state.js';
-import { supabaseClient, sbSelect } from '../db.js';
+import { sbSelect } from '../db.js';
 import { showToast } from '../components/toasts.js';
 import { cardRow } from '../utils/uiHelpers.js';
 import { formatDisplayDate, todayDateStr } from '../utils/budgetCalendar.js';
@@ -24,10 +24,10 @@ export function getFinancialStatusPage() {
 
   return `
     <h1 class="page-title">Treasury</h1>
-    <p class="page-intro">Bucket balances and reconciliation history for <strong>${teamName}</strong>. Submit daily reconciliations from <strong>Financials → Reconciliation → Reconcile</strong>.</p>
+    <p class="page-intro">Bucket balances for <strong>${teamName}</strong>. Submit daily reconciliations from <strong>Financials → Reconciliation → Reconcile</strong>.</p>
 
     <div class="card">
-      <h2>Reconciliation Report</h2>
+      <h2>Treasury Report</h2>
       <div class="filter-section">
         <div class="form-grid">
           <div class="form-group">
@@ -52,22 +52,6 @@ export function getFinancialStatusPage() {
       </div>
       <div id="financialStatusResults"></div>
     </div>
-
-    <div class="card">
-      <h2>Reconciliation History</h2>
-      <div class="table-container show-desktop">
-        <table class="table-stack-mobile">
-          <thead>
-            <tr><th>Date</th><th>Buckets</th><th>Submitted</th></tr>
-          </thead>
-          <tbody id="reconHistoryList">
-            <tr><td colspan="3" class="empty-state">Loading…</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div id="reconHistoryMobile" class="show-mobile data-card-list"></div>
-      <div id="reconHistoryDetail" style="display:none; margin-top:20px;"></div>
-    </div>
   `;
 }
 
@@ -75,8 +59,6 @@ export async function initFinancialStatusPage() {
   window.generateFinancialStatus = generateFinancialStatus;
   window.resetFinancialStatus = resetFinancialStatus;
   window.onStatusScopeChange = onStatusScopeChange;
-  window.viewReconciliationHistory = viewReconciliationHistory;
-  window.hideReconciliationHistory = hideReconciliationHistory;
   window.toggleFinStatusDetail = toggleFinStatusDetail;
 
   const teamId = state.currentTeam?.team_id;
@@ -98,7 +80,6 @@ export async function initFinancialStatusPage() {
     cachedRates = ratesRes.data || [];
 
     populateSourceSelect();
-    await loadReconciliationHistory();
   } catch (err) {
     console.error('Init treasury error:', err);
     showToast('Failed to load treasury data', 'error');
@@ -260,220 +241,4 @@ function resetFinancialStatus() {
   if (container) container.innerHTML = '';
   reportRows = [];
   lastFilters = { fromDate: '', toDate: '', scope: 'all' };
-}
-
-async function loadReconciliationHistory() {
-  const teamId = state.currentTeam?.team_id;
-  const tbody = document.getElementById('reconHistoryList');
-  const mobile = document.getElementById('reconHistoryMobile');
-  if (!teamId || !tbody) return;
-
-  try {
-    const { data, error } = await supabaseClient
-      .from('reconciliation_submissions')
-      .select(`
-        id, reconciliation_date, scope, created_at,
-        reconciliation_lines ( id )
-      `)
-      .eq('team_id', teamId)
-      .eq('is_deleted', false)
-      .in('scope', ['all', 'team'])
-      .order('reconciliation_date', { ascending: false })
-      .limit(30);
-
-    if (error) throw error;
-
-    if (!data?.length) {
-      const empty = '<tr><td colspan="3" class="empty-state">No reconciliation records yet.</td></tr>';
-      tbody.innerHTML = empty;
-      if (mobile) mobile.innerHTML = '<p class="empty-state">No reconciliation records yet.</p>';
-      return;
-    }
-
-    let mobileHtml = '';
-    tbody.innerHTML = data.map(r => {
-      const lineCount = r.reconciliation_lines?.length || 0;
-      const submitted = new Date(r.created_at).toLocaleString();
-      mobileHtml += `
-        <article class="data-card data-card--compact data-card--clickable" data-recon-id="${r.id}" onclick="window.viewReconciliationHistory('${r.id}')">
-          <div class="data-card-top">
-            <span class="data-card-title">${formatDisplayDate(r.reconciliation_date)}</span>
-            <span class="badge badge-info">${lineCount} bucket${lineCount === 1 ? '' : 's'}</span>
-          </div>
-          ${cardRow('Submitted', submitted)}
-        </article>
-      `;
-      return `
-        <tr class="row-clickable" data-recon-id="${r.id}" onclick="window.viewReconciliationHistory('${r.id}')">
-          <td data-label="Date">${formatDisplayDate(r.reconciliation_date)}</td>
-          <td data-label="Buckets">${lineCount} bucket${lineCount === 1 ? '' : 's'}</td>
-          <td data-label="Submitted">${submitted}</td>
-        </tr>
-      `;
-    }).join('');
-    if (mobile) mobile.innerHTML = mobileHtml;
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="color:#dc3545;">${err.message}</td></tr>`;
-    if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${err.message}</p>`;
-  }
-}
-
-function formatStoredDifference(line) {
-  const { text, level } = formatDifference(line.actual_balance, line.closing_balance, line.currency);
-  return { text, level };
-}
-
-function getBucketScopeLabel(bucketId) {
-  const bucket = cachedBuckets.find(b => b.id === bucketId);
-  return bucket ? bucketScopeLabel(bucket) : 'Team';
-}
-
-async function viewReconciliationHistory(submissionId) {
-  const detail = document.getElementById('reconHistoryDetail');
-  if (!detail) return;
-
-  document.querySelectorAll('#reconHistoryList tr, #reconHistoryMobile .data-card').forEach(row => {
-    row.classList.toggle('selected', row.dataset.reconId === submissionId);
-  });
-
-  detail.style.display = '';
-  detail.innerHTML = '<p class="empty-state">Loading stored reconciliation…</p>';
-
-  try {
-    const { data, error } = await supabaseClient
-      .from('reconciliation_submissions')
-      .select(`
-        id, reconciliation_date, created_at,
-        reconciliation_lines (
-          bucket_id, bucket_name, currency,
-          opening_balance, income_amount, transfers_in,
-          expenses_amount, transfers_out, closing_balance,
-          actual_balance, difference, usd_equivalent, comments
-        )
-      `)
-      .eq('id', submissionId)
-      .eq('is_deleted', false)
-      .single();
-
-    if (error) throw error;
-
-    const lines = [...(data.reconciliation_lines || [])].sort((a, b) =>
-      (a.bucket_name || '').localeCompare(b.bucket_name || '')
-    );
-
-    if (!lines.length) {
-      detail.innerHTML = `
-        <div class="recon-history-detail">
-          <div class="btn-group" style="margin-bottom:12px;">
-            <button type="button" class="secondary" onclick="window.hideReconciliationHistory()">Close</button>
-          </div>
-          <p class="empty-state">No bucket lines stored for this reconciliation.</p>
-        </div>
-      `;
-      return;
-    }
-
-    let grandUsd = 0;
-    let rowsHtml = '';
-    let mobileLines = '';
-
-    lines.forEach((line, idx) => {
-      if (line.usd_equivalent !== null && line.usd_equivalent !== undefined) {
-        grandUsd += parseFloat(line.usd_equivalent) || 0;
-      }
-      const scopeLabel = getBucketScopeLabel(line.bucket_id);
-      const typeBadge = scopeLabel === 'Personal' ? 'warning' : 'info';
-      const { text: diffText, level: diffLevel } = formatStoredDifference(line);
-
-      rowsHtml += `
-        <tr>
-          <td data-label="Type"><span class="badge badge-${typeBadge}">${scopeLabel}</span></td>
-          <td data-label="Bucket"><strong>${line.bucket_name}</strong></td>
-          <td data-label="Currency">${line.currency}</td>
-          <td data-label="Opening">${fmtAmount(line.opening_balance)}</td>
-          <td data-label="+ Income" class="positive">+${fmtAmount(line.income_amount)}</td>
-          <td data-label="+ Transfers In" class="positive">+${fmtAmount(line.transfers_in)}</td>
-          <td data-label="- Expenses" class="negative">-${fmtAmount(line.expenses_amount)}</td>
-          <td data-label="- Transfers Out" class="negative">-${fmtAmount(line.transfers_out)}</td>
-          <td data-label="Closing"><strong>${fmtAmount(line.closing_balance)}</strong></td>
-          <td data-label="Actual"><strong>${fmtAmount(line.actual_balance)}</strong></td>
-          <td data-label="Difference" class="${diffLevel}">${diffText}</td>
-          <td data-label="USD Equiv" style="color:var(--primary);">${line.usd_equivalent !== null && line.usd_equivalent !== undefined ? `$${fmtAmount(line.usd_equivalent)}` : '—'}</td>
-          <td data-label="Comments">${line.comments || '—'}</td>
-        </tr>
-      `;
-
-      mobileLines += `
-        <article class="data-card data-card--compact data-card--expandable">
-          <button type="button" class="data-card-expand-trigger" onclick="window.toggleFinStatusDetail('recon_${idx}')" aria-controls="finStatusDetail_recon_${idx}">
-            <div class="data-card-top">
-              <span class="data-card-title">${line.bucket_name}</span>
-              <span class="badge badge-${typeBadge}">${scopeLabel}</span>
-            </div>
-            ${cardRow('Actual', fmtAmount(line.actual_balance))}
-            ${cardRow('Difference', diffText, diffLevel)}
-            <span class="data-card-expand-hint">Tap for breakdown</span>
-          </button>
-          <div id="finStatusDetail_recon_${idx}" class="data-card-detail">
-            ${cardRow('Closing', fmtAmount(line.closing_balance))}
-            ${line.comments ? cardRow('Comments', line.comments) : ''}
-          </div>
-        </article>
-      `;
-    });
-
-    detail.innerHTML = `
-      <div class="recon-history-detail">
-        <div class="btn-group" style="margin-bottom:12px;">
-          <button type="button" class="secondary" onclick="window.hideReconciliationHistory()">Close</button>
-        </div>
-        <h3>Reconciliation — ${formatDisplayDate(data.reconciliation_date)}</h3>
-        <p style="color:var(--text-secondary); font-size:0.9em; margin-bottom:12px;">
-          Submitted ${new Date(data.created_at).toLocaleString()} (read-only)
-        </p>
-        <div class="table-container show-desktop">
-          <table class="status-table recon-table table-stack-mobile">
-            <thead>
-              <tr>
-                <th>Type</th><th>Bucket</th><th>Currency</th><th>Opening</th><th>+ Income</th><th>+ Transfers In</th>
-                <th>- Expenses</th><th>- Transfers Out</th><th>Closing</th><th>Actual</th>
-                <th>Difference</th><th>USD Equiv</th><th>Comments</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-              <tr class="status-total">
-                <td data-label="Total USD Equivalent" colspan="11" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
-                <td data-label="Amount" style="color:var(--primary);"><strong>$${grandUsd.toFixed(2)}</strong></td>
-                <td data-label=""></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="show-mobile data-card-list">${mobileLines}</div>
-        <article class="show-mobile data-card data-card--total">
-          ${cardRow('Total USD Equivalent', `$${grandUsd.toFixed(2)}`)}
-        </article>
-      </div>
-    `;
-  } catch (err) {
-    console.error('View reconciliation history error:', err);
-    detail.innerHTML = `
-      <div class="recon-history-detail">
-        <div class="btn-group" style="margin-bottom:12px;">
-          <button type="button" class="secondary" onclick="window.hideReconciliationHistory()">Close</button>
-        </div>
-        <p class="empty-state" style="color:#dc3545;">${err.message}</p>
-      </div>
-    `;
-  }
-}
-
-function hideReconciliationHistory() {
-  const detail = document.getElementById('reconHistoryDetail');
-  if (detail) {
-    detail.style.display = 'none';
-    detail.innerHTML = '';
-  }
-  document.querySelectorAll('#reconHistoryList tr.selected').forEach(row => row.classList.remove('selected'));
 }

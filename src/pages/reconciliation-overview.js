@@ -19,7 +19,7 @@ let detailRowId = null;
 export function getReconciliationOverviewPage() {
   return `
     <h1 class="page-title">Overview</h1>
-    <p class="page-intro">Reconciliation summary by team — click a row for bucket-level detail. Access limits what you see.</p>
+    <p class="page-intro">Reconciliation summary by team and date. Leave dates empty for today. Click a row for bucket-level detail.</p>
 
     <div class="card">
       <h2>Filters</h2>
@@ -31,8 +31,12 @@ export function getReconciliationOverviewPage() {
           </select>
         </div>
         <div class="form-group">
-          <label>Date</label>
-          <input type="date" id="reconOverviewDate" onchange="window.initReconciliationOverviewPage()">
+          <label>Date From</label>
+          <input type="date" id="reconOverviewFrom" onchange="window.initReconciliationOverviewPage()">
+        </div>
+        <div class="form-group">
+          <label>Date To</label>
+          <input type="date" id="reconOverviewTo" onchange="window.initReconciliationOverviewPage()">
         </div>
         <div class="form-group">
           <label>Status</label>
@@ -86,9 +90,6 @@ export async function initReconciliationOverviewPage() {
   window.toggleReconOverviewDetail = toggleReconOverviewDetail;
   window.closeReconOverviewDetail = closeReconOverviewDetail;
 
-  const dateEl = document.getElementById('reconOverviewDate');
-  if (dateEl && !dateEl.value) dateEl.value = todayDateStr();
-
   populateTeamFilter();
   await loadOverview();
 }
@@ -104,15 +105,35 @@ function populateTeamFilter() {
   select.value = current;
 }
 
+function resolveOverviewDateRange() {
+  const today = todayDateStr();
+  let fromDate = document.getElementById('reconOverviewFrom')?.value || today;
+  let toDate = document.getElementById('reconOverviewTo')?.value || today;
+  if (fromDate > toDate) [fromDate, toDate] = [toDate, fromDate];
+  return { fromDate, toDate };
+}
+
+function enumerateDates(fromDate, toDate, maxDays = 62) {
+  const dates = [];
+  const cursor = new Date(`${fromDate}T12:00:00`);
+  const end = new Date(`${toDate}T12:00:00`);
+  while (cursor <= end && dates.length < maxDays) {
+    dates.push(cursor.toISOString().slice(0, 10));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
 async function loadOverview() {
   const summaryEl = document.getElementById('reconOverviewSummary');
   const tableBody = document.getElementById('reconOverviewTableBody');
   if (!summaryEl && !tableBody) return;
 
   const teamFilter = document.getElementById('reconOverviewTeam')?.value || 'all';
-  const date = document.getElementById('reconOverviewDate')?.value || todayDateStr();
+  const { fromDate, toDate } = resolveOverviewDateRange();
   const statusFilter = document.getElementById('reconOverviewStatus')?.value || 'all';
   const discrepancyFilter = document.getElementById('reconOverviewDiscrepancy')?.value || 'all';
+  const dates = enumerateDates(fromDate, toDate);
 
   const loading = '<p class="empty-state">Loading…</p>';
   if (summaryEl) summaryEl.innerHTML = loading;
@@ -126,16 +147,23 @@ async function loadOverview() {
     overviewRows = [];
 
     for (const team of teams) {
-      const row = await buildTeamOverviewRow(team, date);
-      if (!row) continue;
+      for (const reconcileDate of dates) {
+        const row = await buildTeamOverviewRow(team, reconcileDate);
+        if (!row) continue;
 
-      if (statusFilter === 'complete' && row.progress.pending > 0) continue;
-      if (statusFilter === 'pending' && row.progress.pending === 0 && row.progress.required > 0) continue;
-      if (discrepancyFilter === 'yes' && !row.hasDiscrepancy) continue;
-      if (discrepancyFilter === 'no' && row.hasDiscrepancy) continue;
+        if (statusFilter === 'complete' && row.progress.pending > 0) continue;
+        if (statusFilter === 'pending' && row.progress.pending === 0 && row.progress.required > 0) continue;
+        if (discrepancyFilter === 'yes' && !row.hasDiscrepancy) continue;
+        if (discrepancyFilter === 'no' && row.hasDiscrepancy) continue;
 
-      overviewRows.push(row);
+        overviewRows.push({ ...row, reconcileDate });
+      }
     }
+
+    overviewRows.sort((a, b) => {
+      if (a.reconcileDate !== b.reconcileDate) return b.reconcileDate.localeCompare(a.reconcileDate);
+      return a.teamName.localeCompare(b.teamName);
+    });
 
     if (!overviewRows.length) {
       const empty = '<p class="empty-state">No reconciliation data for these filters.</p>';
@@ -162,7 +190,7 @@ async function loadOverview() {
       tableHtml += `
         <tr class="row-clickable" onclick="window.toggleReconOverviewDetail(${idx})">
           <td data-label="Team"><strong>${row.teamName}</strong></td>
-          <td data-label="Date">${formatDisplayDate(date)}</td>
+          <td data-label="Date">${formatDisplayDate(row.reconcileDate)}</td>
           <td data-label="Progress">${row.progress.label}</td>
           <td data-label="Status"><span class="badge ${statusClass}">${statusText}</span></td>
           <td data-label="Discrepancy" class="${discClass}">${discrepancy}</td>
@@ -176,7 +204,7 @@ async function loadOverview() {
             <span class="data-card-title">${row.teamName}</span>
             <span class="badge ${statusClass}">${statusText}</span>
           </div>
-          ${cardRow('Date', formatDisplayDate(date))}
+          ${cardRow('Date', formatDisplayDate(row.reconcileDate))}
           ${cardRow('Progress', row.progress.label)}
           ${cardRow('Your access', teamAccessLabel(row.accessLevel))}
           ${row.hasDiscrepancy ? cardRow('Discrepancy', 'Yes', 'negative') : cardRow('Discrepancy', 'No')}
@@ -328,7 +356,7 @@ function toggleReconOverviewDetail(index) {
         ${canAccessPage('reconcile') ? '<button type="button" onclick="window.showPage(\'reconcile\')">Open Reconcile</button>' : ''}
         ${canAccessPage('financial-status') ? '<button type="button" class="secondary" onclick="window.showPage(\'financial-status\')">Open Treasury</button>' : ''}
       </div>
-      <h3>${row.teamName} — ${formatDisplayDate(document.getElementById('reconOverviewDate')?.value || todayDateStr())}</h3>
+      <h3>${row.teamName} — ${formatDisplayDate(row.reconcileDate)}</h3>
       <div class="show-mobile data-card-list">${linesHtml || '<p class="empty-state">No buckets require reconciliation.</p>'}</div>
       <div class="table-container show-desktop">
         <table class="table-stack-mobile">
