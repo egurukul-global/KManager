@@ -189,3 +189,14 @@ export function formatDifference(actual, closing, currency) {
   }
   return { diff, text: `${formatted} ${currency} (Short)`, level: 'negative' };
 }
+
+/** USD equivalent of a balance difference (not absolute balance). */
+export function computeDifferenceUsd(difference, currency, asOfDate, rates) {
+  const diff = parseFloat(difference) || 0;
+  if (Math.abs(diff) < 0.01) return null;
+  const cur = currency || 'USD';
+  if (cur === 'USD') return roundUsd(diff);
+  const rate = getRateForDate(rates, cur, asOfDate);
+  if (!rate) return null;
+  return roundUsd(localToUsd(diff, rate));
+}

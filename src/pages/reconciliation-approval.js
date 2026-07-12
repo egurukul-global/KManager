@@ -1,14 +1,15 @@
 // ==================== RECONCILIATION APPROVAL (mismatch → balance adjust) ====================
 import { state } from '../state.js';
-import { supabaseClient } from '../db.js';
+import { supabaseClient, sbSelect } from '../db.js';
 import { showToast } from '../components/toasts.js';
-import { cardRow } from '../utils/uiHelpers.js';
+import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
 import { formatDisplayDate, todayDateStr } from '../utils/budgetCalendar.js';
-import { formatDifference } from '../utils/financialStatusHelpers.js';
+import { formatDifference, computeDifferenceUsd } from '../utils/financialStatusHelpers.js';
 import { submitReconciliationAdjustment } from '../utils/approvalEngine.js';
 
 let mismatchRows = [];
 let selectedLineIds = new Set();
+let cachedRates = [];
 
 function fmtAmount(n) {
   return (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -71,7 +72,7 @@ export function getReconciliationApprovalPage() {
       <div class="btn-group">
         <button type="button" onclick="window.loadReconciliationApproval()">Refresh</button>
         ${canRequestApproval() ? `
-          <button type="button" class="success" onclick="window.requestReconciliationApproval()">Request approval for selected</button>
+          <button type="button" id="reconApprovalRequestBtn" class="success" onclick="window.requestReconciliationApproval(event)">Request approval for selected</button>
         ` : ''}
         <button type="button" class="secondary" onclick="window.showPage('approval-portal')">Open approval portal</button>
       </div>
@@ -89,12 +90,13 @@ export function getReconciliationApprovalPage() {
               <th>Balance</th>
               <th>Actual</th>
               <th>Difference</th>
+              <th>USD Equiv (diff)</th>
               <th>Reason</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody id="reconApprovalTableBody">
-            <tr><td colspan="${canRequestApproval() ? 8 : 7}" class="empty-state">Loading…</td></tr>
+            <tr><td colspan="${canRequestApproval() ? 9 : 8}" class="empty-state">Loading…</td></tr>
           </tbody>
         </table>
       </div>
@@ -131,9 +133,15 @@ function rowMatchesStatusFilter(adjustmentStatus, filter) {
   return true;
 }
 
+function rowHasReason(row) {
+  return !!(String(row.comments || '').trim());
+}
+
 function rowIsSelectable(row) {
   const status = String(row.adjustment_status || '').toLowerCase();
-  return canRequestApproval() && (!status || status === 'rejected');
+  if (!canRequestApproval()) return false;
+  if (status && status !== 'rejected') return false;
+  return rowHasReason(row);
 }
 
 async function loadReconciliationApproval() {
@@ -144,19 +152,22 @@ async function loadReconciliationApproval() {
 
   const { fromDate, toDate } = resolveDateRange();
   const statusFilter = document.getElementById('reconApprovalStatus')?.value || 'available';
-  const colSpan = canRequestApproval() ? 8 : 7;
+  const colSpan = canRequestApproval() ? 9 : 8;
 
   if (tbody) tbody.innerHTML = `<tr><td colspan="${colSpan}" class="empty-state">Loading…</td></tr>`;
   if (mobile) mobile.innerHTML = '<p class="empty-state">Loading…</p>';
 
   try {
+    const ratesRes = await sbSelect('exchange_rates', { teamId, orderBy: 'date', ascending: false });
+    cachedRates = ratesRes.data || [];
+
     const { data: submissions, error } = await supabaseClient
       .from('reconciliation_submissions')
       .select(`
         id, reconciliation_date,
         reconciliation_lines (
           id, bucket_id, bucket_name, currency,
-          closing_balance, actual_balance, difference, comments, adjustment_status
+          closing_balance, actual_balance, difference, usd_equivalent, comments, adjustment_status
         )
       `)
       .eq('team_id', teamId)
@@ -208,6 +219,16 @@ async function loadReconciliationApproval() {
       const badge = statusLabel(row.adjustment_status);
       const selectable = rowIsSelectable(row);
       const checked = selectedLineIds.has(row.id) ? ' checked' : '';
+      const missingReason = !rowHasReason(row);
+      const diffUsd = row.usd_equivalent != null
+        ? `$${fmtAmount(row.usd_equivalent)}`
+        : (() => {
+            const usd = computeDifferenceUsd(row.difference, row.currency, row.reconciliation_date, cachedRates);
+            return usd !== null ? `$${usd.toFixed(2)}` : '—';
+          })();
+      const reasonCell = missingReason
+        ? '<span class="negative">Required</span>'
+        : escapeHtml(row.comments);
 
       if (canRequestApproval()) {
         tableHtml += `
@@ -222,7 +243,8 @@ async function loadReconciliationApproval() {
             <td data-label="Balance">${fmtAmount(row.closing_balance)} ${row.currency || ''}</td>
             <td data-label="Actual">${fmtAmount(row.actual_balance)}</td>
             <td data-label="Difference" class="${diffClass}">${diffText}</td>
-            <td data-label="Reason">${escapeHtml(row.comments || '—')}</td>
+            <td data-label="USD Equiv">${diffUsd}</td>
+            <td data-label="Reason">${reasonCell}</td>
             <td data-label="Status"><span class="badge ${badge.class}">${badge.text}</span></td>
           </tr>
         `;
@@ -234,7 +256,8 @@ async function loadReconciliationApproval() {
             <td data-label="Balance">${fmtAmount(row.closing_balance)} ${row.currency || ''}</td>
             <td data-label="Actual">${fmtAmount(row.actual_balance)}</td>
             <td data-label="Difference" class="${diffClass}">${diffText}</td>
-            <td data-label="Reason">${escapeHtml(row.comments || '—')}</td>
+            <td data-label="USD Equiv">${diffUsd}</td>
+            <td data-label="Reason">${reasonCell}</td>
             <td data-label="Status"><span class="badge ${badge.class}">${badge.text}</span></td>
           </tr>
         `;
@@ -251,7 +274,8 @@ async function loadReconciliationApproval() {
           ${cardRow('Balance', `${fmtAmount(row.closing_balance)} ${row.currency || ''}`)}
           ${cardRow('Actual', fmtAmount(row.actual_balance))}
           ${cardRow('Difference', diffText, diffClass)}
-          ${cardRow('Reason', row.comments || '—')}
+          ${cardRow('USD Equiv (diff)', diffUsd)}
+          ${cardRow('Reason', missingReason ? 'Required' : (row.comments || '—'), missingReason ? 'negative' : '')}
         </article>
       `;
     });
@@ -286,7 +310,7 @@ function toggleReconApprovalSelectAll(checked) {
   loadReconciliationApproval();
 }
 
-async function requestReconciliationApproval() {
+async function requestReconciliationApproval(ev) {
   if (!canRequestApproval()) {
     showToast('You cannot request reconciliation approval on this team.', 'warning');
     return;
@@ -294,11 +318,20 @@ async function requestReconciliationApproval() {
 
   const ids = [...selectedLineIds];
   if (!ids.length) {
-    showToast('Select at least one mismatched bucket', 'warning');
+    showToast('Select at least one mismatched bucket with a reason', 'warning');
     return;
   }
 
+  const rows = mismatchRows.filter(r => ids.includes(r.id));
+  const missingReason = rows.filter(r => !rowHasReason(r));
+  if (missingReason.length) {
+    showToast(`Add a reason on reconcile for: ${missingReason.map(r => r.bucket_name).join(', ')}`, 'error');
+    return;
+  }
+
+  const btn = ev?.currentTarget || document.getElementById('reconApprovalRequestBtn');
   const teamId = state.currentTeam?.team_id;
+  setButtonLoading(btn, true, 'Request approval for selected');
   try {
     const request = await submitReconciliationAdjustment(ids, teamId);
     showToast(`Approval requested — ${request.request_number}`, 'success');
@@ -306,5 +339,7 @@ async function requestReconciliationApproval() {
     await loadReconciliationApproval();
   } catch (err) {
     showToast(err.message || 'Failed to submit approval request', 'error');
+  } finally {
+    setButtonLoading(btn, false, 'Request approval for selected');
   }
 }

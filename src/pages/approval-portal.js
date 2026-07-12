@@ -1,7 +1,7 @@
 // ==================== APPROVAL PORTAL (Phase 4B) ====================
 import { state } from '../state.js';
 import { showToast } from '../components/toasts.js';
-import { cardRow } from '../utils/uiHelpers.js';
+import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
 import { approvalStatusBadge } from '../utils/approvalConstants.js';
 import { clarifyRoleFromStatus, userCanActOnRequest, canCancelRequest } from '../utils/approvalAccess.js';
 import {
@@ -9,20 +9,17 @@ import {
   loadRequestMessages,
   loadReconciliationRequestLines,
   approveRequest,
-  approveAndSendRequest,
   sendApprovedRequest,
   rejectRequest,
   cancelRequest,
   clarifyRequest,
   replyClarification,
-  sendApprovedBatch,
-  approveRequestBatch,
-  approveAndSendBatch,
-  rejectRequestBatch
+  sendApprovedBatch
 } from '../utils/approvalEngine.js';
 
 let inboxRows = [];
 let selectedIds = new Set();
+let rowCanActMap = new Map();
 let detailRequestId = null;
 let detailMessages = [];
 
@@ -82,12 +79,9 @@ export function getApprovalPortalPage() {
 
     <div class="card" id="portalBatchBar" style="display:none;">
       <h3>Batch actions (<span id="portalSelectedCount">0</span> selected)</h3>
+      <p class="page-intro" style="margin:0 0 8px; font-size:0.9em;">Approve each request in detail first, then select approved items and <strong>Send</strong> forward.</p>
       <div class="btn-group">
-        <button type="button" class="success" onclick="window.portalBatchApprove()">Approve</button>
-        <button type="button" class="success" onclick="window.portalBatchApproveSend()">Approve &amp; Send</button>
-        <button type="button" onclick="window.portalBatchSend()">Send approved</button>
-        <button type="button" class="secondary danger" onclick="window.portalBatchReject()">Reject</button>
-        <button type="button" class="secondary" onclick="window.portalClearSelection()">Clear</button>
+        <button type="button" id="portalBatchSendBtn" class="success" disabled onclick="window.portalBatchSend(event)">Send</button>
       </div>
     </div>
 
@@ -126,11 +120,7 @@ export async function initApprovalPortalPage() {
   window.portalOpenDetail = portalOpenDetail;
   window.portalCloseDetail = portalCloseDetail;
   window.portalAction = portalAction;
-  window.portalBatchApprove = portalBatchApprove;
-  window.portalBatchApproveSend = portalBatchApproveSend;
   window.portalBatchSend = portalBatchSend;
-  window.portalBatchReject = portalBatchReject;
-  window.portalClearSelection = portalClearSelection;
 
   populateTeamFilter();
   await refreshApprovalPortal();
@@ -157,6 +147,19 @@ function getFilters() {
   };
 }
 
+function rowIsSendable(row) {
+  return !!row?.step_approved && rowCanActMap.get(row.id) === true;
+}
+
+function countSendableSelected() {
+  let count = 0;
+  for (const id of selectedIds) {
+    const row = inboxRows.find(r => r.id === id);
+    if (rowIsSendable(row)) count++;
+  }
+  return count;
+}
+
 async function refreshApprovalPortal() {
   const tableBody = document.getElementById('portalInboxTableBody');
   const mobileEl = document.getElementById('portalInboxMobile');
@@ -165,6 +168,7 @@ async function refreshApprovalPortal() {
   if (tableBody) tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">Loading…</td></tr>';
   if (mobileEl) mobileEl.innerHTML = '<p class="empty-state">Loading…</p>';
   selectedIds = new Set();
+  rowCanActMap = new Map();
   updateBatchBar();
 
   try {
@@ -177,7 +181,11 @@ async function refreshApprovalPortal() {
       return;
     }
 
-    const rendered = await Promise.all(inboxRows.map(row => renderInboxRow(row)));
+    await Promise.all(inboxRows.map(async row => {
+      rowCanActMap.set(row.id, await userCanActOnRequest(row));
+    }));
+
+    const rendered = inboxRows.map(row => renderInboxRow(row));
     if (tableBody) tableBody.innerHTML = rendered.map(r => r.table).join('');
     if (mobileEl) mobileEl.innerHTML = rendered.map(r => r.mobile).join('');
 
@@ -191,9 +199,9 @@ async function refreshApprovalPortal() {
   }
 }
 
-async function renderInboxRow(row) {
+function renderInboxRow(row) {
   const badge = approvalStatusBadge(row.status);
-  const canAct = await userCanActOnRequest(row);
+  const canAct = rowCanActMap.get(row.id);
   const isMine = row.created_by === state.user?.id;
   const teamName = escapeHtml(row.teams?.name || '—');
   const typeLabel = TYPE_LABELS[row.request_type] || row.request_type;
@@ -202,6 +210,7 @@ async function renderInboxRow(row) {
     ? `Awaiting ${row.current_role_code}${row.step_approved ? ' (ready to send)' : ''}`
     : '—';
   const mineBadge = isMine ? ' <span class="badge badge-info">Yours</span>' : '';
+  const sendable = rowIsSendable(row);
 
   const table = `
     <tr class="row-clickable" onclick="window.portalOpenDetail('${row.id}')">
@@ -214,10 +223,9 @@ async function renderInboxRow(row) {
       <td data-label="Team">${teamName}</td>
       <td data-label="Amount">${amount}</td>
       <td data-label="Status"><span class="badge ${badge.class}">${badge.label}</span></td>
-      <td data-label="Step">${escapeHtml(stepHint)}</td>
+      <td data-label="Step">${escapeHtml(stepHint)}${sendable ? ' <span class="badge badge-success">Send</span>' : ''}</td>
       <td data-label="Actions" onclick="event.stopPropagation()">
         <button type="button" class="small secondary" onclick="window.portalOpenDetail('${row.id}')">Open</button>
-        ${canAct ? `<button type="button" class="small success" onclick="window.portalAction('approve-send','${row.id}')">Approve &amp; Send</button>` : ''}
       </td>
     </tr>
   `;
@@ -235,11 +243,10 @@ async function renderInboxRow(row) {
       ${cardRow('Type', typeLabel)}
       ${cardRow('Team', row.teams?.name || '—')}
       ${cardRow('Amount', amount)}
-      ${stepHint !== '—' ? cardRow('Step', stepHint) : ''}
+      ${stepHint !== '—' ? cardRow('Step', stepHint + (sendable ? ' — ready to send' : '')) : ''}
       ${isMine ? cardRow('Submitted by', 'You') : ''}
       <div class="btn-group" style="margin-top:8px;" onclick="event.stopPropagation()">
         <button type="button" class="small secondary" onclick="window.portalOpenDetail('${row.id}')">Open</button>
-        ${canAct ? `<button type="button" class="small success" onclick="window.portalAction('approve-send','${row.id}')">Approve &amp; Send</button>` : ''}
       </div>
     </article>
   `;
@@ -267,16 +274,17 @@ function portalToggleSelectAll(checked) {
 function updateBatchBar() {
   const bar = document.getElementById('portalBatchBar');
   const countEl = document.getElementById('portalSelectedCount');
+  const sendBtn = document.getElementById('portalBatchSendBtn');
+  const sendableCount = countSendableSelected();
+
   if (countEl) countEl.textContent = String(selectedIds.size);
   if (bar) bar.style.display = selectedIds.size > 0 ? '' : 'none';
-}
-
-function portalClearSelection() {
-  selectedIds = new Set();
-  document.querySelectorAll('[data-portal-id]').forEach(el => { el.checked = false; });
-  const selectAll = document.getElementById('portalSelectAll');
-  if (selectAll) selectAll.checked = false;
-  updateBatchBar();
+  if (sendBtn) {
+    sendBtn.disabled = sendableCount === 0;
+    sendBtn.title = sendableCount === 0
+      ? 'Select at least one approved request you can send'
+      : `Send ${sendableCount} approved request${sendableCount === 1 ? '' : 's'}`;
+  }
 }
 
 async function portalOpenDetail(requestId) {
@@ -289,7 +297,8 @@ async function portalOpenDetail(requestId) {
 
   try {
     detailMessages = await loadRequestMessages(requestId);
-    const canAct = await userCanActOnRequest(row);
+    const canAct = rowCanActMap.get(row.id) ?? await userCanActOnRequest(row);
+    rowCanActMap.set(row.id, canAct);
     const canCancel = canCancelRequest(row);
     const isMine = row.created_by === state.user?.id;
     const clarifyRole = clarifyRoleFromStatus(row.status);
@@ -351,6 +360,17 @@ async function portalOpenDetail(requestId) {
         }).join('')
       : '<p class="empty-state">No messages yet.</p>';
 
+    const actionButtons = [];
+    if (canAct) {
+      if (!row.step_approved) {
+        actionButtons.push(`<button type="button" class="success" data-portal-action="approve" onclick="window.portalAction(event,'approve','${row.id}')">Approve</button>`);
+      } else {
+        actionButtons.push(`<button type="button" class="success" data-portal-action="send" onclick="window.portalAction(event,'send','${row.id}')">Send</button>`);
+      }
+      actionButtons.push(`<button type="button" class="secondary danger" data-portal-action="reject" onclick="window.portalAction(event,'reject','${row.id}')">Reject</button>`);
+      actionButtons.push(`<button type="button" class="secondary" data-portal-action="clarify" onclick="window.portalAction(event,'clarify','${row.id}')">Clarify</button>`);
+    }
+
     detailEl.innerHTML = `
       <div class="card">
         <div class="btn-group" style="margin-bottom:12px;">
@@ -363,29 +383,25 @@ async function portalOpenDetail(requestId) {
         ${cardRow('Team', teamName)}
         ${cardRow('Type', TYPE_LABELS[row.request_type] || row.request_type)}
         ${row.amount_usd != null ? cardRow('Amount', `$${parseFloat(row.amount_usd).toFixed(2)}`) : ''}
-        ${row.current_role_code ? cardRow('Current step', row.current_role_code + (row.step_approved ? ' ✓ approved' : '')) : ''}
+        ${row.current_role_code ? cardRow('Current step', row.current_role_code + (row.step_approved ? ' ✓ approved — ready to send' : '')) : ''}
         ${isMine ? cardRow('Submitted by', 'You — use Cancel if you need to withdraw') : ''}
 
         ${reconLinesHtml}
 
         ${canCancel ? `
           <div class="btn-group" style="margin-top:16px;">
-            <button type="button" class="secondary" onclick="window.portalAction('cancel','${row.id}')">Cancel request</button>
+            <button type="button" class="secondary" data-portal-action="cancel" onclick="window.portalAction(event,'cancel','${row.id}')">Cancel request</button>
           </div>
           <p class="page-intro" style="margin-top:8px; font-size:0.9em;">Cancelling returns this request to <strong>Draft</strong> so you can edit and resubmit later.</p>
         ` : ''}
 
         ${canAct ? `
           <div class="form-group" style="margin-top:16px;">
-            <label>Message (optional for approve; required for clarify/reply)</label>
+            <label>Message (optional for approve/send; required for clarify/reply)</label>
             <textarea id="portalActionMessage" rows="3" placeholder="Add a note…"></textarea>
           </div>
-          <div class="btn-group">
-            <button type="button" class="success" onclick="window.portalAction('approve','${row.id}')">Approve</button>
-            <button type="button" class="success" onclick="window.portalAction('approve-send','${row.id}')">Approve &amp; Send</button>
-            ${row.step_approved ? `<button type="button" onclick="window.portalAction('send','${row.id}')">Send</button>` : ''}
-            <button type="button" class="secondary danger" onclick="window.portalAction('reject','${row.id}')">Reject</button>
-            <button type="button" class="secondary" onclick="window.portalAction('clarify','${row.id}')">Clarify</button>
+          <div class="btn-group" id="portalDetailActions">
+            ${actionButtons.join('')}
           </div>
         ` : ''}
 
@@ -393,7 +409,7 @@ async function portalOpenDetail(requestId) {
           <div class="form-group" style="margin-top:12px;">
             <label>Reply to clarification (${clarifyRole})</label>
             <textarea id="portalReplyMessage" rows="2"></textarea>
-            <button type="button" style="margin-top:8px;" onclick="window.portalAction('reply','${row.id}')">Reply</button>
+            <button type="button" style="margin-top:8px;" data-portal-action="reply" onclick="window.portalAction(event,'reply','${row.id}')">Reply</button>
           </div>
         ` : ''}
 
@@ -415,18 +431,27 @@ function portalCloseDetail() {
   }
 }
 
-async function portalAction(action, requestId) {
+async function portalAction(ev, action, requestId) {
+  const btn = ev?.currentTarget || ev?.target;
   const msg = document.getElementById('portalActionMessage')?.value
     || document.getElementById('portalReplyMessage')?.value
     || '';
 
+  const idleLabels = {
+    approve: 'Approve',
+    send: 'Send',
+    reject: 'Reject',
+    clarify: 'Clarify',
+    reply: 'Reply',
+    cancel: 'Cancel request'
+  };
+
   try {
+    if (btn?.tagName === 'BUTTON') setButtonLoading(btn, true, idleLabels[action] || 'Submit');
+
     if (action === 'approve') {
       await approveRequest(requestId, msg);
-      showToast('Approved — ready to send when you are', 'success');
-    } else if (action === 'approve-send') {
-      await approveAndSendRequest(requestId, msg);
-      showToast('Approved and sent forward', 'success');
+      showToast('Approved — select and Send when ready', 'success');
     } else if (action === 'send') {
       await sendApprovedRequest(requestId, msg);
       showToast('Sent forward', 'success');
@@ -459,49 +484,34 @@ async function portalAction(action, requestId) {
     if (detailRequestId === requestId) await portalOpenDetail(requestId);
   } catch (err) {
     showToast(err.message || 'Action failed', 'error');
+  } finally {
+    if (btn?.tagName === 'BUTTON') setButtonLoading(btn, false, idleLabels[action] || 'Submit');
   }
 }
 
-async function portalBatchApprove() {
-  const ids = [...selectedIds];
-  const msg = '';
-  const result = await approveRequestBatch(ids, msg);
-  showBatchResult('Approved', result.approved.length, result.failed);
-  await refreshApprovalPortal();
-}
-
-async function portalBatchApproveSend() {
-  const ids = [...selectedIds];
-  const result = await approveAndSendBatch(ids);
-  showBatchResult('Sent forward', result.sent.length, result.failed);
-  await refreshApprovalPortal();
-}
-
-async function portalBatchSend() {
-  const ids = [...selectedIds];
-  const result = await sendApprovedBatch(ids);
-  const n = result.sent.length;
-  const f = result.failed.length;
-  let text = `Sent ${n} request${n === 1 ? '' : 's'}`;
-  if (result.groupNumber) text += ` as group ${result.groupNumber}`;
-  if (f) text += ` — ${f} failed`;
-  showToast(text, f ? 'warning' : 'success');
-  await refreshApprovalPortal();
-}
-
-async function portalBatchReject() {
-  const msg = window.prompt('Rejection message (optional, shared with all selected):') || '';
-  const result = await rejectRequestBatch([...selectedIds], msg);
-  showBatchResult('Rejected', result.rejected.length, result.failed);
-  await refreshApprovalPortal();
-}
-
-function showBatchResult(label, okCount, failures) {
-  let text = `${label} ${okCount} item${okCount === 1 ? '' : 's'}`;
-  if (failures?.length) {
-    text += ` — ${failures.length} failed`;
+async function portalBatchSend(ev) {
+  const btn = ev?.currentTarget || document.getElementById('portalBatchSendBtn');
+  const ids = [...selectedIds].filter(id => rowIsSendable(inboxRows.find(r => r.id === id)));
+  if (!ids.length) {
+    showToast('Select at least one approved request you can send', 'warning');
+    return;
   }
-  showToast(text, failures?.length ? 'warning' : 'success');
+
+  setButtonLoading(btn, true, 'Send');
+  try {
+    const result = await sendApprovedBatch(ids);
+    const n = result.sent.length;
+    const f = result.failed.length;
+    let text = `Sent ${n} request${n === 1 ? '' : 's'}`;
+    if (result.groupNumber) text += ` as group ${result.groupNumber}`;
+    if (f) text += ` — ${f} failed`;
+    showToast(text, f ? 'warning' : 'success');
+    await refreshApprovalPortal();
+  } catch (err) {
+    showToast(err.message || 'Batch send failed', 'error');
+  } finally {
+    setButtonLoading(btn, false, 'Send');
+  }
 }
 
 function escapeHtml(text) {

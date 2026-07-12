@@ -2,7 +2,7 @@
 import { state } from '../state.js';
 import { supabaseClient, sbSelect } from '../db.js';
 import { showToast } from '../components/toasts.js';
-import { cardRow } from '../utils/uiHelpers.js';
+import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
 import {
   getDailyReconciliationStatus,
   formatDisplayDate,
@@ -13,7 +13,8 @@ import {
   filterBucketsByScope,
   bucketHasMoney,
   bucketScopeLabel,
-  formatDifference
+  formatDifference,
+  computeDifferenceUsd
 } from '../utils/financialStatusHelpers.js';
 import {
   bucketsForReconcileSubmit,
@@ -158,7 +159,7 @@ function showReconcilePanel() {
         <thead>
           <tr>
             <th>Type</th><th>Bucket</th><th>Currency</th><th>Balance</th>
-            <th>Actual</th><th>Difference</th><th>USD Equiv</th><th>Comments</th>
+            <th>Actual</th><th>Difference</th><th>USD Equiv (diff)</th><th>Comments</th>
           </tr>
         </thead>
         <tbody>
@@ -179,7 +180,7 @@ function showReconcilePanel() {
             oninput="window.onReconcileActualInput(${index})">
         </td>
         <td data-label="Difference"><span id="reconDiff_${index}">—</span></td>
-        <td data-label="USD Equiv">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
+        <td data-label="USD Equiv"><span id="reconDiffUsd_${index}">—</span></td>
         <td data-label="Comments">
           <textarea id="reconComments_${index}" rows="2" placeholder="Required if difference ≠ 0" class="recon-comments-input"
             oninput="window.syncReconcileField(${index}, 'comments', false)"></textarea>
@@ -205,7 +206,10 @@ function showReconcilePanel() {
           <span class="data-card-row-label">Difference</span>
           <span class="data-card-row-value" id="reconDiff_m_${index}">—</span>
         </div>
-        ${cardRow('USD Equiv', row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—')}
+        <div class="data-card-row">
+          <span class="data-card-row-label">USD Equiv (diff)</span>
+          <span class="data-card-row-value" id="reconDiffUsd_m_${index}">—</span>
+        </div>
         <div class="data-card-row recon-field-row recon-field-row--stacked">
           <span class="data-card-row-label">Comments</span>
           <textarea id="reconComments_m_${index}" rows="2" placeholder="Required if difference ≠ 0" class="recon-comments-input"
@@ -245,6 +249,8 @@ function onReconcileActualInput(index, fromMobile = false) {
 
   const diffCell = document.getElementById(`reconDiff_${index}`);
   const diffCellMobile = document.getElementById(`reconDiff_m_${index}`);
+  const diffUsdCell = document.getElementById(`reconDiffUsd_${index}`);
+  const diffUsdCellMobile = document.getElementById(`reconDiffUsd_m_${index}`);
   const activeInput = getReconcileInput(index, 'actual', fromMobile) || getReconcileInput(index, 'actual', false);
   if (!activeInput) return;
 
@@ -272,6 +278,20 @@ function onReconcileActualInput(index, fromMobile = false) {
 
   applyDiff(diffCell);
   applyDiff(diffCellMobile);
+
+  const today = todayDateStr();
+  const applyDiffUsd = (cell) => {
+    if (!cell) return;
+    if (Number.isNaN(actual)) {
+      cell.textContent = '—';
+      return;
+    }
+    const { diff } = formatDifference(actual, closing, currency);
+    const usd = computeDifferenceUsd(diff, currency, today, cachedRates);
+    cell.textContent = usd !== null ? `$${usd.toFixed(2)}` : '—';
+  };
+  applyDiffUsd(diffUsdCell);
+  applyDiffUsd(diffUsdCellMobile);
 }
 
 async function submitReconciliation() {
@@ -279,41 +299,49 @@ async function submitReconciliation() {
     showToast('Read-only access — you cannot submit reconciliations on this team.', 'warning');
     return;
   }
-  const panel = document.getElementById('reconcilePanel');
-  const rows = panel?._reconcileRows || buildReconcileRows();
-  if (!rows.length) {
-    showToast('Nothing to reconcile.', 'info');
-    return;
-  }
-
-  const teamId = state.currentTeam?.team_id;
-  const userId = state.user?.id;
-  const reconciliationDate = todayDateStr();
-
-  const lineData = [];
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const actualInput = getReconcileInput(i, 'actual', false) || getReconcileInput(i, 'actual', true);
-    const actualRaw = actualInput?.value;
-    if (actualRaw === '' || actualRaw === undefined) {
-      showToast(`Enter actual balance for ${row.bucketName}.`, 'error');
-      return;
-    }
-    const actual = parseFloat(actualRaw);
-    const comments = (
-      document.getElementById(`reconComments_${i}`)?.value ||
-      document.getElementById(`reconComments_m_${i}`)?.value ||
-      ''
-    ).trim();
-    const { diff } = formatDifference(actual, row.closing, row.currency);
-    if (Math.abs(diff) >= 0.01 && !comments) {
-      showToast(`Add a comment for ${row.bucketName} — actual differs from balance.`, 'error');
-      return;
-    }
-    lineData.push({ row, actual, difference: diff, comments: comments || null });
-  }
-
+  const submitBtn = document.querySelector('#reconcilePanel .btn-group .success');
+  setButtonLoading(submitBtn, true, 'Submit Reconciliation');
   try {
+    const panel = document.getElementById('reconcilePanel');
+    const rows = panel?._reconcileRows || buildReconcileRows();
+    if (!rows.length) {
+      showToast('Nothing to reconcile.', 'info');
+      return;
+    }
+
+    const teamId = state.currentTeam?.team_id;
+    const userId = state.user?.id;
+    const reconciliationDate = todayDateStr();
+
+    const lineData = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const actualInput = getReconcileInput(i, 'actual', false) || getReconcileInput(i, 'actual', true);
+      const actualRaw = actualInput?.value;
+      if (actualRaw === '' || actualRaw === undefined) {
+        showToast(`Enter actual balance for ${row.bucketName}.`, 'error');
+        return;
+      }
+      const actual = parseFloat(actualRaw);
+      const comments = (
+        document.getElementById(`reconComments_${i}`)?.value ||
+        document.getElementById(`reconComments_m_${i}`)?.value ||
+        ''
+      ).trim();
+      const { diff } = formatDifference(actual, row.closing, row.currency);
+      if (Math.abs(diff) >= 0.01 && !comments) {
+        showToast(`Add a comment for ${row.bucketName} — actual differs from balance.`, 'error');
+        return;
+      }
+      lineData.push({
+        row,
+        actual,
+        difference: diff,
+        comments: comments || null,
+        usd_equivalent: computeDifferenceUsd(diff, row.currency, reconciliationDate, cachedRates)
+      });
+    }
+
     const submissionPayload = {
       team_id: teamId,
       reconciliation_date: reconciliationDate,
@@ -347,7 +375,7 @@ async function submitReconciliation() {
       submissionId = inserted.id;
     }
 
-    const linesPayload = lineData.map(({ row, actual, difference, comments }) => ({
+    const linesPayload = lineData.map(({ row, actual, difference, comments, usd_equivalent }) => ({
       submission_id: submissionId,
       bucket_id: row.bucketId,
       bucket_name: row.bucketName,
@@ -360,7 +388,7 @@ async function submitReconciliation() {
       closing_balance: row.closing,
       actual_balance: actual,
       difference,
-      usd_equivalent: row.closingUsd,
+      usd_equivalent,
       comments
     }));
 
@@ -382,6 +410,8 @@ async function submitReconciliation() {
   } catch (err) {
     console.error('Submit reconciliation error:', err);
     showToast(err.message || 'Failed to submit reconciliation.', 'error');
+  } finally {
+    setButtonLoading(submitBtn, false, 'Submit Reconciliation');
   }
 }
 
@@ -634,13 +664,13 @@ async function viewReconciliationHistory(submissionId) {
               <tr>
                 <th>Type</th><th>Bucket</th><th>Currency</th><th>Opening</th><th>+ Income</th><th>+ Transfers In</th>
                 <th>- Expenses</th><th>- Transfers Out</th><th>Closing</th><th>Actual</th>
-                <th>Difference</th><th>USD Equiv</th><th>Comments</th>
+                <th>Difference</th><th>USD Equiv (diff)</th><th>Comments</th>
               </tr>
             </thead>
             <tbody>
               ${rowsHtml}
               <tr class="status-total">
-                <td data-label="Total USD Equivalent" colspan="11" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
+                <td data-label="Total USD (diff)" colspan="11" style="text-align:right;"><strong>Total USD (diff):</strong></td>
                 <td data-label="Amount" style="color:var(--primary);"><strong>$${grandUsd.toFixed(2)}</strong></td>
                 <td data-label=""></td>
               </tr>
@@ -649,7 +679,7 @@ async function viewReconciliationHistory(submissionId) {
         </div>
         <div class="show-mobile data-card-list">${mobileLines}</div>
         <article class="show-mobile data-card data-card--total">
-          ${cardRow('Total USD Equivalent', `$${grandUsd.toFixed(2)}`)}
+          ${cardRow('Total USD (diff)', `$${grandUsd.toFixed(2)}`)}
         </article>
       </div>
     `;

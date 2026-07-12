@@ -28,3 +28,18 @@ export function cardRow(label, value, valueClass = '') {
 export function actionPair(editOnclick, deleteOnclick) {
   return `<span class="action-icon-group">${btnIconEdit(editOnclick)}${btnIconDelete(deleteOnclick)}</span>`;
 }
+
+/** Disable a button and show loading spinner while async work runs. */
+export function setButtonLoading(btn, loading, idleLabel) {
+  if (!btn) return;
+  if (!btn.dataset.idleLabel) {
+    btn.dataset.idleLabel = idleLabel || btn.textContent.trim();
+  }
+  const label = idleLabel || btn.dataset.idleLabel || 'Submit';
+  btn.disabled = loading;
+  if (loading) {
+    btn.innerHTML = `<span class="loading-spinner"></span>${label}…`;
+  } else {
+    btn.textContent = label;
+  }
+}
