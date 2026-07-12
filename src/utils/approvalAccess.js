@@ -89,7 +89,6 @@ export async function getUserApprovalRoleCodes(userId = state.user?.id, teamId =
 
 export async function userCanActOnRequest(request, userId = state.user?.id) {
   if (!request || !userId) return false;
-  if (state.user?.role === 'admin') return true;
 
   const status = String(request.status || '').toUpperCase();
   if (isFinalStatus(status)) return false;
@@ -101,11 +100,20 @@ export async function userCanActOnRequest(request, userId = state.user?.id) {
   }
 
   if (request.current_role_code) {
+    if (request.created_by === userId) return false;
+
     const codes = await getUserApprovalRoleCodes(userId, request.team_id);
-    return codes.includes(String(request.current_role_code).toUpperCase());
+    if (codes.includes(String(request.current_role_code).toUpperCase())) return true;
+
+    if (isOrgAdminUser() && request.created_by !== userId) return true;
+    return false;
   }
 
   return request.created_by === userId;
+}
+
+function isOrgAdminUser() {
+  return ['admin', 'caoh', 'oh', 'ceo'].includes(String(state.user?.role || '').toLowerCase());
 }
 
 export function canManageRoleAssignments() {

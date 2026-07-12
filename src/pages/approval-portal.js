@@ -3,7 +3,7 @@ import { state } from '../state.js';
 import { showToast } from '../components/toasts.js';
 import { cardRow } from '../utils/uiHelpers.js';
 import { approvalStatusBadge } from '../utils/approvalConstants.js';
-import { canManageRoleAssignments, clarifyRoleFromStatus, userCanActOnRequest, canCancelRequest } from '../utils/approvalAccess.js';
+import { clarifyRoleFromStatus, userCanActOnRequest, canCancelRequest } from '../utils/approvalAccess.js';
 import {
   fetchApprovalInbox,
   loadRequestMessages,
@@ -35,7 +35,7 @@ const TYPE_LABELS = {
 export function getApprovalPortalPage() {
   return `
     <h1 class="page-title">Approval Portal</h1>
-    <p class="page-intro">Triage and act on budget and transfer requests. Defaults to <strong>your</strong> active items.</p>
+    <p class="page-intro">Triage and act on budget, transfer, and reconciliation requests. Defaults to <strong>your</strong> active items.</p>
 
     <div class="card">
       <h2>Filters</h2>
@@ -77,7 +77,6 @@ export function getApprovalPortalPage() {
       </div>
       <div class="btn-group">
         <button type="button" onclick="window.refreshApprovalPortal()">Refresh</button>
-        ${canManageRoleAssignments() ? '<button type="button" class="secondary" onclick="window.showPage(\'role-assignments\')">FIN / Role Assignments</button>' : ''}
       </div>
     </div>
 
@@ -92,7 +91,30 @@ export function getApprovalPortalPage() {
       </div>
     </div>
 
-    <div id="portalInboxList" class="data-card-list"></div>
+    <div class="card">
+      <h2>Inbox</h2>
+      <div class="table-container show-desktop">
+        <table class="table-stack-mobile" id="portalInboxTable">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="portalSelectAll" onchange="window.portalToggleSelectAll(this.checked)" title="Select all"></th>
+              <th>Request</th>
+              <th>Title</th>
+              <th>Type</th>
+              <th>Team</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th>Step</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="portalInboxTableBody">
+            <tr><td colspan="9" class="empty-state">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="portalInboxMobile" class="show-mobile data-card-list"></div>
+    </div>
     <div id="portalDetail" style="display:none; margin-top:16px;"></div>
   `;
 }
@@ -100,6 +122,7 @@ export function getApprovalPortalPage() {
 export async function initApprovalPortalPage() {
   window.refreshApprovalPortal = refreshApprovalPortal;
   window.portalToggleSelect = portalToggleSelect;
+  window.portalToggleSelectAll = portalToggleSelectAll;
   window.portalOpenDetail = portalOpenDetail;
   window.portalCloseDetail = portalCloseDetail;
   window.portalAction = portalAction;
@@ -108,7 +131,6 @@ export async function initApprovalPortalPage() {
   window.portalBatchSend = portalBatchSend;
   window.portalBatchReject = portalBatchReject;
   window.portalClearSelection = portalClearSelection;
-  window.portalSwitchTeam = portalSwitchTeam;
 
   populateTeamFilter();
   await refreshApprovalPortal();
@@ -136,10 +158,12 @@ function getFilters() {
 }
 
 async function refreshApprovalPortal() {
-  const listEl = document.getElementById('portalInboxList');
-  if (!listEl) return;
+  const tableBody = document.getElementById('portalInboxTableBody');
+  const mobileEl = document.getElementById('portalInboxMobile');
+  if (!tableBody && !mobileEl) return;
 
-  listEl.innerHTML = '<p class="empty-state">Loading…</p>';
+  if (tableBody) tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">Loading…</td></tr>';
+  if (mobileEl) mobileEl.innerHTML = '<p class="empty-state">Loading…</p>';
   selectedIds = new Set();
   updateBatchBar();
 
@@ -147,57 +171,97 @@ async function refreshApprovalPortal() {
     inboxRows = await fetchApprovalInbox(getFilters());
 
     if (!inboxRows.length) {
-      listEl.innerHTML = '<p class="empty-state">No requests match these filters.</p>';
+      if (tableBody) tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">No requests match these filters.</td></tr>';
+      if (mobileEl) mobileEl.innerHTML = '<p class="empty-state">No requests match these filters.</p>';
       portalCloseDetail();
       return;
     }
 
-    const cards = await Promise.all(inboxRows.map((row, idx) => renderInboxCard(row, idx)));
-    listEl.innerHTML = cards.join('');
+    const rendered = await Promise.all(inboxRows.map(row => renderInboxRow(row)));
+    if (tableBody) tableBody.innerHTML = rendered.map(r => r.table).join('');
+    if (mobileEl) mobileEl.innerHTML = rendered.map(r => r.mobile).join('');
+
+    const selectAll = document.getElementById('portalSelectAll');
+    if (selectAll) selectAll.checked = false;
   } catch (err) {
     console.error('Approval portal:', err);
-    listEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${err.message}</p>`;
+    const msg = escapeHtml(err.message);
+    if (tableBody) tableBody.innerHTML = `<tr><td colspan="9" class="empty-state" style="color:#dc3545;">${msg}</td></tr>`;
+    if (mobileEl) mobileEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${msg}</p>`;
   }
 }
 
-async function renderInboxCard(row, idx) {
+async function renderInboxRow(row) {
   const badge = approvalStatusBadge(row.status);
   const canAct = await userCanActOnRequest(row);
-  const teamName = row.teams?.name || '—';
+  const isMine = row.created_by === state.user?.id;
+  const teamName = escapeHtml(row.teams?.name || '—');
   const typeLabel = TYPE_LABELS[row.request_type] || row.request_type;
   const amount = row.amount_usd != null ? `$${parseFloat(row.amount_usd).toFixed(2)}` : '—';
   const stepHint = row.current_role_code
-    ? `Awaiting ${row.current_role_code}${row.step_approved ? ' (approved, ready to send)' : ''}`
-    : '';
+    ? `Awaiting ${row.current_role_code}${row.step_approved ? ' (ready to send)' : ''}`
+    : '—';
+  const mineBadge = isMine ? ' <span class="badge badge-info">Yours</span>' : '';
 
-  return `
-    <article class="data-card data-card--compact">
+  const table = `
+    <tr class="row-clickable" onclick="window.portalOpenDetail('${row.id}')">
+      <td data-label="Select" onclick="event.stopPropagation()">
+        <input type="checkbox" data-portal-id="${row.id}" onchange="window.portalToggleSelect('${row.id}', this.checked)">
+      </td>
+      <td data-label="Request"><strong>${row.request_number}</strong>${mineBadge}</td>
+      <td data-label="Title">${escapeHtml(row.title || '—')}</td>
+      <td data-label="Type">${typeLabel}</td>
+      <td data-label="Team">${teamName}</td>
+      <td data-label="Amount">${amount}</td>
+      <td data-label="Status"><span class="badge ${badge.class}">${badge.label}</span></td>
+      <td data-label="Step">${escapeHtml(stepHint)}</td>
+      <td data-label="Actions" onclick="event.stopPropagation()">
+        <button type="button" class="small secondary" onclick="window.portalOpenDetail('${row.id}')">Open</button>
+        ${canAct ? `<button type="button" class="small success" onclick="window.portalAction('approve-send','${row.id}')">Approve &amp; Send</button>` : ''}
+      </td>
+    </tr>
+  `;
+
+  const mobile = `
+    <article class="data-card data-card--compact data-card--clickable" onclick="window.portalOpenDetail('${row.id}')">
       <div class="data-card-top">
         <label class="checkbox-label" onclick="event.stopPropagation()">
           <input type="checkbox" data-portal-id="${row.id}" onchange="window.portalToggleSelect('${row.id}', this.checked)">
         </label>
-        <span class="data-card-title" style="cursor:pointer;" onclick="window.portalOpenDetail('${row.id}')">${row.request_number}</span>
+        <span class="data-card-title">${row.request_number}</span>
         <span class="badge ${badge.class}">${badge.label}</span>
       </div>
       ${cardRow('Title', row.title || '—')}
       ${cardRow('Type', typeLabel)}
-      ${cardRow('Team', teamName)}
+      ${cardRow('Team', row.teams?.name || '—')}
       ${cardRow('Amount', amount)}
-      ${stepHint ? cardRow('Step', stepHint) : ''}
-      ${row.group_number ? cardRow('Group', row.group_number) : ''}
+      ${stepHint !== '—' ? cardRow('Step', stepHint) : ''}
+      ${isMine ? cardRow('Submitted by', 'You') : ''}
       <div class="btn-group" style="margin-top:8px;" onclick="event.stopPropagation()">
         <button type="button" class="small secondary" onclick="window.portalOpenDetail('${row.id}')">Open</button>
-        ${row.team_id ? `<button type="button" class="small" onclick="window.portalSwitchTeam('${row.team_id}')">Switch team</button>` : ''}
         ${canAct ? `<button type="button" class="small success" onclick="window.portalAction('approve-send','${row.id}')">Approve &amp; Send</button>` : ''}
       </div>
     </article>
   `;
+
+  return { table, mobile };
 }
 
 function portalToggleSelect(id, checked) {
   if (checked) selectedIds.add(id);
   else selectedIds.delete(id);
   updateBatchBar();
+}
+
+function portalToggleSelectAll(checked) {
+  document.querySelectorAll('[data-portal-id]').forEach(el => {
+    el.checked = checked;
+    portalToggleSelect(el.dataset.portalId, checked);
+  });
+  if (!checked) {
+    selectedIds = new Set();
+    updateBatchBar();
+  }
 }
 
 function updateBatchBar() {
@@ -210,6 +274,8 @@ function updateBatchBar() {
 function portalClearSelection() {
   selectedIds = new Set();
   document.querySelectorAll('[data-portal-id]').forEach(el => { el.checked = false; });
+  const selectAll = document.getElementById('portalSelectAll');
+  if (selectAll) selectAll.checked = false;
   updateBatchBar();
 }
 
@@ -225,6 +291,7 @@ async function portalOpenDetail(requestId) {
     detailMessages = await loadRequestMessages(requestId);
     const canAct = await userCanActOnRequest(row);
     const canCancel = canCancelRequest(row);
+    const isMine = row.created_by === state.user?.id;
     const clarifyRole = clarifyRoleFromStatus(row.status);
     const badge = approvalStatusBadge(row.status);
     const teamName = row.teams?.name || '—';
@@ -288,7 +355,6 @@ async function portalOpenDetail(requestId) {
       <div class="card">
         <div class="btn-group" style="margin-bottom:12px;">
           <button type="button" class="secondary" onclick="window.portalCloseDetail()">Close</button>
-          ${row.team_id ? `<button type="button" onclick="window.portalSwitchTeam('${row.team_id}')">Open team workspace</button>` : ''}
         </div>
         <div class="data-card-top">
           <h3 style="margin:0;">${row.request_number} — ${row.title || ''}</h3>
@@ -298,6 +364,7 @@ async function portalOpenDetail(requestId) {
         ${cardRow('Type', TYPE_LABELS[row.request_type] || row.request_type)}
         ${row.amount_usd != null ? cardRow('Amount', `$${parseFloat(row.amount_usd).toFixed(2)}`) : ''}
         ${row.current_role_code ? cardRow('Current step', row.current_role_code + (row.step_approved ? ' ✓ approved' : '')) : ''}
+        ${isMine ? cardRow('Submitted by', 'You — use Cancel if you need to withdraw') : ''}
 
         ${reconLinesHtml}
 
@@ -435,13 +502,6 @@ function showBatchResult(label, okCount, failures) {
     text += ` — ${failures.length} failed`;
   }
   showToast(text, failures?.length ? 'warning' : 'success');
-}
-
-function portalSwitchTeam(teamId) {
-  if (typeof window.switchTeam === 'function') {
-    window.switchTeam(teamId);
-    showToast('Switched team context', 'info');
-  }
 }
 
 function escapeHtml(text) {
