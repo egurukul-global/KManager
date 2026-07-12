@@ -2,7 +2,7 @@
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
-import { btnIconEdit } from '../utils/uiHelpers.js';
+import { btnIconEdit, cardRow } from '../utils/uiHelpers.js';
 import { refreshAccessibleTeams } from '../utils/teamAccess.js';
 import { ensurePersonalTeamForUser } from '../utils/personalTeamHelpers.js';
 import { ensureMemberBucketOnWorkTeam } from '../utils/memberBucketHelpers.js';
@@ -84,7 +84,7 @@ export function getTeamMgmtPage() {
 
     <div class="card">
       <h2>🏢 All Teams</h2>
-      <div class="table-container">
+      <div class="table-container show-desktop">
         <table class="table-stack-mobile team-mgmt-table">
           <thead>
             <tr>
@@ -98,6 +98,7 @@ export function getTeamMgmtPage() {
           </tbody>
         </table>
       </div>
+      <div id="teamsListMobile" class="show-mobile data-card-list"></div>
     </div>
 
     <div class="card team-members-panel" id="teamMembersPanel" style="display:none;">
@@ -128,7 +129,7 @@ export function getTeamMgmtPage() {
         </div>
       </form>
 
-      <div class="table-container">
+      <div class="table-container show-desktop">
         <table class="table-stack-mobile team-mgmt-table">
           <thead>
             <tr>
@@ -143,6 +144,7 @@ export function getTeamMgmtPage() {
           </tbody>
         </table>
       </div>
+      <div id="teamMembersMobile" class="show-mobile data-card-list"></div>
     </div>
   `;
 }
@@ -179,6 +181,7 @@ async function loadUsersCache() {
 
 async function loadTeams() {
   const tbody = document.getElementById('teamsListBody');
+  const mobile = document.getElementById('teamsListMobile');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Loading…</td></tr>';
 
@@ -207,11 +210,27 @@ async function loadTeams() {
     }));
 
     if (!teamsCache.length) {
-      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No teams yet. Add one above.</td></tr>';
+      const empty = '<tr><td colspan="3" class="empty-state">No teams yet. Add one above.</td></tr>';
+      tbody.innerHTML = empty;
+      if (mobile) mobile.innerHTML = '<p class="empty-state">No teams yet. Add one above.</p>';
       return;
     }
 
-    tbody.innerHTML = teamsCache.map(team => `
+    let mobileHtml = '';
+    tbody.innerHTML = teamsCache.map(team => {
+      mobileHtml += `
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${escapeHtml(team.name)}</span>
+            <span class="badge badge-info">${team.member_count} members</span>
+          </div>
+          <div class="data-card-actions">
+            ${btnIconEdit(`window.editTeam('${team.id}')`)}
+            <button type="button" class="secondary small" onclick="window.openTeamMembers('${team.id}')">Members</button>
+          </div>
+        </article>
+      `;
+      return `
       <tr>
         <td data-label="Team"><strong>${escapeHtml(team.name)}</strong></td>
         <td data-label="Members">${team.member_count}</td>
@@ -220,10 +239,13 @@ async function loadTeams() {
           <button type="button" class="secondary small" onclick="window.openTeamMembers('${team.id}')">Members</button>
         </td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
+    if (mobile) mobile.innerHTML = mobileHtml;
   } catch (err) {
     console.error('Load teams error:', err);
     tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}. Run migration 011 if policies are missing.</td></tr>`;
+    if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -358,6 +380,7 @@ function populateAddMemberUserSelect(teamId) {
 
 async function loadTeamMembers(teamId) {
   const tbody = document.getElementById('teamMembersBody');
+  const mobile = document.getElementById('teamMembersMobile');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Loading…</td></tr>';
 
@@ -376,15 +399,39 @@ async function loadTeamMembers(teamId) {
     }));
 
     if (!membersCache.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No members yet. Add a user above.</td></tr>';
+      const empty = '<tr><td colspan="4" class="empty-state">No members yet. Add a user above.</td></tr>';
+      tbody.innerHTML = empty;
+      if (mobile) mobile.innerHTML = '<p class="empty-state">No members yet. Add a user above.</p>';
       return;
     }
 
+    let mobileHtml = '';
     tbody.innerHTML = membersCache.map(member => {
       const user = member.user;
       const primaryBadge = member.is_primary
         ? '<span class="badge badge-success">★ Default</span>'
         : `<button type="button" class="secondary small" onclick="window.setMemberPrimary('${member.id}')">Set default</button>`;
+      const accessSelect = `<select class="team-access-select" onchange="window.updateMemberAccess('${member.id}', this.value)">${accessLevelOptions(member.access_level || 'member')}</select>`;
+
+      mobileHtml += `
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${escapeHtml(user?.name || '—')}</span>
+          </div>
+          ${cardRow('Email', escapeHtml(user?.email || '—'))}
+          <div class="data-card-row">
+            <span class="data-card-row-label">Access</span>
+            <span class="data-card-row-value">${accessSelect}</span>
+          </div>
+          <div class="data-card-row">
+            <span class="data-card-row-label">Default</span>
+            <span class="data-card-row-value">${primaryBadge}</span>
+          </div>
+          <div class="data-card-actions">
+            <button type="button" class="danger small" onclick="window.removeTeamMember('${member.id}')">Remove</button>
+          </div>
+        </article>
+      `;
 
       return `
         <tr>
@@ -392,11 +439,7 @@ async function loadTeamMembers(teamId) {
             <strong>${escapeHtml(user?.name || '—')}</strong><br>
             <span style="font-size:0.85em;color:var(--text-secondary);">${escapeHtml(user?.email || '')}</span>
           </td>
-          <td data-label="Access">
-            <select class="team-access-select" onchange="window.updateMemberAccess('${member.id}', this.value)">
-              ${accessLevelOptions(member.access_level || 'member')}
-            </select>
-          </td>
+          <td data-label="Access">${accessSelect}</td>
           <td data-label="Default">${primaryBadge}</td>
           <td data-label="Actions" class="action-buttons">
             <button type="button" class="danger small" onclick="window.removeTeamMember('${member.id}')">Remove</button>
@@ -404,9 +447,11 @@ async function loadTeamMembers(teamId) {
         </tr>
       `;
     }).join('');
+    if (mobile) mobile.innerHTML = mobileHtml;
   } catch (err) {
     console.error('Load members error:', err);
     tbody.innerHTML = `<tr><td colspan="4" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</td></tr>`;
+    if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -650,7 +695,7 @@ export function getTeamRosterPage() {
           </div>
         </div>
       </form>
-      <div class="table-container">
+      <div class="table-container show-desktop">
         <table class="table-stack-mobile team-mgmt-table">
           <thead>
             <tr>
@@ -664,6 +709,7 @@ export function getTeamRosterPage() {
           </tbody>
         </table>
       </div>
+      <div id="rosterMembersMobile" class="show-mobile data-card-list"></div>
     </div>
   `;
 }
@@ -686,6 +732,7 @@ export async function initTeamRosterPage() {
 
 async function loadRosterMembers(teamId) {
   const tbody = document.getElementById('rosterMembersBody');
+  const mobile = document.getElementById('rosterMembersMobile');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Loading…</td></tr>';
 
@@ -704,33 +751,51 @@ async function loadRosterMembers(teamId) {
     }));
 
     if (!membersCache.length) {
-      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No members yet.</td></tr>';
+      const empty = '<tr><td colspan="3" class="empty-state">No members yet.</td></tr>';
+      tbody.innerHTML = empty;
+      if (mobile) mobile.innerHTML = '<p class="empty-state">No members yet.</p>';
       return;
     }
 
+    let mobileHtml = '';
     tbody.innerHTML = membersCache.map(member => {
       const user = member.user;
       const isSelf = member.user_id === state.user?.id;
+      const accessSelect = `<select class="team-access-select" onchange="window.updateRosterMemberAccess('${member.id}', this.value)" ${isSelf ? 'disabled' : ''}>${ohtAccessLevelOptions(member.access_level || 'member')}</select>`;
+
+      mobileHtml += `
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${escapeHtml(user?.name || '—')}</span>
+            ${isSelf ? '<span class="badge badge-info">You</span>' : ''}
+          </div>
+          ${cardRow('Email', escapeHtml(user?.email || ''))}
+          <div class="data-card-row">
+            <span class="data-card-row-label">Access</span>
+            <span class="data-card-row-value">${accessSelect}</span>
+          </div>
+          ${!isSelf ? `<div class="data-card-actions"><button type="button" class="danger small" onclick="window.removeRosterMember('${member.id}')">Remove</button></div>` : ''}
+        </article>
+      `;
+
       return `
         <tr>
           <td data-label="User">
             <strong>${escapeHtml(user?.name || '—')}</strong><br>
             <span style="font-size:0.85em;color:var(--text-secondary);">${escapeHtml(user?.email || '')}</span>
           </td>
-          <td data-label="Access">
-            <select class="team-access-select" onchange="window.updateRosterMemberAccess('${member.id}', this.value)" ${isSelf ? 'disabled' : ''}>
-              ${ohtAccessLevelOptions(member.access_level || 'member')}
-            </select>
-          </td>
+          <td data-label="Access">${accessSelect}</td>
           <td data-label="Actions" class="action-buttons">
             ${isSelf ? '<span class="badge badge-info">You</span>' : `<button type="button" class="danger small" onclick="window.removeRosterMember('${member.id}')">Remove</button>`}
           </td>
         </tr>
       `;
     }).join('');
+    if (mobile) mobile.innerHTML = mobileHtml;
   } catch (err) {
     console.error('Load roster error:', err);
     tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}. Run migration 016 if policies are missing.</td></tr>`;
+    if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</p>`;
   }
 }
 

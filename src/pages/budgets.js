@@ -19,6 +19,9 @@ import {
   buildBudgetTypeOptionsHtml
 } from '../utils/budgetTypes.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
+import { approvalStatusBadge } from '../utils/approvalConstants.js';
+import { canSubmitBudgetApproval } from '../utils/approvalAccess.js';
+import { submitBudgetForApproval } from '../utils/approvalEngine.js';
 
 let calendarEntriesCache = [];
 let editTemplateRowKeys = null;
@@ -770,6 +773,8 @@ export function getViewBudgetsPage() {
 }
 
 export async function initViewBudgetsPage() {
+  window.submitBudgetApproval = submitBudgetApprovalHandler;
+
   const container = document.getElementById('budgetsContainer');
   if (!container) {
     setTimeout(() => window.initViewBudgetsPage(), 50);
@@ -870,6 +875,16 @@ function renderBudgetSummaryTable(container, budgets) {
     else if (budgetStatus === 'archive') statusBadge = '<span class="badge badge-info">Archive</span>';
     else statusBadge = '<span class="badge badge-success">Current</span>';
 
+    const apBadge = approvalStatusBadge(budget.approval_status);
+    const approvalBadge = `<span class="badge ${apBadge.class}">${apBadge.label}</span>`;
+    const combinedStatus = `${statusBadge} ${approvalBadge}`;
+
+    const apStatus = String(budget.approval_status || 'DRAFT').toUpperCase();
+    const canSubmitApproval = canSubmitBudgetApproval() && (apStatus === 'DRAFT' || apStatus === 'REJECTED');
+    const submitBtn = canSubmitApproval
+      ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
+      : '';
+
     let healthBadge = '';
     if (isOver) healthBadge = '<span class="badge badge-danger">Over Budget</span>';
     else if (totalBudgetedUSD > 0 && totalSpentUSD / totalBudgetedUSD > 0.9) healthBadge = '<span class="badge badge-warning">Near Limit</span>';
@@ -886,12 +901,13 @@ function renderBudgetSummaryTable(container, budgets) {
     tableRows += `
       <tr style="cursor: pointer;" onclick="window.viewBudgetDetail('${budget.id}')">
         <td data-label="Budget"><strong>${budget.name}</strong><br><span style="font-size:0.8em;">${typeBadge}</span></td>
-        <td data-label="Status">${statusBadge}</td>
+        <td data-label="Status">${combinedStatus}</td>
         <td data-label="Budgeted">$${totalBudgetedUSD.toFixed(2)}</td>
         <td data-label="Spent">$${totalSpentUSD.toFixed(2)}</td>
         <td data-label="Remaining" class="${isOver ? 'negative' : 'positive'}" style="font-weight: bold;">$${remaining.toFixed(2)}</td>
         <td data-label="Health">${healthBadge}</td>
         <td data-label="Actions" class="action-buttons">
+          ${submitBtn}
           ${canEdit ? btnIconEdit(`event.stopPropagation(); window.editBudgetPlan('${budget.id}')`) : ''}
           ${canDelete ? btnIconDelete(`event.stopPropagation(); window.deleteBudgetPlan('${budget.id}')`) : ''}
         </td>
@@ -903,12 +919,13 @@ function renderBudgetSummaryTable(container, budgets) {
         <div class="data-card-top">
           <span class="data-card-title">${budget.name}</span>
           <span class="action-icon-group" onclick="event.stopPropagation()">
+            ${submitBtn}
             ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
             ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
           </span>
         </div>
         ${cardRow('Type', typeBadge)}
-        ${cardRow('Status', statusBadge)}
+        ${cardRow('Status', combinedStatus)}
         ${cardRow('Budgeted', `$${totalBudgetedUSD.toFixed(2)}`)}
         ${cardRow('Spent', `$${totalSpentUSD.toFixed(2)}`)}
         ${cardRow('Remaining', `$${remaining.toFixed(2)}`, isOver ? 'negative' : 'positive')}
@@ -982,6 +999,16 @@ function renderBudgetDetailCards(container, budgets) {
     else if (budgetStatus === 'archive') statusBadge = '<span class="badge badge-info">Archive</span>';
     else statusBadge = '<span class="badge badge-success">Current</span>';
 
+    const apBadge = approvalStatusBadge(budget.approval_status);
+    const approvalBadge = `<span class="badge ${apBadge.class}">${apBadge.label}</span>`;
+    const combinedStatus = `${statusBadge} ${approvalBadge}`;
+
+    const apStatus = String(budget.approval_status || 'DRAFT').toUpperCase();
+    const canSubmitApproval = canSubmitBudgetApproval() && (apStatus === 'DRAFT' || apStatus === 'REJECTED');
+    const submitBtn = canSubmitApproval
+      ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
+      : '';
+
     (budget.categories || []).forEach(cat => {
       const budgetedUSD = cat.usdAmount || cat.usd_amount || 0;
       totalBudgetedUSD += budgetedUSD;
@@ -1027,8 +1054,9 @@ function renderBudgetDetailCards(container, budgets) {
     html += `
       <div class="budget-plan-card">
         <h3>
-          <span>${budget.name} ${statusBadge} <span class="badge badge-secondary">${typeLabel}</span></span>
+          <span>${budget.name} ${combinedStatus} <span class="badge badge-secondary">${typeLabel}</span></span>
           <span class="action-icon-group">
+            ${submitBtn ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit</button>` : ''}
             ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
             ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
           </span>
@@ -1058,6 +1086,32 @@ function renderBudgetDetailCards(container, budgets) {
   });
 
   container.innerHTML = html;
+}
+
+async function submitBudgetApprovalHandler(budgetId) {
+  const budget = (state.budgetPlans || []).find(b => b.id === budgetId);
+  if (!budget) {
+    showToast('Budget not found', 'error');
+    return;
+  }
+  if (!canSubmitBudgetApproval()) {
+    showToast('Only OPL can submit budgets for approval', 'warning');
+    return;
+  }
+
+  try {
+    if (!state.user?.request_alias) {
+      showToast('Set your request alias in My Profile first', 'warning');
+      window.showPage?.('profile');
+      return;
+    }
+
+    const request = await submitBudgetForApproval(budget);
+    showToast(`Submitted as ${request.request_number}`, 'success');
+    await initViewBudgetsPage();
+  } catch (err) {
+    showToast(err.message || 'Submit failed', 'error');
+  }
 }
 
 window.viewBudgetDetail = function(budgetId) {

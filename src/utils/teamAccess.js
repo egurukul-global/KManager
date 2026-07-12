@@ -1,5 +1,6 @@
 import { state, computePermissions } from '../state.js';
 import { supabaseClient } from '../db.js';
+import { teamAccessLabel } from './roleLabels.js';
 
 /** Load teams the user can access into state.teams */
 export async function loadAccessibleTeams(userId = state.user?.id) {
@@ -14,7 +15,7 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
     console.warn('get_accessible_teams error:', teamsError);
     const { data: fallbackTeams } = await supabaseClient
       .from('user_teams')
-      .select('team_id, is_primary, access_level, teams:team_id(id, name)')
+      .select('team_id, is_primary, access_level, teams:team_id(id, name, is_personal_team)')
       .eq('user_id', userId);
 
     if (fallbackTeams) {
@@ -22,7 +23,8 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
         team_id: t.team_id,
         team_name: t.teams?.name || 'Unknown',
         is_primary: t.is_primary,
-        access_level: t.access_level || 'member'
+        access_level: t.access_level || 'member',
+        is_personal_team: !!t.teams?.is_personal_team
       }));
     }
   } else {
@@ -36,6 +38,22 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
       seenTeamIds.add(team.team_id);
       state.teams.push(team);
     }
+  }
+
+  const needsPersonalFlag = state.teams.some(t => t.is_personal_team === undefined);
+  if (needsPersonalFlag && state.teams.length) {
+    const teamIds = state.teams.map(t => t.team_id);
+    const { data: teamMeta } = await supabaseClient
+      .from('teams')
+      .select('id, is_personal_team')
+      .in('id', teamIds);
+
+    const metaMap = Object.fromEntries((teamMeta || []).map(t => [t.id, !!t.is_personal_team]));
+    state.teams.forEach(t => {
+      if (t.is_personal_team === undefined) {
+        t.is_personal_team = !!metaMap[t.team_id];
+      }
+    });
   }
 
   return state.teams;
@@ -74,14 +92,17 @@ export function populateTeamSwitcher() {
   });
 }
 
+export function updateAccessBadge() {
+  const accessBadge = document.getElementById('userAccessLevel');
+  if (accessBadge) {
+    accessBadge.textContent = teamAccessLabel(state.userTeamAccess?.access_level);
+  }
+}
+
 export async function refreshAccessibleTeams() {
   const preferredTeamId = state.currentTeam?.team_id;
   await loadAccessibleTeams();
   syncCurrentTeamAfterReload(preferredTeamId);
   populateTeamSwitcher();
-
-  const accessBadge = document.getElementById('userAccessLevel');
-  if (accessBadge) {
-    accessBadge.textContent = (state.userTeamAccess.access_level || 'member').toUpperCase();
-  }
+  updateAccessBadge();
 }

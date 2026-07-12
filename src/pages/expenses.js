@@ -619,7 +619,7 @@ export function getExpenseManagerPage() {
         <button type="button" class="secondary" style="margin-top:12px;" onclick="window.resetExpenseFilters()">Reset filters</button>
       </div>
       ${state.canManageExpenses ? `
-      <div class="bulk-actions" id="expBulkActions">
+      <div class="bulk-actions show-desktop" id="expBulkActions">
         <span id="expSelectedCount">0 selected</span>
         <button type="button" class="info" id="expEditSelectedBtn" disabled onclick="window.editSelectedExpense()">Edit selected</button>
         <button type="button" class="danger" onclick="window.deleteSelectedExpenses()">Delete selected</button>

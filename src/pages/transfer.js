@@ -27,6 +27,7 @@ import {
   cancelPendingTransfer,
   fetchSentTransfers
 } from '../utils/transferActions.js';
+import { createTransferApprovalRequest } from '../utils/approvalEngine.js';
 
 let teamBucketsCache = [];
 let exchangeRatesCache = [];
@@ -268,7 +269,7 @@ export function getTransferFundsPage() {
           </select>
         </div>
       </div>
-      <div class="table-container">
+      <div class="table-container show-desktop">
         <table class="table-stack-mobile transfer-history-table">
           <thead>
             <tr>
@@ -286,6 +287,7 @@ export function getTransferFundsPage() {
           </tbody>
         </table>
       </div>
+      <div id="trSentMobileList" class="show-mobile data-card-list"></div>
     </div>
   `;
 }
@@ -340,6 +342,7 @@ function onTransferDestFilterChange() {
 
 async function refreshSentTransfersList() {
   const tbody = document.getElementById('trSentListBody');
+  const mobile = document.getElementById('trSentMobileList');
   if (!tbody) return;
   const teamId = state.currentTeam?.team_id;
   const statusFilter = document.getElementById('trStatusFilter')?.value || '';
@@ -349,20 +352,47 @@ async function refreshSentTransfersList() {
 
     if (!sentTransfersCache.length) {
       tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No sent transfers yet.</td></tr>';
+      if (mobile) mobile.innerHTML = '<p class="empty-state">No sent transfers yet.</p>';
       return;
     }
 
+    let mobileHtml = '';
     tbody.innerHTML = sentTransfersCache.map(t => {
       const src = getBucketById(t.from_bucket_id);
       const dest = getBucketById(t.to_bucket_id);
       const badge = getTransferStatusBadge(t.status);
       const canCancel = t.status === TRANSFER_STATUS.PENDING;
+      const amountStr = `${parseFloat(t.amount).toFixed(2)} ${escapeHtml(t.currency || '')}`;
+
+      mobileHtml += `
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${escapeHtml(dest?.name || '—')}</span>
+            <span class="badge ${badge.class}">${badge.label}</span>
+          </div>
+          <div class="data-card-row">
+            <span class="data-card-row-label">Amount</span>
+            <span class="data-card-row-value">${amountStr}</span>
+          </div>
+          <div class="data-card-row">
+            <span class="data-card-row-label">From</span>
+            <span class="data-card-row-value">${escapeHtml(src?.name || '—')}</span>
+          </div>
+          <div class="data-card-row">
+            <span class="data-card-row-label">Date</span>
+            <span class="data-card-row-value">${escapeHtml(t.date)}</span>
+          </div>
+          ${t.description ? `<div class="data-card-row"><span class="data-card-row-label">Memo</span><span class="data-card-row-value">${escapeHtml(t.description)}</span></div>` : ''}
+          ${canCancel ? `<div class="data-card-actions"><button type="button" class="danger small" onclick="window.cancelSentTransfer('${t.id}')">Cancel</button></div>` : ''}
+        </article>
+      `;
+
       return `
         <tr>
           <td data-label="Date">${escapeHtml(t.date)}</td>
           <td data-label="From">${escapeHtml(src?.name || '—')}</td>
           <td data-label="To">${escapeHtml(dest?.name || '—')}</td>
-          <td data-label="Amount">${parseFloat(t.amount).toFixed(2)} ${escapeHtml(t.currency || '')}</td>
+          <td data-label="Amount">${amountStr}</td>
           <td data-label="Memo">${escapeHtml(t.description || '')}</td>
           <td data-label="Status"><span class="badge ${badge.class}">${badge.label}</span></td>
           <td data-label="Actions" class="action-buttons">
@@ -371,9 +401,11 @@ async function refreshSentTransfersList() {
         </tr>
       `;
     }).join('');
+    if (mobile) mobile.innerHTML = mobileHtml;
   } catch (err) {
     console.error('Load sent transfers:', err);
     tbody.innerHTML = `<tr><td colspan="7" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</td></tr>`;
+    if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -683,6 +715,12 @@ async function executeFundsTransfer(e) {
     await auditLog('INSERT', saved.id, null, saved);
 
     if (flow.status === TRANSFER_STATUS.PENDING) {
+      if (crossTeam) {
+        const approvalReq = await createTransferApprovalRequest(saved);
+        if (!approvalReq) {
+          showToast('Transfer sent — approval tracking needs a request alias in My Profile', 'warning');
+        }
+      }
       showToast(crossTeam ? 'Cross-team transfer sent — awaiting OHF approval' : 'Transfer sent — waiting for confirmation', 'success');
     } else {
       showToast(`Transferred ${amount.toFixed(2)} ${srcCurr} successfully`, 'success');

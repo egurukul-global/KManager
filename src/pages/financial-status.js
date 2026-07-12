@@ -15,6 +15,12 @@ import {
   bucketScopeLabel,
   formatDifference
 } from '../utils/financialStatusHelpers.js';
+import {
+  bucketsForReconcileSubmit,
+  bucketsRequiredForTeamReconcile,
+  computeTeamReconcileProgress
+} from '../utils/reconcileScope.js';
+import { isOplOrAbove } from '../utils/roleLabels.js';
 
 let cachedBuckets = [];
 let cachedIncome = [];
@@ -90,8 +96,8 @@ export function getFinancialStatusPage() {
 
     <div class="card">
       <h2>Reconciliation History</h2>
-      <div class="table-container">
-        <table>
+      <div class="table-container show-desktop">
+        <table class="table-stack-mobile">
           <thead>
             <tr><th>Date</th><th>Buckets</th><th>Submitted</th></tr>
           </thead>
@@ -100,6 +106,7 @@ export function getFinancialStatusPage() {
           </tbody>
         </table>
       </div>
+      <div id="reconHistoryMobile" class="show-mobile data-card-list"></div>
       <div id="reconHistoryDetail" style="display:none; margin-top:20px;"></div>
     </div>
   `;
@@ -115,6 +122,7 @@ export async function initFinancialStatusPage() {
   window.onReconcileActualInput = onReconcileActualInput;
   window.viewReconciliationHistory = viewReconciliationHistory;
   window.hideReconciliationHistory = hideReconciliationHistory;
+  window.toggleFinStatusDetail = toggleFinStatusDetail;
 
   const teamId = state.currentTeam?.team_id;
   if (!teamId) return;
@@ -176,6 +184,19 @@ function getBucketsForFilter(scope, sourceId) {
   return buckets;
 }
 
+function fmtAmount(n) {
+  return (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function toggleFinStatusDetail(index) {
+  const el = document.getElementById(`finStatusDetail_${index}`);
+  if (el) {
+    el.classList.toggle('is-open');
+    const trigger = el.closest('.data-card--expandable')?.querySelector('.data-card-expand-trigger');
+    if (trigger) trigger.setAttribute('aria-expanded', el.classList.contains('is-open') ? 'true' : 'false');
+  }
+}
+
 function generateFinancialStatus() {
   const scope = getSelectedScope();
   const fromDate = document.getElementById('statusFrom')?.value || '';
@@ -201,9 +222,55 @@ function generateFinancialStatus() {
   }
 
   let grandUsd = 0;
-  let html = `
+  let tableRows = '';
+  let mobileCards = '';
+
+  reportRows.forEach((row, index) => {
+    if (row.closingUsd !== null) grandUsd += row.closingUsd;
+    const closingClass = row.closing < 0 ? 'negative' : 'positive';
+    const typeBadge = row.scopeLabel === 'Personal' ? 'warning' : 'info';
+
+    tableRows += `
+      <tr>
+        <td data-label="Type"><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
+        <td data-label="Source"><strong>${row.bucketName}</strong></td>
+        <td data-label="Currency"><span class="badge badge-info">${row.currency}</span></td>
+        <td data-label="Opening">${fmtAmount(row.opening)}</td>
+        <td data-label="+ Income" class="positive">+${fmtAmount(row.income)}</td>
+        <td data-label="+ Transfers In" class="positive">+${fmtAmount(row.transfersIn)}</td>
+        <td data-label="- Expenses" class="negative">-${fmtAmount(row.expenses)}</td>
+        <td data-label="- Transfers Out" class="negative">-${fmtAmount(row.transfersOut)}</td>
+        <td data-label="Closing" class="${closingClass}"><strong>${fmtAmount(row.closing)}</strong></td>
+        <td data-label="USD Equiv" style="color:var(--primary);">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
+      </tr>
+    `;
+
+    mobileCards += `
+      <article class="data-card data-card--compact data-card--expandable">
+        <button type="button" class="data-card-expand-trigger" onclick="window.toggleFinStatusDetail(${index})" aria-expanded="false" aria-controls="finStatusDetail_${index}">
+          <div class="data-card-top">
+            <span class="data-card-title">${row.bucketName}</span>
+            <span class="badge badge-${typeBadge}">${row.scopeLabel}</span>
+          </div>
+          ${cardRow('Closing', fmtAmount(row.closing), closingClass)}
+          ${cardRow('USD Equiv', row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—')}
+          <span class="data-card-expand-hint">Tap for full breakdown</span>
+        </button>
+        <div id="finStatusDetail_${index}" class="data-card-detail">
+          ${cardRow('Currency', row.currency)}
+          ${cardRow('Opening', fmtAmount(row.opening))}
+          ${cardRow('+ Income', `+${fmtAmount(row.income)}`, 'positive')}
+          ${cardRow('+ Transfers In', `+${fmtAmount(row.transfersIn)}`, 'positive')}
+          ${cardRow('- Expenses', `-${fmtAmount(row.expenses)}`, 'negative')}
+          ${cardRow('- Transfers Out', `-${fmtAmount(row.transfersOut)}`, 'negative')}
+        </div>
+      </article>
+    `;
+  });
+
+  container.innerHTML = `
     <h3 style="margin-top:16px;">Financial Status as of ${asOfDate}</h3>
-    <div class="table-container">
+    <div class="table-container show-desktop">
       <table class="status-table table-stack-mobile">
         <thead>
           <tr>
@@ -212,42 +279,24 @@ function generateFinancialStatus() {
           </tr>
         </thead>
         <tbody>
-  `;
-
-  reportRows.forEach(row => {
-    if (row.closingUsd !== null) grandUsd += row.closingUsd;
-    const closingClass = row.closing < 0 ? 'negative' : 'positive';
-    const typeBadge = row.scopeLabel === 'Personal' ? 'warning' : 'info';
-    html += `
-      <tr>
-        <td data-label="Type"><span class="badge badge-${typeBadge}">${row.scopeLabel}</span></td>
-        <td data-label="Source"><strong>${row.bucketName}</strong></td>
-        <td data-label="Currency"><span class="badge badge-info">${row.currency}</span></td>
-        <td data-label="Opening">${row.opening.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td data-label="+ Income" class="positive">+${row.income.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td data-label="+ Transfers In" class="positive">+${row.transfersIn.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td data-label="- Expenses" class="negative">-${row.expenses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td data-label="- Transfers Out" class="negative">-${row.transfersOut.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-        <td data-label="Closing" class="${closingClass}"><strong>${row.closing.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
-        <td data-label="USD Equiv" style="color:var(--primary);">${row.closingUsd !== null ? `$${row.closingUsd.toFixed(2)}` : '—'}</td>
-      </tr>
-    `;
-  });
-
-  html += `
-      <tr class="status-total">
-        <td data-label="Total USD Equivalent" colspan="9" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
-        <td data-label="Amount" style="color:var(--primary);"><strong>$${grandUsd.toFixed(2)}</strong></td>
-      </tr>
-    </tbody></table></div>
+          ${tableRows}
+          <tr class="status-total">
+            <td data-label="Total USD Equivalent" colspan="9" style="text-align:right;"><strong>Total USD Equivalent:</strong></td>
+            <td data-label="Amount" style="color:var(--primary);"><strong>$${grandUsd.toFixed(2)}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="show-mobile data-card-list">${mobileCards}</div>
+    <article class="show-mobile data-card data-card--total">
+      ${cardRow('Total USD Equivalent', `$${grandUsd.toFixed(2)}`)}
+    </article>
     <div class="recon-help-box">
       ${state.canSubmitReconciliation
     ? '<strong>How to reconcile:</strong> Use the <strong>Reconcile</strong> button below to enter actual counts and submit one daily reconciliation.'
     : '<strong>Read-only:</strong> Reconciliation history is below. Submitting reconciliations requires Member, Lead, or Team Admin access.'}
     </div>
   `;
-
-  container.innerHTML = html;
 }
 
 function resetFinancialStatus() {
@@ -272,13 +321,11 @@ function buildReconcileRows() {
   const toDate = lastFilters.toDate || today;
   const rows = [];
 
-  filterBucketsByScope(cachedBuckets, 'all').forEach(bucket => {
+  bucketsForReconcileSubmit(cachedBuckets).forEach(bucket => {
     const row = computeBucketStatusRow(
       bucket, fromDate, toDate, cachedIncome, cachedExpenses, cachedTransfers, cachedBuckets, cachedRates
     );
-    if (bucketHasMoney(row)) {
-      rows.push({ ...row, bucket, scopeLabel: bucketScopeLabel(bucket) });
-    }
+    rows.push({ ...row, bucket, scopeLabel: bucketScopeLabel(bucket) });
   });
 
   return rows;
@@ -489,8 +536,43 @@ async function loadReconciliationStatus() {
 
     const status = getDailyReconciliationStatus({ submittedToday, required }, today);
 
+    let html = `<div class="dash-alert-body"><strong>Daily reconciliation</strong><span>${status.message}</span></div>`;
     banner.className = `dash-alert dash-alert--${status.level}`;
-    banner.innerHTML = `<div class="dash-alert-body"><strong>Daily reconciliation</strong><span>${status.message}</span></div>`;
+
+    const level = String(state.userTeamAccess?.access_level || 'member').toLowerCase().trim();
+    if (isOplOrAbove(level)) {
+      const teamRequired = bucketsRequiredForTeamReconcile(cachedBuckets, teamId);
+      if (teamRequired.length > 0) {
+        const { data: subsWithLines } = await supabaseClient
+          .from('reconciliation_submissions')
+          .select('reconciliation_lines ( bucket_id )')
+          .eq('team_id', teamId)
+          .eq('reconciliation_date', today)
+          .eq('is_deleted', false);
+
+        const reconciledIds = [];
+        (subsWithLines || []).forEach(sub => {
+          (sub.reconciliation_lines || []).forEach(line => reconciledIds.push(line.bucket_id));
+        });
+
+        const progress = computeTeamReconcileProgress(teamRequired, reconciledIds);
+        let pendingNames = '';
+        if (progress.pendingOwnerIds.length) {
+          const { data: users } = await supabaseClient
+            .from('users')
+            .select('id, name')
+            .in('id', progress.pendingOwnerIds);
+          pendingNames = (users || []).map(u => u.name || u.id.slice(0, 8)).join(', ');
+        }
+
+        const progressLevel = progress.pending === 0 ? 'success' : 'warning';
+        html += `<div class="dash-alert dash-alert--${progressLevel}" style="margin-top:8px;">
+          <div class="dash-alert-body"><strong>Team progress</strong><span>${progress.label} reconciled today${pendingNames ? ` — awaiting: ${pendingNames}` : ''}</span></div>
+        </div>`;
+      }
+    }
+
+    banner.innerHTML = html;
   } catch (err) {
     banner.className = 'dash-alert dash-alert--danger';
     banner.innerHTML = `<div class="dash-alert-body"><strong>Status unavailable</strong><span>${err.message}. Run migration 005 on Supabase.</span></div>`;
@@ -500,6 +582,7 @@ async function loadReconciliationStatus() {
 async function loadReconciliationHistory() {
   const teamId = state.currentTeam?.team_id;
   const tbody = document.getElementById('reconHistoryList');
+  const mobile = document.getElementById('reconHistoryMobile');
   if (!teamId || !tbody) return;
 
   try {
@@ -518,22 +601,37 @@ async function loadReconciliationHistory() {
     if (error) throw error;
 
     if (!data?.length) {
-      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No reconciliation records yet.</td></tr>';
+      const empty = '<tr><td colspan="3" class="empty-state">No reconciliation records yet.</td></tr>';
+      tbody.innerHTML = empty;
+      if (mobile) mobile.innerHTML = '<p class="empty-state">No reconciliation records yet.</p>';
       return;
     }
 
+    let mobileHtml = '';
     tbody.innerHTML = data.map(r => {
       const lineCount = r.reconciliation_lines?.length || 0;
+      const submitted = new Date(r.created_at).toLocaleString();
+      mobileHtml += `
+        <article class="data-card data-card--compact data-card--clickable" data-recon-id="${r.id}" onclick="window.viewReconciliationHistory('${r.id}')">
+          <div class="data-card-top">
+            <span class="data-card-title">${formatDisplayDate(r.reconciliation_date)}</span>
+            <span class="badge badge-info">${lineCount} bucket${lineCount === 1 ? '' : 's'}</span>
+          </div>
+          ${cardRow('Submitted', submitted)}
+        </article>
+      `;
       return `
         <tr class="row-clickable" data-recon-id="${r.id}" onclick="window.viewReconciliationHistory('${r.id}')">
-          <td>${formatDisplayDate(r.reconciliation_date)}</td>
-          <td>${lineCount} bucket${lineCount === 1 ? '' : 's'}</td>
-          <td>${new Date(r.created_at).toLocaleString()}</td>
+          <td data-label="Date">${formatDisplayDate(r.reconciliation_date)}</td>
+          <td data-label="Buckets">${lineCount} bucket${lineCount === 1 ? '' : 's'}</td>
+          <td data-label="Submitted">${submitted}</td>
         </tr>
       `;
     }).join('');
+    if (mobile) mobile.innerHTML = mobileHtml;
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="3" class="empty-state" style="color:#dc3545;">${err.message}</td></tr>`;
+    if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${err.message}</p>`;
   }
 }
 
@@ -551,7 +649,7 @@ async function viewReconciliationHistory(submissionId) {
   const detail = document.getElementById('reconHistoryDetail');
   if (!detail) return;
 
-  document.querySelectorAll('#reconHistoryList tr').forEach(row => {
+  document.querySelectorAll('#reconHistoryList tr, #reconHistoryMobile .data-card').forEach(row => {
     row.classList.toggle('selected', row.dataset.reconId === submissionId);
   });
 
@@ -594,32 +692,53 @@ async function viewReconciliationHistory(submissionId) {
 
     let grandUsd = 0;
     let rowsHtml = '';
+    let mobileLines = '';
 
-    lines.forEach(line => {
+    lines.forEach((line, idx) => {
       if (line.usd_equivalent !== null && line.usd_equivalent !== undefined) {
         grandUsd += parseFloat(line.usd_equivalent) || 0;
       }
       const scopeLabel = getBucketScopeLabel(line.bucket_id);
       const typeBadge = scopeLabel === 'Personal' ? 'warning' : 'info';
       const { text: diffText, level: diffLevel } = formatStoredDifference(line);
-      const fmt = (n) => (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
       rowsHtml += `
         <tr>
           <td data-label="Type"><span class="badge badge-${typeBadge}">${scopeLabel}</span></td>
           <td data-label="Bucket"><strong>${line.bucket_name}</strong></td>
           <td data-label="Currency">${line.currency}</td>
-          <td data-label="Opening">${fmt(line.opening_balance)}</td>
-          <td data-label="+ Income" class="positive">+${fmt(line.income_amount)}</td>
-          <td data-label="+ Transfers In" class="positive">+${fmt(line.transfers_in)}</td>
-          <td data-label="- Expenses" class="negative">-${fmt(line.expenses_amount)}</td>
-          <td data-label="- Transfers Out" class="negative">-${fmt(line.transfers_out)}</td>
-          <td data-label="Closing"><strong>${fmt(line.closing_balance)}</strong></td>
-          <td data-label="Actual"><strong>${fmt(line.actual_balance)}</strong></td>
+          <td data-label="Opening">${fmtAmount(line.opening_balance)}</td>
+          <td data-label="+ Income" class="positive">+${fmtAmount(line.income_amount)}</td>
+          <td data-label="+ Transfers In" class="positive">+${fmtAmount(line.transfers_in)}</td>
+          <td data-label="- Expenses" class="negative">-${fmtAmount(line.expenses_amount)}</td>
+          <td data-label="- Transfers Out" class="negative">-${fmtAmount(line.transfers_out)}</td>
+          <td data-label="Closing"><strong>${fmtAmount(line.closing_balance)}</strong></td>
+          <td data-label="Actual"><strong>${fmtAmount(line.actual_balance)}</strong></td>
           <td data-label="Difference" class="${diffLevel}">${diffText}</td>
-          <td data-label="USD Equiv" style="color:var(--primary);">${line.usd_equivalent !== null && line.usd_equivalent !== undefined ? `$${fmt(line.usd_equivalent)}` : '—'}</td>
+          <td data-label="USD Equiv" style="color:var(--primary);">${line.usd_equivalent !== null && line.usd_equivalent !== undefined ? `$${fmtAmount(line.usd_equivalent)}` : '—'}</td>
           <td data-label="Comments">${line.comments || '—'}</td>
         </tr>
+      `;
+
+      mobileLines += `
+        <article class="data-card data-card--compact data-card--expandable">
+          <button type="button" class="data-card-expand-trigger" onclick="window.toggleFinStatusDetail('recon_${idx}')" aria-controls="finStatusDetail_recon_${idx}">
+            <div class="data-card-top">
+              <span class="data-card-title">${line.bucket_name}</span>
+              <span class="badge badge-${typeBadge}">${scopeLabel}</span>
+            </div>
+            ${cardRow('Actual', fmtAmount(line.actual_balance))}
+            ${cardRow('Difference', diffText, diffLevel)}
+            <span class="data-card-expand-hint">Tap for breakdown</span>
+          </button>
+          <div id="finStatusDetail_recon_${idx}" class="data-card-detail">
+            ${cardRow('Closing', fmtAmount(line.closing_balance))}
+            ${cardRow('Opening', fmtAmount(line.opening_balance))}
+            ${cardRow('+ Income', `+${fmtAmount(line.income_amount)}`, 'positive')}
+            ${cardRow('- Expenses', `-${fmtAmount(line.expenses_amount)}`, 'negative')}
+            ${line.comments ? cardRow('Comments', line.comments) : ''}
+          </div>
+        </article>
       `;
     });
 
@@ -632,7 +751,7 @@ async function viewReconciliationHistory(submissionId) {
         <p style="color:var(--text-secondary); font-size:0.9em; margin-bottom:12px;">
           Submitted ${new Date(data.created_at).toLocaleString()} (read-only)
         </p>
-        <div class="table-container">
+        <div class="table-container show-desktop">
           <table class="status-table recon-table table-stack-mobile">
             <thead>
               <tr>
@@ -651,6 +770,10 @@ async function viewReconciliationHistory(submissionId) {
             </tbody>
           </table>
         </div>
+        <div class="show-mobile data-card-list">${mobileLines}</div>
+        <article class="show-mobile data-card data-card--total">
+          ${cardRow('Total USD Equivalent', `$${grandUsd.toFixed(2)}`)}
+        </article>
       </div>
     `;
   } catch (err) {

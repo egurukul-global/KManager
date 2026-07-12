@@ -3,13 +3,15 @@ import { state } from '../state.js';
 import { sbSelect, sbInsert, sbUpdate, sbSoftDelete, sbRestore, localGetAll } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { createModal, openModal, closeModal, removeModal } from '../components/modals.js';
-import { btnIconEdit, btnIconDelete } from '../utils/uiHelpers.js';
+import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 import {
   formatBucketBalanceDisplay,
   sumBucketBalancesToUsd,
   formatUsdDisplay
 } from '../utils/currency.js';
 import { hasNonZeroBalance } from '../utils/balanceGuards.js';
+import { filterBucketsForCurrentUser } from '../utils/bucketVisibility.js';
+import { isOpsStaff } from '../utils/roleLabels.js';
 
 let allBuckets = [];
 let exchangeRates = [];
@@ -18,7 +20,7 @@ export function getBucketsPage() {
   return `
     <h1 class="page-title">Money Buckets</h1>
 
-    <div class="card">
+    <div class="card" id="teamBucketsCard">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
         <h2>💰 Team Buckets</h2>
         <div style="display: flex; gap: 10px; align-items: center;">
@@ -66,6 +68,12 @@ export async function initBucketsPage() {
     showDeletedBtn.textContent = state.showDeleted ? '🙈 Hide Deleted' : '👁️ Show Deleted';
   }
 
+  const teamCard = document.getElementById('teamBucketsCard');
+  const level = String(state.userTeamAccess?.access_level || 'member').toLowerCase().trim();
+  if (teamCard) {
+    teamCard.style.display = isOpsStaff(level) ? 'none' : '';
+  }
+
   // Expose functions to window
   window.openBucketModal = openBucketModal;
   window.toggleShowDeletedBuckets = toggleShowDeletedBuckets;
@@ -103,7 +111,7 @@ async function loadBuckets() {
     if (error) throw error;
 
     exchangeRates = (ratesResult.data || []).filter(r => !r.is_deleted);
-    allBuckets = buckets || [];
+    allBuckets = filterBucketsForCurrentUser(buckets || []);
     renderBuckets();
 
   } catch (err) {
@@ -132,7 +140,7 @@ function isDuplicateBucketName(name, excludeId = null) {
 function renderBucketGrid(buckets) {
   if (buckets.length === 0) return '';
 
-  let html = '<div class="bucket-grid">';
+  let html = '<div class="bucket-data-list data-card-list">';
 
   buckets.forEach(bucket => {
     const typeEmoji = {
@@ -148,32 +156,28 @@ function renderBucketGrid(buckets) {
     const isPersonal = !!bucket.owner_user_id;
     const safeName = (bucket.name || '').replace(/'/g, "\\'");
     const display = formatBucketBalanceDisplay(bucket.balance, bucket.currency, exchangeRates);
+    const typeLabel = `${bucket.type?.replace(/_/g, ' ') || 'Other'}${isPersonal ? ' · Personal' : ''}`;
 
     html += `
-      <div class="bucket-card ${isDeleted ? 'deleted' : ''}">
+      <article class="data-card data-card--compact ${isDeleted ? 'data-card--deleted' : ''}">
         ${isDeleted ? '<div class="deleted-banner">DELETED</div>' : ''}
-        <div class="bucket-header">
-          <div class="bucket-header-main">
-            <div class="bucket-name">${typeEmoji} ${bucket.name}</div>
-            <div class="bucket-type">${bucket.type?.replace(/_/g, ' ') || 'Other'}${isPersonal ? ' · Personal' : ''}</div>
-          </div>
-          <div class="bucket-header-end">
+        <div class="data-card-top">
+          <span class="data-card-title">${typeEmoji} ${bucket.name}</span>
+          <span class="action-icon-group">
             <span class="badge badge-info">${bucket.currency || '—'}</span>
-            <span class="action-icon-group">
-              ${canEdit ? btnIconEdit(`window.loadBucketForEdit('${bucket.id}')`) : ''}
-              ${canDelete ? btnIconDelete(`window.confirmDeleteBucket('${bucket.id}', '${safeName}')`) : ''}
-              ${canRestore ? `<button class="btn-icon btn-icon--edit" onclick="window.restoreBucket('${bucket.id}')" title="Restore">↩</button>` : ''}
-            </span>
-          </div>
+            ${canEdit ? btnIconEdit(`window.loadBucketForEdit('${bucket.id}')`) : ''}
+            ${canDelete ? btnIconDelete(`window.confirmDeleteBucket('${bucket.id}', '${safeName}')`) : ''}
+            ${canRestore ? `<button type="button" class="btn-icon btn-icon--edit" onclick="window.restoreBucket('${bucket.id}')" title="Restore" aria-label="Restore">↩</button>` : ''}
+          </span>
         </div>
-        <div class="bucket-balance ${balanceClass}">
-          ${display.primary}${display.suffix}
+        ${cardRow('Type', typeLabel)}
+        <div class="data-card-row">
+          <span class="data-card-row-label">Balance</span>
+          <span class="data-card-row-value ${balanceClass}" style="font-size:1.1em;font-weight:700;">${display.primary}${display.suffix}</span>
         </div>
-        ${display.usdLine ? `<div class="bucket-balance-usd">${display.usdLine}</div>` : ''}
-        <div class="bucket-meta">
-          <span>📅 ${new Date(bucket.created_at).toLocaleDateString()}</span>
-        </div>
-      </div>
+        ${display.usdLine ? cardRow('USD equiv.', display.usdLine) : ''}
+        ${cardRow('Created', new Date(bucket.created_at).toLocaleDateString())}
+      </article>
     `;
   });
 

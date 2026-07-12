@@ -1,4 +1,4 @@
-// ==================== ROLE-BASED NAV VISIBILITY (Phase 3) ====================
+// ==================== ROLE-BASED NAV VISIBILITY (Phase 3 + 4A) ====================
 import { state } from '../state.js';
 
 /** Only system admin bypasses team-level role restrictions. */
@@ -6,25 +6,32 @@ export function isSystemAdmin() {
   return state.user?.role === 'admin';
 }
 
-/** Pages an OTM (team member) may open. Team income/budgets/setup are hidden. */
+/** Pages an OTM (team member / OPS) may open. Team income/budgets/setup are hidden. */
 const OTM_ALLOWED_PAGES = new Set([
   'dashboard',
+  'profile',
+  'approval-portal',
+  'buckets',
   'transfer',
   'my-income',
   'add-expense',
   'expense-manager',
   'generate-receipt',
-  'my-finances'
+  'my-finances',
+  'reconciliation-overview'
 ]);
 
 /** Pages a view-only user may open (read-only team finance). */
 const VIEW_ALLOWED_PAGES = new Set([
   'dashboard',
+  'profile',
+  'approval-portal',
   'view-budgets',
   'income-manager',
   'expense-manager',
   'expense-reports',
   'financial-status',
+  'reconciliation-overview',
   'my-finances',
   'my-income',
   'buckets',
@@ -33,7 +40,6 @@ const VIEW_ALLOWED_PAGES = new Set([
 
 /** Sub-items hidden for OTM inside sections that stay partially visible. */
 const OTM_HIDDEN_PAGES = new Set([
-  'buckets',
   'categories',
   'rates',
   'create-budget',
@@ -76,6 +82,11 @@ export function isViewOnly() {
 export function canAccessPage(pageName) {
   if (isSystemAdmin()) return true;
 
+  if (pageName === 'role-assignments') {
+    const role = String(state.user?.role || 'user').toLowerCase();
+    return ['admin', 'oh', 'caoh'].includes(role);
+  }
+
   const level = teamAccessLevel();
 
   if (level === 'view') {
@@ -114,6 +125,10 @@ export function applyNavPermissions() {
     if (viewOnly && !VIEW_ALLOWED_PAGES.has(page)) hide = true;
     if (oht && OHT_HIDDEN_PAGES.has(page)) hide = true;
     if (page === 'team-roster' && !state.canManageTeamRoster) hide = true;
+    if (page === 'role-assignments') {
+      const role = String(state.user?.role || 'user').toLowerCase();
+      if (!['admin', 'oh', 'caoh'].includes(role)) hide = true;
+    }
 
     el.style.display = hide ? 'none' : '';
   });
@@ -123,8 +138,10 @@ export function applyNavPermissions() {
     budgets: ['create-budget', 'view-budgets'],
     income: ['add-funds', 'income-manager', 'transfer', 'my-income'],
     expense: ['add-expense', 'expense-manager', 'generate-receipt'],
-    reports: ['expense-reports', 'my-finances', 'financial-status'],
-    teamadmin: ['team-roster']
+    financials: ['financial-status', 'reconciliation-overview'],
+    reports: ['expense-reports', 'my-finances'],
+    teamadmin: ['team-roster'],
+    dashboard: ['dashboard', 'profile', 'approval-portal']
   };
 
   Object.entries(sectionPages).forEach(([section, pages]) => {
@@ -155,7 +172,7 @@ function updateBottomNavForRole() {
 
   if (isOtmOnly()) {
     if (budgetsTab) budgetsTab.style.display = 'none';
-    if (reportsTab) reportsTab.style.display = 'none';
+    if (reportsTab) reportsTab.style.display = '';
     if (expensesTab) expensesTab.style.display = '';
   } else if (isViewOnly() || isOhtReadOnly()) {
     if (budgetsTab) budgetsTab.style.display = '';
@@ -174,7 +191,7 @@ export function defaultPageForRole() {
 
 export function defaultPageForTab(tab) {
   if (tab === 'budgets' && isOtmOnly()) return 'my-finances';
-  if (tab === 'reports' && isOtmOnly()) return 'my-finances';
+  if (tab === 'reports' && isOtmOnly()) return 'reconciliation-overview';
   if (tab === 'expenses' && (isViewOnly() || isOhtReadOnly())) return 'expense-manager';
   const map = {
     dashboard: 'dashboard',

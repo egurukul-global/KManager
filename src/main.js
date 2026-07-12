@@ -24,12 +24,16 @@ import {
 import { getBudgetCalendarPage, initBudgetCalendarPage } from './pages/budget-calendar.js';
 import { getCategoryMasterPage, initCategoryMasterPage } from './pages/category-master.js';
 import { getFinancialStatusPage, initFinancialStatusPage } from './pages/financial-status.js';
+import { getReconciliationOverviewPage, initReconciliationOverviewPage } from './pages/reconciliation-overview.js';
+import { getProfilePage, initProfilePage } from './pages/profile.js';
+import { getApprovalPortalPage, initApprovalPortalPage } from './pages/approval-portal.js';
+import { getRoleAssignmentsPage, initRoleAssignmentsPage } from './pages/role-assignments.js';
 import { getExpenseReportsPage, initExpenseReportsPage } from './pages/expense-reports.js';
 import { getAddExpensePage, initAddExpensePage, getExpenseManagerPage, initExpenseManagerPage } from './pages/expenses.js';
 import { getGenerateReceiptPage, initGenerateReceiptPage } from './pages/generate-receipt.js';
 import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js';
 import { getDisplayName } from './utils/displayName.js';
-import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher } from './utils/teamAccess.js';
+import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher, updateAccessBadge } from './utils/teamAccess.js';
 import { applyNavPermissions, canAccessPage, defaultPageForRole, defaultPageForTab } from './utils/navPermissions.js';
 import { getTeamMgmtPage, initTeamMgmtPage, getTeamRosterPage, initTeamRosterPage } from './pages/team-mgmt.js';
 import { getMyFinancesPage, initMyFinancesPage } from './pages/my-finances.js';
@@ -107,7 +111,7 @@ async function initializeApp() {
     // 1. Get user profile
     const { data: userData, error: userError } = await supabaseClient
       .from('users')
-      .select('id, email, name, role, team_id, gender')
+      .select('id, email, name, role, team_id, gender, request_alias, request_counter')
       .eq('id', state.session.user.id)
       .single();
 
@@ -156,6 +160,7 @@ async function initializeApp() {
 
     // 10. Populate team switcher
     populateTeamSwitcher();
+    updateAccessBadge();
 
     // 11. Apply role-based nav + load initial page
     applyNavPermissions();
@@ -258,11 +263,7 @@ export async function switchTeam(teamId) {
 
   await loadUserTeamDefaultsForCurrentTeam();
 
-  // Update access badge
-  const accessBadge = document.getElementById('userAccessLevel');
-  if (accessBadge) {
-    accessBadge.textContent = (state.userTeamAccess.access_level || 'member').toUpperCase();
-  }
+  updateAccessBadge();
 
   // Refresh current page
   const currentPage = document.querySelector('.nav-subitem.active')?.dataset.page || 'dashboard';
@@ -315,6 +316,7 @@ function renderAppShell() {
         <div class="sidebar-user">
           <span class="sidebar-trident" aria-hidden="true">🔱</span>
           <span id="userDisplayName" class="sidebar-display-name" title="${state.user?.name || ''}">${displayName}</span>
+          <span id="userAccessLevel" class="sidebar-access-badge"></span>
         </div>
 
         <div class="team-switcher">
@@ -333,6 +335,8 @@ function renderAppShell() {
             </div>
             <div class="nav-subitems">
               <div class="nav-subitem active" data-page="dashboard" onclick="window.showPage('dashboard')">Overview</div>
+              <div class="nav-subitem" data-page="profile" onclick="window.showPage('profile')">My Profile</div>
+              <div class="nav-subitem" data-page="approval-portal" onclick="window.showPage('approval-portal')">Approval Portal</div>
             </div>
           </div>
 
@@ -388,6 +392,18 @@ function renderAppShell() {
             </div>
           </div>
 
+          <div class="nav-item" data-section="financials">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">💹</span>
+              <span>Financials</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="financial-status" onclick="window.showPage('financial-status')">Financial Status</div>
+              <div class="nav-subitem" data-page="reconciliation-overview" onclick="window.showPage('reconciliation-overview')">Reconciliation</div>
+            </div>
+          </div>
+
           <div class="nav-item" data-section="reports">
             <div class="nav-item-header" onclick="window.toggleNavItem(this)">
               <span class="icon">📈</span>
@@ -395,9 +411,8 @@ function renderAppShell() {
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
-              <div class="nav-subitem" data-page="expense-reports" onclick="window.showPage('expense-reports')">Reports</div>
+              <div class="nav-subitem" data-page="expense-reports" onclick="window.showPage('expense-reports')">Expense Reports</div>
               <div class="nav-subitem" data-page="my-finances" onclick="window.showPage('my-finances')">My Finances</div>
-              <div class="nav-subitem" data-page="financial-status" onclick="window.showPage('financial-status')">Financial Status</div>
             </div>
           </div>
 
@@ -419,6 +434,7 @@ function renderAppShell() {
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
+              <div class="nav-subitem" data-page="role-assignments" onclick="window.showPage('role-assignments')">Role Assignments</div>
               <div class="nav-subitem" data-page="user-mgmt" onclick="window.showPage('user-mgmt')">Users</div>
               <div class="nav-subitem" data-page="team-mgmt" onclick="window.showPage('team-mgmt')">Teams</div>
               <div class="nav-subitem" data-page="budget-calendar" onclick="window.showPage('budget-calendar')">Budget Calendar</div>
@@ -515,8 +531,12 @@ const PAGE_TO_TAB = {
   'generate-receipt': 'expenses',
   'expense-reports': 'reports',
   'my-finances': 'reports',
+  'my-income': 'reports',
   'financial-status': 'reports',
-  'my-income': 'reports'
+  'reconciliation-overview': 'reports',
+  profile: 'dashboard',
+  'approval-portal': 'dashboard',
+  'role-assignments': 'dashboard'
 };
 
 function updateBottomNavActive(pageName) {
@@ -576,6 +596,10 @@ export function showPage(pageName) {
     'my-finances': { html: getMyFinancesPage, init: initMyFinancesPage },
     'my-income': { html: getMyIncomePage, init: initMyIncomePage },
     'financial-status': { html: getFinancialStatusPage, init: initFinancialStatusPage },
+    'reconciliation-overview': { html: getReconciliationOverviewPage, init: initReconciliationOverviewPage },
+    profile: { html: getProfilePage, init: initProfilePage },
+    'approval-portal': { html: getApprovalPortalPage, init: initApprovalPortalPage },
+    'role-assignments': { html: getRoleAssignmentsPage, init: initRoleAssignmentsPage },
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
     'user-mgmt': { html: () => placeholderPage('User Management', 'Session 8'), init: () => {} },

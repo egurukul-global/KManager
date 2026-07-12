@@ -97,6 +97,81 @@
   border-color: #333;
 }
 
+/* Expandable summary → detail (Financial Status, etc.) */
+.data-card--expandable {
+  padding: 0;
+  overflow: hidden;
+}
+
+.data-card-expand-trigger {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.data-card-expand-trigger:focus-visible {
+  outline: 2px solid var(--accent-gold);
+  outline-offset: -2px;
+}
+
+.data-card-expand-hint {
+  display: block;
+  font-size: 0.78em;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.data-card-detail {
+  display: none;
+  padding: 0 12px 12px;
+  border-top: 1px dashed var(--border);
+}
+
+.data-card-detail.is-open {
+  display: block;
+  padding-top: 8px;
+}
+
+.data-card--deleted {
+  opacity: 0.65;
+}
+
+.data-card--deleted .deleted-banner {
+  background: #dc3545;
+  color: #fff;
+  font-size: 0.7em;
+  font-weight: 700;
+  text-align: center;
+  padding: 4px;
+  margin: -10px -12px 8px;
+}
+
+/* Buckets: responsive grid using data cards */
+.bucket-data-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.data-card-list .data-card.selected,
+.data-card--clickable.selected {
+  border-color: var(--accent-gold);
+  box-shadow: var(--shadow);
+}
+
+/* Team access select inside cards */
+.data-card-row-value .team-access-select {
+  max-width: 100%;
+  min-width: 0;
+}
+
 /* ===== BOTTOM NAV ===== */
 .bottom-nav {
   display: none;
@@ -411,6 +486,24 @@
 
   .table-stack-mobile tbody tr.status-total td[colspan] {
     display: none;
+  }
+
+  .bucket-data-list {
+    grid-template-columns: 1fr;
+  }
+
+  .team-mgmt-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .transfer-list-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .transfer-status-filter {
+    width: 100%;
   }
 
   #expBulkActions {
