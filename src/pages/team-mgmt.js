@@ -9,11 +9,11 @@ import { ensureMemberBucketOnWorkTeam } from '../utils/memberBucketHelpers.js';
 import { findNonZeroBucketsOnTeam, formatNonZeroBucketList } from '../utils/balanceGuards.js';
 
 const ACCESS_LEVELS = [
-  { value: 'view', label: 'View (read-only)' },
-  { value: 'member', label: 'Member (OTM)' },
-  { value: 'oht', label: 'Ops Head (OHT, read-only)' },
-  { value: 'lead', label: 'Lead (OTL)' },
-  { value: 'admin', label: 'Admin' }
+  { value: 'view', label: 'View only' },
+  { value: 'member', label: 'Member (OPS — operations staff)' },
+  { value: 'lead', label: 'Team lead (OPL)' },
+  { value: 'oht', label: 'Operations head (OPH — per this team)' },
+  { value: 'admin', label: 'Team admin (full team access)' }
 ];
 
 let teamsCache = [];
@@ -52,10 +52,10 @@ function accessLevelOptions(selected = 'member') {
 }
 
 const OHT_ASSIGNABLE_LEVELS = [
-  { value: 'view', label: 'View (read-only)' },
-  { value: 'member', label: 'Member (OTM)' },
-  { value: 'lead', label: 'Lead (OTL)' },
-  { value: 'oht', label: 'Ops Head (OHT)' }
+  { value: 'view', label: 'View only' },
+  { value: 'member', label: 'Member (OPS)' },
+  { value: 'lead', label: 'Team lead (OPL)' },
+  { value: 'oht', label: 'Operations head (OPH)' }
 ];
 
 function ohtAccessLevelOptions(selected = 'member') {
@@ -161,7 +161,7 @@ export function getTeamMgmtPage() {
 
     <div class="card team-members-panel" id="teamMembersPanel">
       <h2 id="teamMembersTitle">Members</h2>
-      <p id="teamsMembersHint" class="page-intro">Select a team above.</p>
+      <p id="teamsMembersHint" class="page-intro">Select a team above. Team access (OPS/OPL/OPH) is set here. Approval roles FIN, FIH, CAO are assigned separately under Admin → Role Assignments or on the user account.</p>
 
       <form id="addMemberForm" class="team-add-member-form" onsubmit="window.addTeamMember(event)" style="display:none;">
         <input type="hidden" id="memberTeamId">
@@ -553,6 +553,10 @@ async function addTeamMember(e) {
     if (error) {
       if (error.message?.includes('duplicate') || error.code === '23505') {
         showToast('User is already on this team', 'error');
+        return;
+      }
+      if (error.message?.includes('user_teams_access_level_check') || error.code === '23514') {
+        showToast('Invalid access level. Use Member, Team lead, or Operations head — not OPH/OPL codes directly.', 'error');
         return;
       }
       throw error;
