@@ -77,11 +77,20 @@ export function showConfirm(message, onConfirm, onCancel) {
 
   const close = (cb) => {
     modal.remove();
-    if (cb) cb();
+    // Defer so the Yes click cannot fall through to the modal underneath
+    if (cb) setTimeout(cb, 0);
   };
 
-  modal.querySelector('#confirmBtn').onclick = () => close(onConfirm);
-  modal.querySelector('#cancelBtn').onclick = () => close(onCancel);
+  modal.querySelector('#confirmBtn').onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    close(onConfirm);
+  };
+  modal.querySelector('#cancelBtn').onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    close(onCancel);
+  };
   modal.onclick = e => {
     if (e.target === modal) close(onCancel);
   };

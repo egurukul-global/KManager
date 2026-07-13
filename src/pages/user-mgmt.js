@@ -34,6 +34,7 @@ let allUsersData = [];
 let teamCountMapCache = {};
 let teamsCache = [];
 let editingUserId = null;
+let editOnHoldValue = false;
 
 const ACCESS_LEVELS = [
   { value: 'member', label: 'Member (OPS)' },
@@ -58,8 +59,11 @@ function orgRoleFilterOptions() {
 }
 
 function roleOptions(selected = 'user') {
-  return assignableOrgRoles().map(r => {
-    const sel = r === selected ? ' selected' : '';
+  const current = String(selected || 'user').toLowerCase().trim();
+  const roles = assignableOrgRoles();
+  if (current && !roles.includes(current)) roles.unshift(current);
+  return roles.map(r => {
+    const sel = r === current ? ' selected' : '';
     return `<option value="${r}"${sel}>${orgRoleLabel(r)}</option>`;
   }).join('');
 }
@@ -235,6 +239,7 @@ function wireUserSelectModal() {
 
 function closeUserSelectModal() {
   editingUserId = null;
+  editOnHoldValue = false;
   closeModal(USER_SELECT_MODAL_ID);
 }
 
@@ -492,6 +497,7 @@ async function openUserSelect(userId) {
 
     const displayName = escapeHtml(user.name || 'User');
     const displayEmail = escapeHtml(user.email || '—');
+    editOnHoldValue = !!user.on_hold;
 
     const content = `
       <div class="user-select-modal">
@@ -510,10 +516,11 @@ async function openUserSelect(userId) {
               <select id="editUserRole">${roleOptions(user.role || 'user')}</select>
             </div>
             <div class="form-group">
-              <label class="checkbox-label" style="margin-top:28px;">
-                <input type="checkbox" id="editUserOnHold" ${user.on_hold ? 'checked' : ''} onclick="return window.confirmUserOnHoldToggle(event)">
-                On hold — cannot sign in
-              </label>
+              <label>Sign-in status</label>
+              <div id="editUserOnHoldStatus" class="user-hold-status">
+                ${buildOnHoldStatusHtml(!!user.on_hold)}
+              </div>
+              <p class="section-hint" style="margin-top:6px;">Applies when you click Save changes.</p>
             </div>
           </div>
           <div class="btn-group">
@@ -549,33 +556,53 @@ async function openUserSelect(userId) {
   }
 }
 
-function confirmUserOnHoldToggle(e) {
-  e.preventDefault();
+function buildOnHoldStatusHtml(onHold) {
+  const badge = onHold
+    ? '<span class="badge badge-danger">On hold</span>'
+    : '<span class="badge badge-success">Active</span>';
+  const btnLabel = onHold ? 'Remove hold' : 'Place on hold';
+  const btnClass = onHold ? 'secondary' : 'danger';
+  return `
+    <div class="btn-group" style="align-items:center;gap:10px;">
+      ${badge}
+      <button type="button" class="${btnClass} small" id="editUserOnHoldBtn" onclick="window.confirmUserOnHoldToggle()">${btnLabel}</button>
+    </div>
+  `;
+}
 
-  const checkbox = e.target;
+function renderEditOnHoldStatus() {
+  const wrap = document.getElementById('editUserOnHoldStatus');
+  if (wrap) wrap.innerHTML = buildOnHoldStatusHtml(editOnHoldValue);
+}
+
+function confirmUserOnHoldToggle() {
   const userId = document.getElementById('editUserId')?.value;
   const user = allUsersData.find(u => u.id === userId);
   const name = user?.name || user?.email || 'this user';
-  const placingOnHold = !checkbox.checked;
+  const placingOnHold = !editOnHoldValue;
 
   if (placingOnHold && userId === state.user?.id) {
     showToast('You cannot place your own account on hold', 'error');
-    return false;
+    return;
   }
 
   if (placingOnHold) {
     showConfirm(
       `Place <strong>${escapeHtml(name)}</strong> on hold? They will not be able to sign in until hold is removed.`,
-      () => { checkbox.checked = true; }
+      () => {
+        editOnHoldValue = true;
+        renderEditOnHoldStatus();
+      }
     );
   } else {
     showConfirm(
       `Remove hold for <strong>${escapeHtml(name)}</strong>? They will be able to sign in again.`,
-      () => { checkbox.checked = false; }
+      () => {
+        editOnHoldValue = false;
+        renderEditOnHoldStatus();
+      }
     );
   }
-
-  return false;
 }
 
 async function createAppUser(e) {
@@ -628,8 +655,15 @@ async function saveUserProfile(e) {
   e.preventDefault();
   const userId = document.getElementById('editUserId')?.value;
   const name = document.getElementById('editUserName')?.value?.trim();
-  const role = document.getElementById('editUserRole')?.value || 'user';
-  const on_hold = !!document.getElementById('editUserOnHold')?.checked;
+  const existing = allUsersData.find(u => u.id === userId);
+  let role = String(document.getElementById('editUserRole')?.value || existing?.role || 'user')
+    .toLowerCase()
+    .trim();
+  const allowed = assignableOrgRoles();
+  if (!allowed.includes(role)) {
+    role = String(existing?.role || 'user').toLowerCase().trim();
+  }
+  const on_hold = !!editOnHoldValue;
 
   if (!userId || !name) {
     showToast('Name is required', 'error');
@@ -652,8 +686,20 @@ async function saveUserProfile(e) {
 
     if (error) throw error;
 
+    const idx = allUsersData.findIndex(u => u.id === userId);
+    if (idx >= 0) {
+      allUsersData[idx] = { ...allUsersData[idx], name, role, on_hold };
+    }
+
+    // Active filter hides on-hold users — switch to All so the new status is visible
+    const statusFilter = document.getElementById('userMgmtStatusFilter');
+    if (statusFilter && on_hold && statusFilter.value === 'active') {
+      statusFilter.value = 'all';
+    }
+
     showToast(on_hold ? 'User updated — on hold' : 'User updated', 'success');
     closeUserSelectModal();
+    filterUserMgmtList();
     await loadUserMgmtList();
   } catch (err) {
     console.error('Save user:', err);
