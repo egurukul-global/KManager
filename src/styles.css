@@ -751,7 +751,15 @@ input.input-rate {
     minmax(var(--field-amount-min), auto);
 }
 
-/* Create budget — two rows */
+/* Create budget — header: type | period | name */
+.form-grid-row--budget-header {
+  grid-template-columns:
+    minmax(9rem, 1fr)
+    minmax(var(--field-select-min), 1.2fr)
+    minmax(12rem, 1.5fr);
+}
+
+/* Create budget — status | currency | rate */
 .form-grid-row--budget-a {
   grid-template-columns:
     minmax(var(--field-select-min), 1.2fr)
@@ -761,9 +769,9 @@ input.input-rate {
 .form-grid-row--budget-b {
   grid-template-columns:
     minmax(9rem, 1fr)
-    minmax(9rem, 1fr)
     minmax(var(--field-currency-min), auto)
     minmax(var(--field-rate-min), auto);
+  max-width: 36rem;
 }
 
 /* Edit budget meta, view budget filters */

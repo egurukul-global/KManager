@@ -101,43 +101,38 @@ export function getCreateBudgetPage() {
   }
 
   return `
-    <h1 class="page-title">Create Budget</h1>
     <div class="card">
-      <h2>➕ New Budget Plan</h2>
       <form id="createBudgetForm" onsubmit="window.createBudget(event)">
         <div class="form-stack">
-          <div class="form-group budget-type-first">
-            <label>Budget Type *</label>
-            <select id="newBudgetType" required onchange="window.onBudgetTypeChange()">
-              ${buildBudgetTypeOptionsHtml('monthly')}
-            </select>
-            <p id="budgetTypeHint" class="form-hint">Monthly budgets are tied to the org calendar; other types use a custom name for your team.</p>
-          </div>
+          <div class="form-grid-row form-grid-row--budget-header">
+            <div class="form-group budget-type-first">
+              <label>Budget Type *</label>
+              <select id="newBudgetType" required onchange="window.onBudgetTypeChange()">
+                ${buildBudgetTypeOptionsHtml('monthly')}
+              </select>
+            </div>
 
-          <div id="monthlyBudgetFields" class="form-grid-row form-grid-row--budget-a">
             <div class="form-group" id="monthlyCalendarGroup">
               <label>Budget Period Date *</label>
               <select id="newBudgetCalendarEntry" onchange="window.onBudgetCalendarEntryChange()"><option value="">Select date…</option></select>
               <p id="monthlyCalendarEmptyHint" class="form-hint" style="display:none; color:#856404;">No open calendar periods. Ask an org admin to open a period in Budget Calendar.</p>
             </div>
-            <div class="form-group" id="monthlyNameGroup">
-              <label>Budget Name</label>
-              <input type="text" id="newBudgetName" placeholder="Select a calendar period date" readonly>
-              <p id="monthlyNameHint" class="form-hint">Uses the org calendar label — same name across all teams.</p>
-            </div>
-          </div>
-
-          <div id="namedBudgetFields" class="form-grid-row form-grid-row--budget-a" style="display:none;">
-            <div class="form-group" id="namedPeriodGroup">
+            <div class="form-group" id="namedPeriodGroup" style="display:none;">
               <label>Budget Period Date *</label>
               <input type="date" id="newBudgetPeriodDate">
             </div>
-            <div class="form-group" id="budgetNameGroup">
+
+            <div class="form-group" id="monthlyNameGroup">
+              <label>Budget Name</label>
+              <input type="text" id="newBudgetName" placeholder="Select a calendar period date" readonly>
+            </div>
+            <div class="form-group" id="budgetNameGroup" style="display:none;">
               <label>Budget Name *</label>
               <input type="text" id="newBudgetNameNamed" placeholder="Enter a descriptive name" onblur="window.validateBudgetName(this)">
               <p id="namedBudgetNameHint" class="form-hint"></p>
             </div>
           </div>
+          <p id="budgetTypeHint" class="form-hint">Monthly budgets are tied to the org calendar; other types use a custom name for your team.</p>
 
           <div class="form-grid-row form-grid-row--budget-b">
             <div class="form-group">
@@ -153,13 +148,22 @@ export function getCreateBudgetPage() {
               <input type="number" class="input-rate" id="newBudgetRate" step="any" placeholder="Rate" required oninput="window.onCreateBudgetRateChange()">
             </div>
           </div>
-          <p class="form-hint">1 USD = X local currency</p>
+          <p class="form-hint">1 USD = X local currency. Line amounts are entered in USD; local is calculated from this rate.</p>
         </div>
 
-        <h3 style="margin-top: 25px;">Categories & Amounts</h3>
-        <p style="margin-bottom: 15px; color: #666;">Enter USD amounts (primary). Select currency to auto-fill rate. Local amount auto-calculates.</p>
+        <h3 style="margin-top: 25px;">Categories &amp; Amounts</h3>
+        <p class="page-intro" id="budgetLineUsdHint">Enter USD amounts. Local amounts use the currency and exchange rate above.</p>
 
+        <div class="budget-line-table-wrap show-desktop">
+          <div class="budget-line-table-head">
+            <span>Category</span>
+            <span>USD Amount</span>
+            <span>Local Amount</span>
+            <span></span>
+          </div>
+        </div>
         <div id="budgetCategoriesContainer" class="budget-line-cards"></div>
+
         <div class="budget-grand-total-card">
           ${cardRow('Total USD', '<span id="createBudgetTotalUsd">0.00</span>')}
           ${cardRow('Total Local', '<span id="createBudgetTotalLocal">0.00</span>')}
@@ -190,6 +194,7 @@ export async function initCreateBudgetPage() {
   window.onCreateBudgetUSDChange = onCreateBudgetUSDChange;
 
   onBudgetTypeChange();
+  updateBudgetLineUsdHint();
 }
 
 async function loadCalendarEntriesCache() {
@@ -259,15 +264,16 @@ function onBudgetCalendarEntryChange() {
 function onBudgetTypeChange() {
   const type = document.getElementById('newBudgetType')?.value || 'monthly';
   const config = getBudgetTypeConfig(type);
-  const monthlyFields = document.getElementById('monthlyBudgetFields');
-  const namedFields = document.getElementById('namedBudgetFields');
   const calSelect = document.getElementById('newBudgetCalendarEntry');
   const periodInput = document.getElementById('newBudgetPeriodDate');
   const monthlyNameInput = document.getElementById('newBudgetName');
   const namedNameInput = document.getElementById('newBudgetNameNamed');
-  const monthlyHint = document.getElementById('monthlyNameHint');
   const namedHint = document.getElementById('namedBudgetNameHint');
   const typeHint = document.getElementById('budgetTypeHint');
+  const monthlyCal = document.getElementById('monthlyCalendarGroup');
+  const namedPeriod = document.getElementById('namedPeriodGroup');
+  const monthlyName = document.getElementById('monthlyNameGroup');
+  const namedName = document.getElementById('budgetNameGroup');
 
   if (typeHint) {
     typeHint.textContent = isMonthlyBudgetType(type)
@@ -276,8 +282,10 @@ function onBudgetTypeChange() {
   }
 
   if (isMonthlyBudgetType(type)) {
-    if (monthlyFields) monthlyFields.style.display = '';
-    if (namedFields) namedFields.style.display = 'none';
+    if (monthlyCal) monthlyCal.style.display = '';
+    if (namedPeriod) namedPeriod.style.display = 'none';
+    if (monthlyName) monthlyName.style.display = '';
+    if (namedName) namedName.style.display = 'none';
     const openCount = filterOpenCalendarEntries(calendarEntriesCache).length;
     if (calSelect) {
       calSelect.required = openCount > 0;
@@ -291,11 +299,12 @@ function onBudgetTypeChange() {
       monthlyNameInput.readOnly = true;
       onBudgetCalendarEntryChange();
     }
-    if (monthlyHint) monthlyHint.style.display = '';
     if (namedNameInput) namedNameInput.value = '';
   } else {
-    if (monthlyFields) monthlyFields.style.display = 'none';
-    if (namedFields) namedFields.style.display = '';
+    if (monthlyCal) monthlyCal.style.display = 'none';
+    if (namedPeriod) namedPeriod.style.display = '';
+    if (monthlyName) monthlyName.style.display = 'none';
+    if (namedName) namedName.style.display = '';
     if (calSelect) {
       calSelect.required = false;
       calSelect.value = '';
@@ -310,7 +319,6 @@ function onBudgetTypeChange() {
         namedHint.style.display = config.nameHint ? '' : 'none';
       }
     }
-    if (monthlyHint) monthlyHint.style.display = 'none';
   }
 }
 
@@ -337,22 +345,38 @@ function onCreateBudgetCurrencyChange() {
     const rate = getLatestUsdRate(state.exchangeRates || [], currency);
     rateInput.value = rate !== null ? rateForInput(rate) : '';
   }
-  updateCreateBudgetTotals();
+  updateBudgetLineUsdHint();
+  recalculateAllCreateBudgetLocals();
 }
 
 function onCreateBudgetRateChange() {
-  updateCreateBudgetTotals();
+  recalculateAllCreateBudgetLocals();
 }
 
 function onCreateBudgetUSDChange() {
   updateCreateBudgetTotals();
 }
 
+function updateBudgetLineUsdHint() {
+  const hint = document.getElementById('budgetLineUsdHint');
+  const { currency } = getCreateBudgetHeaderCurrency();
+  if (!hint) return;
+  if (!currency) {
+    hint.textContent = 'Enter USD amounts. Local amounts use the currency and exchange rate above.';
+    return;
+  }
+  if (currency === 'USD') {
+    hint.textContent = 'Enter USD amounts. Local amount matches USD when budget currency is USD.';
+  } else {
+    hint.textContent = `Enter USD amounts. Local (${currency}) is calculated from the exchange rate above.`;
+  }
+}
+
 function updateCreateBudgetTotals() {
   const rows = document.querySelectorAll('#budgetCategoriesContainer .category-row');
   let totalUsd = 0;
   let totalLocal = 0;
-  const { currency, rate } = getCreateBudgetHeaderCurrency();
+  const { rate } = getCreateBudgetHeaderCurrency();
 
   rows.forEach(row => {
     const usd = parseFloat(row.querySelector('.budget-cat-usd')?.value) || 0;
@@ -367,14 +391,16 @@ function updateCreateBudgetTotals() {
   if (localEl) {
     localEl.textContent = totalLocal > 0
       ? totalLocal.toFixed(2)
-      : (rate > 0 ? usdToLocal(totalUsd, rate).toFixed(2) : '0.00');
+      : (rate > 0 ? usdToLocal(totalUsd, rate).toFixed(2) : totalUsd.toFixed(2));
   }
 }
 
 function getCreateBudgetHeaderCurrency() {
-  const currency = document.getElementById('newBudgetCurrency')?.value || 'USD';
-  const rate = parseFloat(document.getElementById('newBudgetRate')?.value)
-    || (currency === 'USD' ? 1 : 0);
+  const currency = document.getElementById('newBudgetCurrency')?.value || '';
+  const rateRaw = parseFloat(document.getElementById('newBudgetRate')?.value);
+  const rate = Number.isFinite(rateRaw)
+    ? rateRaw
+    : (currency === 'USD' ? 1 : 0);
   return { currency, rate };
 }
 
@@ -388,17 +414,12 @@ function buildCreateCategoryRow(line) {
     <input type="hidden" class="budget-cat-subcategory" value="${escapeHtmlAttr(line.subcategory || '')}">
     <div class="budget-line-card-title">${escapeHtmlAttr(displayName)}</div>
     <div class="field-labeled"><span>USD Amount</span>
-      <input type="number" class="budget-cat-usd" step="0.01" placeholder="USD" required oninput="window.onBudgetUSDChange(this)">
-    </div>
-    <div class="field-labeled"><span>Currency</span>
-      <select class="budget-cat-currency" required onchange="window.onBudgetCurrencyChange(this)"><option value="">Currency</option></select>
-    </div>
-    <div class="field-labeled"><span>Exchange Rate</span>
-      <input type="number" class="budget-cat-rate" step="0.000001" placeholder="Rate" oninput="window.onBudgetRateChange(this)">
+      <input type="number" class="budget-cat-usd" step="0.01" value="0" min="0" oninput="window.onBudgetUSDChange(this)">
     </div>
     <div class="field-labeled"><span>Local Amount</span>
-      <input type="number" class="budget-cat-local" step="0.01" placeholder="Local" readonly>
+      <input type="number" class="budget-cat-local" step="0.01" value="0" readonly>
     </div>
+    <div class="budget-line-card-actions"></div>
   `;
   return row;
 }
@@ -410,29 +431,11 @@ async function seedCreateBudgetCategoryRows() {
   container.innerHTML = '';
   const lines = await loadCategoryMasterLines();
   lines.forEach(line => container.appendChild(buildCreateCategoryRow(line)));
-  populateCategoryRows();
-  updateCreateBudgetTotals();
+  recalculateAllCreateBudgetLocals();
 }
 
 async function populateCategoryRows() {
-  const container = document.getElementById('budgetCategoriesContainer');
-  if (!container) return;
-  const rows = container.querySelectorAll('.category-row');
-
-  rows.forEach(row => {
-    const currSelect = row.querySelector('.budget-cat-currency');
-    const currentCurr = currSelect ? currSelect.value : '';
-
-    if (currSelect) {
-      currSelect.innerHTML = '<option value="">Currency</option>';
-      const uniqueCurrencies = getLocalCurrenciesFromRates(state.exchangeRates || []);
-      uniqueCurrencies.forEach(c => {
-        currSelect.innerHTML += `<option value="${c}">${c}</option>`;
-      });
-      currSelect.innerHTML += '<option value="USD">USD</option>';
-      if (currentCurr) currSelect.value = currentCurr;
-    }
-  });
+  // Line currency/rate removed — header currency drives conversion.
 }
 
 window.addCategoryRow = function() {
@@ -442,29 +445,21 @@ window.addCategoryRow = function() {
   row.className = 'budget-line-card category-row';
   row.dataset.custom = 'true';
   row.innerHTML = `
-    <div class="line-card-header">
-      <span class="line-card-header-label">Custom category</span>
-      ${btnIconDelete('window.removeCategoryRow(this)', 'Remove')}
-    </div>
-    <div class="field-labeled"><span>Category</span>
+    <div class="budget-line-card-title">
       <input type="text" class="budget-cat-name" required placeholder="Category name">
     </div>
     <div class="field-labeled"><span>USD Amount</span>
-      <input type="number" class="budget-cat-usd" step="0.01" placeholder="USD" required oninput="window.onBudgetUSDChange(this)">
-    </div>
-    <div class="field-labeled"><span>Currency</span>
-      <select class="budget-cat-currency" required onchange="window.onBudgetCurrencyChange(this)"><option value="">Currency</option></select>
-    </div>
-    <div class="field-labeled"><span>Exchange Rate</span>
-      <input type="number" class="budget-cat-rate" step="0.000001" placeholder="Rate" oninput="window.onBudgetRateChange(this)">
+      <input type="number" class="budget-cat-usd" step="0.01" value="0" min="0" oninput="window.onBudgetUSDChange(this)">
     </div>
     <div class="field-labeled"><span>Local Amount</span>
-      <input type="number" class="budget-cat-local" step="0.01" placeholder="Local" readonly>
+      <input type="number" class="budget-cat-local" step="0.01" value="0" readonly>
+    </div>
+    <div class="budget-line-card-actions">
+      ${btnIconDelete('window.removeCategoryRow(this)', 'Remove')}
     </div>
   `;
   container.appendChild(row);
-  populateCategoryRows();
-  updateCreateBudgetTotals();
+  recalculateBudgetLocal(row);
 };
 
 window.removeCategoryRow = function(btn) {
@@ -484,45 +479,42 @@ window.onBudgetUSDChange = function(usdInput) {
   recalculateBudgetLocal(row);
 };
 
-window.onBudgetCurrencyChange = function(currencySelect) {
-  const row = currencySelect.closest('.category-row');
-  if (!row) return;
-  const currency = currencySelect.value;
-  const rateInput = row.querySelector('.budget-cat-rate');
-  if (!currency || !rateInput) return;
-
-  if (currency === 'USD') {
-    rateInput.value = '1';
-    recalculateBudgetLocal(row);
-    return;
-  }
-
-  const rate = getLatestUsdRate(state.exchangeRates || [], currency);
-  rateInput.value = rate !== null ? rateForInput(rate) : '';
-  recalculateBudgetLocal(row);
+window.onBudgetCurrencyChange = function() {
+  recalculateAllCreateBudgetLocals();
 };
 
-window.onBudgetRateChange = function(rateInput) {
-  const row = rateInput.closest('.category-row');
-  if (!row) return;
-  recalculateBudgetLocal(row);
+window.onBudgetRateChange = function() {
+  recalculateAllCreateBudgetLocals();
 };
 
-function recalculateBudgetLocal(row) {
-  const usdInput = row.querySelector('.budget-cat-usd');
-  const rateInput = row.querySelector('.budget-cat-rate');
-  const localInput = row.querySelector('.budget-cat-local');
-  if (!usdInput || !rateInput || !localInput) return;
-
-  const usdAmount = parseFloat(usdInput.value) || 0;
-  const rate = parseFloat(rateInput.value) || 0;
-
-  if (usdAmount > 0 && rate > 0) {
-    localInput.value = formatLocalAmountInput(usdToLocal(usdAmount, rate));
-  } else {
-    localInput.value = '';
-  }
+function recalculateAllCreateBudgetLocals() {
+  document.querySelectorAll('#budgetCategoriesContainer .category-row').forEach(row => {
+    recalculateBudgetLocal(row, { skipTotals: true });
+  });
   updateCreateBudgetTotals();
+}
+
+function recalculateBudgetLocal(row, options = {}) {
+  const usdInput = row.querySelector('.budget-cat-usd');
+  const localInput = row.querySelector('.budget-cat-local');
+  if (!usdInput || !localInput) return;
+
+  const { currency, rate } = getCreateBudgetHeaderCurrency();
+  const usdRaw = parseFloat(usdInput.value);
+  const usd = Number.isFinite(usdRaw) ? usdRaw : 0;
+  if (!Number.isFinite(usdRaw) || usdInput.value === '') {
+    usdInput.value = '0';
+  }
+
+  let local = 0;
+  if (currency === 'USD') {
+    local = usd;
+  } else if (currency && rate > 0) {
+    local = usd * rate;
+  }
+
+  localInput.value = formatLocalAmountInput(local);
+  if (!options.skipTotals) updateCreateBudgetTotals();
 }
 
 window.validateBudgetName = function(input) {
@@ -629,32 +621,46 @@ window.createBudget = async function(e) {
   }
 
   const categories = [];
-  const rows = document.querySelectorAll('.category-row');
+  const rows = document.querySelectorAll('#budgetCategoriesContainer .category-row');
+  const { currency: headerCurrency, rate: headerRate } = getCreateBudgetHeaderCurrency();
+
+  if (!headerCurrency) {
+    showToast('Select a budget currency', 'error');
+    return;
+  }
+  if (!(headerRate > 0) && headerCurrency !== 'USD') {
+    showToast('Enter a valid exchange rate', 'error');
+    return;
+  }
+
+  const rate = headerCurrency === 'USD' ? 1 : headerRate;
 
   rows.forEach(row => {
     const catCategory = row.querySelector('.budget-cat-category')?.value?.trim()
       || row.querySelector('.budget-cat-name')?.value?.trim();
     const catSub = row.querySelector('.budget-cat-subcategory')?.value?.trim() || null;
-    const usdAmount = parseFloat(row.querySelector('.budget-cat-usd').value);
-    const localAmount = parseFloat(row.querySelector('.budget-cat-local').value) || 0;
-    const currency = row.querySelector('.budget-cat-currency').value;
-    const rate = parseFloat(row.querySelector('.budget-cat-rate').value) || 0;
+    const usdRaw = parseFloat(row.querySelector('.budget-cat-usd')?.value);
+    const usdAmount = Number.isFinite(usdRaw) ? usdRaw : 0;
+    const localRaw = parseFloat(row.querySelector('.budget-cat-local')?.value);
+    const localAmount = Number.isFinite(localRaw)
+      ? localRaw
+      : (headerCurrency === 'USD' ? usdAmount : usdAmount * rate);
 
-    if (catCategory && usdAmount && currency) {
+    if (catCategory) {
       categories.push({
         category: catCategory,
         subcategory: catSub,
         name: formatCategoryLabel(catCategory, catSub),
-        usdAmount: usdAmount,
-        localAmount: localAmount || (currency === 'USD' ? usdAmount : usdToLocal(usdAmount, rate || 1)),
-        currency: currency,
-        rate: rate || (currency === 'USD' ? 1 : 0)
+        usdAmount,
+        localAmount,
+        currency: headerCurrency,
+        rate
       });
     }
   });
 
   if (categories.length === 0) {
-    showToast('Please add at least one category with USD amount', 'error');
+    showToast('Please add at least one category', 'error');
     return;
   }
 

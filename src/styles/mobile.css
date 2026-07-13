@@ -247,6 +247,15 @@
     box-shadow: inset 0 3px 0 var(--accent-gold);
   }
 
+  .sidebar {
+    padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px) + 12px);
+  }
+
+  .sidebar-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    margin-bottom: var(--bottom-nav-height);
+  }
+
   .sync-status.online .sync-status-label { color: #198754; }
   .sync-status.offline .sync-status-label { color: var(--warning); }
   .sync-status.syncing .sync-status-label { color: var(--info); }

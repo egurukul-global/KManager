@@ -658,6 +658,44 @@ export function navToTab(tab) {
   if (page) showPage(page);
 }
 
+/** Map page id → top bar / mobile header title */
+const PAGE_TITLES = {
+  dashboard: 'Overview',
+  profile: 'My Profile',
+  'approval-portal': 'Approval Portal',
+  buckets: 'Money Buckets',
+  categories: 'Categories',
+  rates: 'Exchange Rates',
+  'create-budget': 'New Budget Plan',
+  'view-budgets': 'View Budgets',
+  'add-funds': 'Add Income',
+  'income-manager': 'Income Manager',
+  transfer: 'Transfer Funds',
+  'my-income': 'My Income',
+  'add-expense': 'Add Expense',
+  'expense-manager': 'Expense Manager',
+  'generate-receipt': 'Generate Receipt',
+  'financial-status': 'Treasury',
+  reconcile: 'Reconcile',
+  'reconciliation-overview': 'Reconciliation Overview',
+  'reconciliation-approval': 'Reconciliation Approval',
+  'expense-reports': 'Expense Reports',
+  'my-finances': 'My Finances',
+  'team-mgmt': 'Teams',
+  'role-assignments': 'Role Assignments',
+  'user-mgmt': 'Users',
+  'budget-calendar': 'Budget Calendar',
+  'category-master': 'Category Master'
+};
+
+function updateShellPageTitle(pageName) {
+  const title = PAGE_TITLES[pageName] || 'Finance';
+  const top = document.querySelector('.app-topbar-title');
+  if (top) top.textContent = title;
+  const mobile = document.querySelector('.mobile-header h1');
+  if (mobile) mobile.textContent = title;
+}
+
 export function showPage(pageName) {
   if (pageName === 'team-roster') pageName = 'team-mgmt';
 
@@ -678,6 +716,8 @@ export function showPage(pageName) {
   if (window.innerWidth <= 768) {
     toggleSidebar();
   }
+
+  updateShellPageTitle(pageName);
 
   // Render page content
   const mainContent = document.getElementById('mainContent');
