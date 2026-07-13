@@ -5,11 +5,30 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
 
+function errorMessage(err, fallback = 'Unknown error') {
+  if (!err) return fallback;
+  if (typeof err === 'string' && err.trim()) return err.trim();
+  if (typeof err?.message === 'string' && err.message.trim()) return err.message.trim();
+  if (typeof err?.msg === 'string' && err.msg.trim()) return err.msg.trim();
+  if (typeof err?.error_description === 'string' && err.error_description.trim()) {
+    return err.error_description.trim();
+  }
+  try {
+    const raw = JSON.stringify(err);
+    if (raw && raw !== '{}' && raw !== 'null') return raw;
+  } catch (_) { /* ignore */ }
+  return fallback;
+}
+
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
+}
+
+function errorResponse(err, status = 400, fallback = 'Request failed') {
+  return jsonResponse({ error: errorMessage(err, fallback) }, status);
 }
 
 function buildPersonalTeamBaseName(displayName) {
@@ -94,12 +113,12 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
     if (!supabaseUrl || !serviceKey || !anonKey) {
-      return jsonResponse({ error: 'Server configuration missing' }, 500);
+      return errorResponse('Server configuration missing', 500);
     }
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      return jsonResponse({ error: 'Unauthorized' }, 401);
+      return errorResponse('Unauthorized', 401);
     }
 
     const callerClient = createClient(supabaseUrl, anonKey, {
@@ -108,7 +127,7 @@ Deno.serve(async (req) => {
 
     const { data: authData, error: authErr } = await callerClient.auth.getUser();
     if (authErr || !authData?.user) {
-      return jsonResponse({ error: 'Unauthorized' }, 401);
+      return errorResponse(authErr || 'Unauthorized', 401);
     }
 
     const callerId = authData.user.id;
@@ -122,7 +141,7 @@ Deno.serve(async (req) => {
 
     const callerRole = String(callerProfile?.role || '').toLowerCase();
     if (!['admin', 'caoh', 'oh', 'ceo'].includes(callerRole)) {
-      return jsonResponse({ error: 'Only org administrators can create users' }, 403);
+      return errorResponse('Only org administrators can create users', 403);
     }
 
     const body = await req.json();
@@ -134,11 +153,11 @@ Deno.serve(async (req) => {
     const accessLevel = String(body.access_level || 'member').toLowerCase();
 
     if (!email || !name || password.length < 8) {
-      return jsonResponse({ error: 'Email, name, and password (min 8 chars) are required' }, 400);
+      return errorResponse('Email, full name, and password (min 8 chars) are all required', 400);
     }
 
     if (callerRole !== 'admin' && role === 'admin') {
-      return jsonResponse({ error: 'Only system admin can assign SYS role' }, 403);
+      return errorResponse('Only system admin can assign SYS role', 403);
     }
 
     const allowedRoles = callerRole === 'admin'
@@ -161,7 +180,7 @@ Deno.serve(async (req) => {
     });
 
     if (createErr) {
-      return jsonResponse({ error: createErr.message }, 400);
+      return errorResponse(createErr, 400, 'Could not create login account');
     }
 
     const userId = createdAuth.user.id;
@@ -176,9 +195,7 @@ Deno.serve(async (req) => {
 
     if (profileErr) {
       await admin.auth.admin.deleteUser(userId);
-      return jsonResponse({
-        error: `Profile save failed: ${profileErr.message}`
-      }, 400);
+      return errorResponse(profileErr, 400, 'Profile save failed');
     }
 
     try {
@@ -191,7 +208,7 @@ Deno.serve(async (req) => {
         email,
         name,
         role,
-        warning: `User created but personal team failed: ${teamSetupErr.message || teamSetupErr}`
+        warning: `User created but personal team failed: ${errorMessage(teamSetupErr)}`
       }, 200);
     }
 
@@ -206,7 +223,7 @@ Deno.serve(async (req) => {
         is_primary: false
       });
       if (teamErr) {
-        console.warn('Work team membership failed:', teamErr.message);
+        console.warn('Work team membership failed:', errorMessage(teamErr));
       }
     }
 
@@ -219,6 +236,6 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error('create-user:', err);
-    return jsonResponse({ error: err.message || 'Internal error' }, 500);
+    return errorResponse(err, 500, 'Internal error');
   }
 });

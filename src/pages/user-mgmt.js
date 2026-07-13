@@ -605,6 +605,28 @@ function confirmUserOnHoldToggle() {
   }
 }
 
+function formatInvokeError(data, error) {
+  const candidates = [
+    data?.error,
+    data?.message,
+    data?.msg,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim() && c.trim() !== '{}') return c.trim();
+    if (c && typeof c === 'object') {
+      const nested = c.message || c.msg || c.error_description;
+      if (typeof nested === 'string' && nested.trim()) return nested.trim();
+    }
+  }
+
+  if (error?.message && error.message !== 'Edge Function returned a non-2xx status code') {
+    return error.message;
+  }
+
+  return 'Create user failed. Check email is new, full name is filled, and password is at least 8 characters.';
+}
+
 async function createAppUser(e) {
   e.preventDefault();
 
@@ -614,6 +636,11 @@ async function createAppUser(e) {
   const role = document.getElementById('newUserRole')?.value || 'user';
   const team_id = document.getElementById('newUserTeam')?.value || null;
   const access_level = document.getElementById('newUserAccess')?.value || 'member';
+
+  if (!email || !name || password.length < 8) {
+    showToast('Email, full name, and password (min 8 characters) are all required', 'error');
+    return;
+  }
 
   const btn = document.getElementById('newUserSubmitBtn');
   setButtonLoading(btn, true, 'Create user');
@@ -630,22 +657,31 @@ async function createAppUser(e) {
       }
     });
 
-    // Non-2xx responses often put the real message in `data.error`
-    if (data?.error) throw new Error(data.error);
-
-    if (error) {
-      let detail = error.message || 'Failed to create user';
+    if (error || data?.error) {
+      let detail = formatInvokeError(data, error);
       try {
-        const ctx = error.context;
-        if (ctx && typeof ctx.json === 'function') {
-          const body = await ctx.json();
-          if (body?.error) detail = body.error;
+        const ctx = error?.context;
+        if (ctx) {
+          let body = null;
+          if (typeof ctx.json === 'function') {
+            body = await ctx.json();
+          } else if (typeof ctx.text === 'function') {
+            const text = await ctx.text();
+            try { body = JSON.parse(text); } catch (_) { if (text) detail = text; }
+          }
+          const fromBody = formatInvokeError(body, null);
+          if (fromBody && !fromBody.startsWith('Create user failed.')) detail = fromBody;
         }
       } catch (_) { /* keep detail */ }
+
       throw new Error(detail);
     }
 
     if (!data?.user_id) throw new Error('Create user failed — no user id returned');
+
+    if (data.warning) {
+      showToast(data.warning, 'warning');
+    }
 
     if (team_id && data?.user_id) {
       try {
@@ -661,9 +697,11 @@ async function createAppUser(e) {
     await loadUserMgmtList();
   } catch (err) {
     console.error('Create user:', err);
-    const msg = err.message || 'Failed to create user';
+    const msg = (typeof err?.message === 'string' && err.message !== '{}')
+      ? err.message
+      : 'Failed to create user';
     if (msg.includes('FunctionsFetchError') || msg.includes('Failed to send') || msg.includes('Failed to fetch')) {
-      showToast('Create-user function not deployed. Run: supabase functions deploy create-user', 'error');
+      showToast('Create-user function not reachable. Redeploy: supabase functions deploy create-user', 'error');
     } else {
       showToast(msg, 'error');
     }
