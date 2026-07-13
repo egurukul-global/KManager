@@ -32,7 +32,12 @@ export const state = {
   syncInProgress: false,
   lastSync: null,
   teamDefaults: null,
-  teamDefaultsTeamId: null
+  teamDefaultsTeamId: null,
+  // One Kailasa shell (4D)
+  isOkAdmin: false,
+  okApps: [],
+  okMenus: [],
+  okPins: []
 };
 
 // ==================== PERMISSIONS ====================

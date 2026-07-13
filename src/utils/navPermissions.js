@@ -1,5 +1,6 @@
-// ==================== ROLE-BASED NAV VISIBILITY (Phase 3 + 4A) ====================
+// ==================== ROLE-BASED NAV VISIBILITY (Phase 3 + 4A + 4D menu access) ====================
 import { state } from '../state.js';
+import { hasMenuAccess } from './okAccess.js';
 
 /** Only system admin bypasses team-level role restrictions. */
 export function isSystemAdmin() {
@@ -102,6 +103,11 @@ function canAccessTeamsPage() {
 export function canAccessPage(pageName) {
   if (pageName === 'team-roster') pageName = 'team-mgmt';
 
+  // One Kailasa menu matrix (platform) — applies even for system admin unless OK admin
+  if (state.okMenus?.length && !state.isOkAdmin && !hasMenuAccess('finance', pageName)) {
+    return false;
+  }
+
   if (isSystemAdmin()) return true;
 
   if (pageName === 'team-mgmt') {
@@ -155,6 +161,7 @@ export function applyNavPermissions() {
       const role = String(state.user?.role || 'user').toLowerCase();
       if (!['admin', 'oh', 'caoh'].includes(role)) hide = true;
     }
+    if (state.okMenus?.length && !state.isOkAdmin && !hasMenuAccess('finance', page)) hide = true;
 
     el.style.display = hide ? 'none' : '';
   });

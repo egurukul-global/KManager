@@ -90,7 +90,7 @@ export function getUserMgmtPage() {
 
   return `
     <h1 class="page-title">Users</h1>
-    <p class="page-intro">Create accounts, place users on hold, and set org roles. Team membership and approval roles are shown when you select a user.</p>
+    <p class="page-intro">Finance department: set org roles, hold within Finance, and review team membership. New logins and app access are managed in <strong>One Kailasa Admin</strong>.</p>
 
     <div class="card">
       <div class="form-grid-row form-grid-row--user-filters">
@@ -116,49 +116,9 @@ export function getUserMgmtPage() {
           <label>&nbsp;</label>
           <div class="btn-group">
             <button type="button" onclick="window.filterUserMgmtList()">Search</button>
-            <button type="button" class="success" onclick="window.toggleUserCreateCard(true)">+ New user</button>
           </div>
         </div>
       </div>
-    </div>
-
-    <div class="card" id="userCreateCard" style="display:none;">
-      <h2>New user</h2>
-      <form id="userCreateForm" onsubmit="window.createAppUser(event)">
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Email *</label>
-            <input type="email" id="newUserEmail" required placeholder="user@example.com">
-          </div>
-          <div class="form-group">
-            <label>Full name *</label>
-            <input type="text" id="newUserName" required maxlength="120" placeholder="First Last">
-          </div>
-          <div class="form-group">
-            <label>Temporary password *</label>
-            <input type="password" id="newUserPassword" required minlength="8" placeholder="Min 8 characters">
-            <p class="form-hint">Share securely; user can change via Forgot password on login.</p>
-          </div>
-          <div class="form-group">
-            <label>Org role</label>
-            <select id="newUserRole">${roleOptions('user')}</select>
-          </div>
-          <div class="form-group">
-            <label>Work team (optional)</label>
-            <select id="newUserTeam">
-              <option value="">None — assign later in Teams</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Team access (if team selected)</label>
-            <select id="newUserAccess">${accessOptions('member')}</select>
-          </div>
-        </div>
-        <div class="btn-group">
-          <button type="submit" id="newUserSubmitBtn">Create user</button>
-          <button type="button" class="secondary" onclick="window.toggleUserCreateCard(false)">Cancel</button>
-        </div>
-      </form>
     </div>
 
     <div class="card">

@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const FN_VERSION = 'create-user-v4';
+const FN_VERSION = 'create-user-v5';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -147,9 +147,17 @@ Deno.serve(async (req) => {
       return fail(`Could not read your profile: ${asText(callerProfileErr, 'profile read failed')}`, 400);
     }
 
+    const { data: okAdminRow } = await admin
+      .from('ok_admins')
+      .select('user_id')
+      .eq('user_id', callerId)
+      .maybeSingle();
+
     const callerRole = String(callerProfile?.role || '').toLowerCase();
-    if (!['admin', 'caoh', 'oh', 'ceo'].includes(callerRole)) {
-      return fail(`Only org administrators can create users (your role: ${callerRole || 'none'})`, 403);
+    const isOkAdmin = !!okAdminRow;
+    const isFinanceOrgAdmin = ['admin', 'caoh', 'oh', 'ceo'].includes(callerRole);
+    if (!isOkAdmin && !isFinanceOrgAdmin) {
+      return fail(`Only One Kailasa admins (or Finance org admins) can create users (your role: ${callerRole || 'none'})`, 403);
     }
 
     step = 'body';

@@ -41,6 +41,15 @@ import { getTeamMgmtPage, initTeamMgmtPage } from './pages/team-mgmt.js';
 import { getUserMgmtPage, initUserMgmtPage } from './pages/user-mgmt.js';
 import { getMyFinancesPage, initMyFinancesPage } from './pages/my-finances.js';
 import { getMyIncomePage, initMyIncomePage } from './pages/my-income.js';
+import { getOkHomePage, initOkHomePage } from './pages/ok-home.js';
+import { getOkAdminPage, initOkAdminPage } from './pages/ok-admin.js';
+import { getComingSoonPage, initComingSoonPage } from './pages/ok-coming-soon.js';
+import {
+  loadOkAccess,
+  parseAppPath,
+  hasAppAccess,
+  navigateOk
+} from './utils/okAccess.js';
 import swamijiImg from './Swamiji.png';
 
 // ==================== APP CONTAINER ====================
@@ -63,6 +72,9 @@ export async function handleLogin(e) {
     const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
     if (error) throw error;
     state.session = data.session;
+    if (window.location.pathname !== '/') {
+      window.history.replaceState({}, '', '/');
+    }
     await initializeApp();
   } catch (err) {
     console.error('Login error:', err);
@@ -90,7 +102,14 @@ export async function handleLogout() {
   state.currentTeam = null;
   state.session = null;
   state.userTeamAcess = null;
+  state.isOkAdmin = false;
+  state.okApps = [];
+  state.okMenus = [];
+  state.okPins = [];
 
+  if (window.location.pathname !== '/') {
+    window.history.replaceState({}, '', '/');
+  }
   renderLoginScreen();
   
   // Reset flag after a delay
@@ -145,62 +164,35 @@ async function initializeApp() {
       return;
     }
 
-    // 2. Get all teams for this user
+    // 2. One Kailasa access (apps / menus / admin)
+    await loadOkAccess(state.user.id);
+
+    // 3. Teams (needed for Finance; optional for home)
     await loadAccessibleTeams(state.user.id);
 
-    if (state.teams.length === 0) {
-      throw new Error('You are not assigned to any teams. Please contact an administrator.');
+    // 4. Auth + online listeners (once)
+    if (!window.__okAuthBound) {
+      window.__okAuthBound = true;
+      supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT' && !isLoggingOut) {
+          state.user = null;
+          state.teams = [];
+          state.currentTeam = null;
+          state.session = null;
+          state.userTeamAccess = null;
+          renderLoginScreen();
+        } else if (event === 'TOKEN_REFRESHED') {
+          state.session = session;
+        }
+      });
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      window.addEventListener('popstate', () => {
+        if (state.session && state.user) routeAfterAuth();
+      });
     }
 
-    // 3. Set current team
-    syncCurrentTeamAfterReload();
-
-    await loadUserTeamDefaultsForCurrentTeam();
-
-    // 6. Initialize local DB
-    await initLocalDB();
-
-    // 7. Sync data
-    if (navigator.onLine) {
-      await syncAll(state.currentTeam.team_id);
-      await pushPendingChanges();
-    }
-
-    // 8. Render app shell
-    renderAppShell();
-
-    // 9. Show admin nav for org admins and OPH team managers
-    const showAdminNav = ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role) || state.canManageTeamRoster;
-    if (showAdminNav) {
-      const adminNav = document.getElementById('adminNav');
-      if (adminNav) adminNav.style.display = 'block';
-    }
-
-    // 10. Populate team switcher
-    populateTeamSwitcher();
-    updateAccessBadge();
-
-    // 11. Apply role-based nav + load initial page
-    applyNavPermissions();
-    showPage(defaultPageForRole());
-
-    // 12. Setup auth state listener
-    supabaseClient.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT' && !isLoggingOut) {
-        state.user = null;
-        state.teams = [];
-        state.currentTeam = null;
-        state.session = null;
-        state.userTeamAccess = null;
-        renderLoginScreen();
-      } else if (event === 'TOKEN_REFRESHED') {
-        state.session = session;
-      }
-    });
-
-    // 13. Setup online/offline listeners
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    await routeAfterAuth();
 
   } catch (err) {
     console.error('Initialization error:', err);
@@ -209,6 +201,67 @@ async function initializeApp() {
       showToast(err.message || 'Failed to initialize app', 'error');
     }, 100);
     await supabaseClient.auth.signOut();
+  }
+}
+
+async function routeAfterAuth() {
+  const route = parseAppPath();
+
+  if (route === 'home') {
+    renderOkHome();
+    return;
+  }
+
+  if (route === 'ok-admin') {
+    renderOkAdmin();
+    return;
+  }
+
+  if (route === 'gurukul' || route === 'utilities') {
+    renderComingSoon(route);
+    return;
+  }
+
+  // Finance
+  if (!hasAppAccess('finance') && !state.isOkAdmin) {
+    showToast('You do not have access to Finance.', 'warning');
+    navigateOk('/');
+    return;
+  }
+
+  if (state.teams.length === 0) {
+    showToast('You are not assigned to any Finance teams yet.', 'warning');
+    navigateOk('/');
+    return;
+  }
+
+  syncCurrentTeamAfterReload();
+  await loadUserTeamDefaultsForCurrentTeam();
+  await initLocalDB();
+
+  if (navigator.onLine) {
+    await syncAll(state.currentTeam.team_id);
+    await pushPendingChanges();
+  }
+
+  renderAppShell();
+
+  const showAdminNav = ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role) || state.canManageTeamRoster;
+  if (showAdminNav) {
+    const adminNav = document.getElementById('adminNav');
+    if (adminNav) adminNav.style.display = 'block';
+  }
+
+  populateTeamSwitcher();
+  updateAccessBadge();
+  applyNavPermissions();
+
+  const pendingPage = sessionStorage.getItem('ok_open_page');
+  if (pendingPage) {
+    sessionStorage.removeItem('ok_open_page');
+    showPage(canAccessPage(pendingPage) ? pendingPage : defaultPageForRole());
+  } else {
+    showPage(defaultPageForRole());
   }
 }
 
@@ -318,12 +371,30 @@ function renderLoginScreen() {
   window.handleLogin = handleLogin;
 }
 
+function renderOkHome() {
+  app.innerHTML = getOkHomePage();
+  window.handleLogout = handleLogout;
+  initOkHomePage();
+}
+
+function renderOkAdmin() {
+  app.innerHTML = getOkAdminPage();
+  window.handleLogout = handleLogout;
+  initOkAdminPage();
+}
+
+function renderComingSoon(appCode) {
+  app.innerHTML = getComingSoonPage(appCode);
+  window.handleLogout = handleLogout;
+  initComingSoonPage();
+}
+
 function renderAppShell() {
   const displayName = getDisplayName(state.user);
   app.innerHTML = `
     <div class="mobile-header">
       <button class="menu-toggle" onclick="window.toggleSidebar()">☰</button>
-      <h1>One Kailasa</h1>
+      <h1>Finance</h1>
       <img src="${swamijiImg}" alt="" class="header-logo" width="36" height="36">
     </div>
 
@@ -336,6 +407,8 @@ function renderAppShell() {
           <span id="userDisplayName" class="sidebar-display-name" title="${state.user?.name || ''}">${displayName}</span>
           <span id="userAccessLevel" class="sidebar-access-badge"></span>
         </div>
+
+        <button type="button" class="sidebar-home-link" onclick="window.goOkHome()">← One Kailasa</button>
 
         <div class="team-switcher">
           <label>Current Team</label>
@@ -464,7 +537,7 @@ function renderAppShell() {
 
       <div class="main-area">
         <header class="app-topbar">
-          <span class="app-topbar-title">One Kailasa</span>
+          <span class="app-topbar-title">Finance</span>
           <img src="${swamijiImg}" alt="" class="app-topbar-logo" width="40" height="40">
         </header>
         <main class="main-content" id="mainContent">
@@ -509,6 +582,7 @@ function renderAppShell() {
   window.switchTeam = switchTeam;
   window.handleLogout = handleLogout;
   window.navToTab = navToTab;
+  window.goOkHome = () => navigateOk('/');
 }
 
 // ==================== NAVIGATION ====================

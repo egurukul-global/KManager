@@ -8,7 +8,7 @@ export function getLoginPage() {
       <div class="login-card">
         <div class="logo">🔱</div>
         <h1>One Kailasa</h1>
-        <p class="subtitle">Sign in to manage your team's finances</p>
+        <p class="subtitle">Sign in to One Kailasa</p>
 
         <div id="loginError" class="error-msg"></div>
         <div id="loginInfo" class="login-info-msg" style="display:none;"></div>
@@ -35,7 +35,7 @@ export function getLoginPage() {
           </button>
         </p>
         <p class="login-signup-note">
-          Need an account? Ask your administrator to create one (Admin → Users).
+          Need an account? Ask a One Kailasa administrator to create one.
         </p>
       </div>
     </div>

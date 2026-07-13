@@ -331,6 +331,7 @@ Pattern: **summary list → tap → detail**.
 
 ## Related documents
 
+- [phase-status.md](./phase-status.md) — **what is done / what to build next** (handoff for new chats)
 - [roles-and-permissions.md](./roles-and-permissions.md) — org role vs team access vs role assignments (where to configure OPH, FIN, etc.)
 - [phase-5b-role-rename.md](./phase-5b-role-rename.md) — DB migration when ready  
 - Wallet Phases 1–3: migrations `013`–`018` (run in Supabase before testing)  
