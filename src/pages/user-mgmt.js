@@ -686,6 +686,16 @@ async function createAppUser(e) {
     if (!res.ok) {
       const detail = formatInvokeError(data, null, rawText)
         || `Create user failed (server code ${res.status}). If you tried this email before, delete it in Supabase → Authentication → Users, then try again.`;
+
+      // If function was not updated, body is still {"error":"{}" } with no fn version
+      if (!data?.fn && (rawText.includes('"error":"{}"') || rawText === '{"error":"{}"}')) {
+        throw new Error(
+          'The create-user function in Supabase is still the OLD version. ' +
+          'Open Edge Functions → create-user, paste the new code from Cursor, click Deploy, ' +
+          'then confirm the code contains the text create-user-v4 before trying again.'
+        );
+      }
+
       throw new Error(detail);
     }
 
