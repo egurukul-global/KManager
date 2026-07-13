@@ -8,11 +8,18 @@ const corsHeaders = {
 function errorMessage(err, fallback = 'Unknown error') {
   if (!err) return fallback;
   if (typeof err === 'string' && err.trim()) return err.trim();
-  if (typeof err?.message === 'string' && err.message.trim()) return err.message.trim();
-  if (typeof err?.msg === 'string' && err.msg.trim()) return err.msg.trim();
-  if (typeof err?.error_description === 'string' && err.error_description.trim()) {
-    return err.error_description.trim();
-  }
+
+  const parts = [
+    err.message,
+    err.msg,
+    err.error_description,
+    err.details,
+    err.hint,
+    err.code ? `code ${err.code}` : ''
+  ].filter(p => typeof p === 'string' && p.trim());
+
+  if (parts.length) return parts.join(' — ');
+
   try {
     const raw = JSON.stringify(err);
     if (raw && raw !== '{}' && raw !== 'null') return raw;
@@ -118,7 +125,7 @@ Deno.serve(async (req) => {
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
-      return errorResponse('Unauthorized', 401);
+      return errorResponse('Unauthorized — missing login token', 401);
     }
 
     const callerClient = createClient(supabaseUrl, anonKey, {
@@ -127,7 +134,7 @@ Deno.serve(async (req) => {
 
     const { data: authData, error: authErr } = await callerClient.auth.getUser();
     if (authErr || !authData?.user) {
-      return errorResponse(authErr || 'Unauthorized', 401);
+      return errorResponse(authErr || 'Unauthorized — sign in again', 401);
     }
 
     const callerId = authData.user.id;
@@ -149,7 +156,7 @@ Deno.serve(async (req) => {
     const name = String(body.name || '').trim();
     const password = String(body.password || '');
     let role = String(body.role || 'user').toLowerCase();
-    const teamId = body.team_id || null;
+    const workTeamId = body.team_id || null;
     const accessLevel = String(body.access_level || 'member').toLowerCase();
 
     if (!email || !name || password.length < 8) {
@@ -180,45 +187,71 @@ Deno.serve(async (req) => {
     });
 
     if (createErr) {
-      return errorResponse(createErr, 400, 'Could not create login account');
+      const msg = errorMessage(createErr, 'Could not create login account');
+      const lower = msg.toLowerCase();
+      if (lower.includes('already') || lower.includes('registered') || lower.includes('exists')) {
+        return errorResponse(
+          `This email already has a login. In Supabase go to Authentication → Users, delete ${email}, then try again.`,
+          400
+        );
+      }
+      return errorResponse(msg, 400, 'Could not create login account');
     }
 
     const userId = createdAuth.user.id;
+    let personalTeam = null;
+    let personalTeamWarning = '';
 
-    const { error: profileErr } = await admin.from('users').upsert({
+    try {
+      personalTeam = await ensurePersonalTeam(admin, userId, name, callerId);
+    } catch (teamSetupErr) {
+      console.error('Personal team setup:', teamSetupErr);
+      personalTeamWarning = errorMessage(teamSetupErr);
+    }
+
+    // Prefer personal team as users.team_id when the column is required
+    const profilePayload = {
       id: userId,
       email,
       name,
       role,
       on_hold: false
-    }, { onConflict: 'id' });
-
-    if (profileErr) {
-      await admin.auth.admin.deleteUser(userId);
-      return errorResponse(profileErr, 400, 'Profile save failed');
+    };
+    if (personalTeam?.id) {
+      profilePayload.team_id = personalTeam.id;
     }
 
-    try {
-      await ensurePersonalTeam(admin, userId, name, callerId);
-    } catch (teamSetupErr) {
-      console.error('Personal team setup:', teamSetupErr);
-      return jsonResponse({
-        ok: true,
-        user_id: userId,
+    let { error: profileErr } = await admin.from('users').upsert(profilePayload, { onConflict: 'id' });
+
+    // Retry without team_id if that column rejects the value
+    if (profileErr && personalTeam?.id) {
+      const retry = await admin.from('users').upsert({
+        id: userId,
         email,
         name,
         role,
-        warning: `User created but personal team failed: ${errorMessage(teamSetupErr)}`
-      }, 200);
+        on_hold: false
+      }, { onConflict: 'id' });
+      if (!retry.error) profileErr = null;
     }
 
-    if (teamId) {
+    if (profileErr) {
+      // Keep auth user so we can see what failed; do not silent-delete
+      return errorResponse(
+        `Login was created, but profile save failed: ${errorMessage(profileErr)}. ` +
+        `Check Supabase → Authentication → Users for ${email}. ` +
+        `Common fix: run the users_role_check SQL so role "user" is allowed.`,
+        400
+      );
+    }
+
+    if (workTeamId) {
       const validLevels = ['view', 'member', 'lead', 'oht', 'admin'];
       const level = validLevels.includes(accessLevel) ? accessLevel : 'member';
       const { error: teamErr } = await admin.from('user_teams').insert({
         id: crypto.randomUUID(),
         user_id: userId,
-        team_id: teamId,
+        team_id: workTeamId,
         access_level: level,
         is_primary: false
       });
@@ -232,7 +265,10 @@ Deno.serve(async (req) => {
       user_id: userId,
       email,
       name,
-      role
+      role,
+      warning: personalTeamWarning
+        ? `User created but personal team failed: ${personalTeamWarning}`
+        : undefined
     });
   } catch (err) {
     console.error('create-user:', err);

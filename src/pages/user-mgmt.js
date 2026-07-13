@@ -1,6 +1,6 @@
 // ==================== USER MANAGEMENT (Phase 4C Lite) ====================
 import { state } from '../state.js';
-import { supabaseClient } from '../db.js';
+import { supabaseClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { createModal, openModal, closeModal, removeModal } from '../components/modals.js';
 import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
@@ -605,11 +605,12 @@ function confirmUserOnHoldToggle() {
   }
 }
 
-function formatInvokeError(data, error) {
+function formatInvokeError(data, error, rawText = '') {
   const candidates = [
     data?.error,
     data?.message,
     data?.msg,
+    data?.warning,
   ];
 
   for (const c of candidates) {
@@ -620,11 +621,15 @@ function formatInvokeError(data, error) {
     }
   }
 
+  if (typeof rawText === 'string' && rawText.trim() && rawText.trim() !== '{}') {
+    return rawText.trim().slice(0, 300);
+  }
+
   if (error?.message && error.message !== 'Edge Function returned a non-2xx status code') {
     return error.message;
   }
 
-  return 'Create user failed. Check email is new, full name is filled, and password is at least 8 characters.';
+  return '';
 }
 
 async function createAppUser(e) {
@@ -646,37 +651,45 @@ async function createAppUser(e) {
   setButtonLoading(btn, true, 'Create user');
 
   try {
-    const { data, error } = await supabaseClient.functions.invoke('create-user', {
-      body: {
+    const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
+    if (sessionError) throw sessionError;
+    const token = sessionData?.session?.access_token;
+    if (!token) throw new Error('You are not signed in. Sign out and sign in again, then retry.');
+
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/create-user`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
         email,
         name,
         password,
         role,
         team_id: team_id || null,
         access_level
-      }
+      })
     });
 
-    if (error || data?.error) {
-      let detail = formatInvokeError(data, error);
-      try {
-        const ctx = error?.context;
-        if (ctx) {
-          let body = null;
-          if (typeof ctx.json === 'function') {
-            body = await ctx.json();
-          } else if (typeof ctx.text === 'function') {
-            const text = await ctx.text();
-            try { body = JSON.parse(text); } catch (_) { if (text) detail = text; }
-          }
-          const fromBody = formatInvokeError(body, null);
-          if (fromBody && !fromBody.startsWith('Create user failed.')) detail = fromBody;
-        }
-      } catch (_) { /* keep detail */ }
+    const rawText = await res.text();
+    let data = null;
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch (_) {
+      data = null;
+    }
 
+    console.error('Create user response:', res.status, rawText);
+
+    if (!res.ok) {
+      const detail = formatInvokeError(data, null, rawText)
+        || `Create user failed (server code ${res.status}). If you tried this email before, delete it in Supabase → Authentication → Users, then try again.`;
       throw new Error(detail);
     }
 
+    if (data?.error) throw new Error(formatInvokeError(data, null, rawText) || data.error);
     if (!data?.user_id) throw new Error('Create user failed — no user id returned');
 
     if (data.warning) {
@@ -700,11 +713,7 @@ async function createAppUser(e) {
     const msg = (typeof err?.message === 'string' && err.message !== '{}')
       ? err.message
       : 'Failed to create user';
-    if (msg.includes('FunctionsFetchError') || msg.includes('Failed to send') || msg.includes('Failed to fetch')) {
-      showToast('Create-user function not reachable. Redeploy: supabase functions deploy create-user', 'error');
-    } else {
-      showToast(msg, 'error');
-    }
+    showToast(msg, 'error');
   } finally {
     setButtonLoading(btn, false, 'Create user');
   }

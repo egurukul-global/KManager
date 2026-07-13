@@ -1,5 +1,5 @@
--- Drop the old role rule FIRST (it blocks 'user'), then clean, then add the correct rule.
--- Run all of this in one go in Supabase SQL Editor.
+-- Fix users.role so ordinary "user" accounts can be created/saved.
+-- Run in Supabase → SQL Editor (all at once).
 
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 
