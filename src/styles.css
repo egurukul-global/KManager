@@ -119,6 +119,13 @@ body {
   text-align: center;
   font-size: 0.9em;
 }
+.login-signup-note {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 0.85em;
+  color: #666;
+  line-height: 1.4;
+}
 .link-btn {
   background: none;
   border: none;

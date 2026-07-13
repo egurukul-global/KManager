@@ -176,10 +176,24 @@ Deno.serve(async (req) => {
 
     if (profileErr) {
       await admin.auth.admin.deleteUser(userId);
-      return jsonResponse({ error: profileErr.message }, 400);
+      return jsonResponse({
+        error: `Profile save failed: ${profileErr.message}`
+      }, 400);
     }
 
-    await ensurePersonalTeam(admin, userId, name, callerId);
+    try {
+      await ensurePersonalTeam(admin, userId, name, callerId);
+    } catch (teamSetupErr) {
+      console.error('Personal team setup:', teamSetupErr);
+      return jsonResponse({
+        ok: true,
+        user_id: userId,
+        email,
+        name,
+        role,
+        warning: `User created but personal team failed: ${teamSetupErr.message || teamSetupErr}`
+      }, 200);
+    }
 
     if (teamId) {
       const validLevels = ['view', 'member', 'lead', 'oht', 'admin'];

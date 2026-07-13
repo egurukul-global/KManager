@@ -620,11 +620,32 @@ async function createAppUser(e) {
 
   try {
     const { data, error } = await supabaseClient.functions.invoke('create-user', {
-      body: { email, name, password, role, team_id, access_level }
+      body: {
+        email,
+        name,
+        password,
+        role,
+        team_id: team_id || null,
+        access_level
+      }
     });
 
-    if (error) throw error;
+    // Non-2xx responses often put the real message in `data.error`
     if (data?.error) throw new Error(data.error);
+
+    if (error) {
+      let detail = error.message || 'Failed to create user';
+      try {
+        const ctx = error.context;
+        if (ctx && typeof ctx.json === 'function') {
+          const body = await ctx.json();
+          if (body?.error) detail = body.error;
+        }
+      } catch (_) { /* keep detail */ }
+      throw new Error(detail);
+    }
+
+    if (!data?.user_id) throw new Error('Create user failed — no user id returned');
 
     if (team_id && data?.user_id) {
       try {
@@ -641,7 +662,7 @@ async function createAppUser(e) {
   } catch (err) {
     console.error('Create user:', err);
     const msg = err.message || 'Failed to create user';
-    if (msg.includes('FunctionsFetchError') || msg.includes('Failed to send')) {
+    if (msg.includes('FunctionsFetchError') || msg.includes('Failed to send') || msg.includes('Failed to fetch')) {
       showToast('Create-user function not deployed. Run: supabase functions deploy create-user', 'error');
     } else {
       showToast(msg, 'error');

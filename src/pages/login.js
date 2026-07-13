@@ -33,6 +33,9 @@ export function getLoginPage() {
             Forgot password?
           </button>
         </p>
+        <p class="login-signup-note">
+          Need an account? Ask your administrator to create one (Admin → Users).
+        </p>
       </div>
     </div>
   `;
