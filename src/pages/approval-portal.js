@@ -1,6 +1,6 @@
 // ==================== APPROVAL PORTAL (Phase 4B) ====================
 import { state } from '../state.js';
-import { showToast } from '../components/toasts.js';
+import { showToast, showConfirm } from '../components/toasts.js';
 import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
 import { approvalStatusBadge } from '../utils/approvalConstants.js';
 import { clarifyRoleFromStatus, userCanActOnRequest, canCancelRequest } from '../utils/approvalAccess.js';
@@ -395,7 +395,7 @@ async function portalOpenDetail(requestId) {
 
         ${canAct ? `
           <div class="form-group" style="margin-top:16px;">
-            <label>Message (optional for approve; required for clarify/reply)</label>
+            <label>Message (optional for approve; required for reject, clarify, and reply)</label>
             <textarea id="portalActionMessage" rows="3" placeholder="Add a note…"></textarea>
           </div>
           <div class="btn-group" id="portalDetailActions">
@@ -450,10 +450,15 @@ async function portalAction(ev, action, requestId) {
       await approveAndSendRequest(requestId, msg);
       showToast('Approved and sent to the next step', 'success');
     } else if (action === 'cancel') {
-      if (!window.confirm('Cancel this approval request and return it to draft?')) return;
+      const ok = await showConfirm('Cancel this approval request and return it to draft?');
+      if (!ok) return;
       await cancelRequest(requestId, msg || 'Cancelled by requester');
       showToast('Request cancelled — now in draft', 'info');
     } else if (action === 'reject') {
+      if (!msg.trim()) {
+        showToast('Enter a reject reason in the message box before rejecting.', 'warning');
+        return;
+      }
       await rejectRequest(requestId, msg);
       showToast('Request rejected — returned to team', 'info');
     } else if (action === 'clarify') {

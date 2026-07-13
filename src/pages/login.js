@@ -1,5 +1,6 @@
 // ==================== LOGIN PAGE ====================
 import { supabaseClient } from '../db.js';
+import { showPrompt, showToast } from '../components/toasts.js';
 
 export function getLoginPage() {
   return `
@@ -54,18 +55,18 @@ export function initLoginPage() {
 }
 
 async function handleForgotPassword() {
-  const errorDiv = document.getElementById('loginError');
-  const infoDiv = document.getElementById('loginInfo');
-  const email = document.getElementById('loginEmail')?.value?.trim()
-    || window.prompt('Enter your account email for a password reset link:')?.trim();
+  let email = document.getElementById('loginEmail')?.value?.trim() || '';
+  if (!email) {
+    email = await showPrompt('Enter your account email for a password reset link.', {
+      title: 'Forgot password',
+      label: 'Email',
+      placeholder: 'you@example.com',
+      inputType: 'email',
+      okLabel: 'Send reset link'
+    }) || '';
+  }
 
   if (!email) return;
-
-  if (errorDiv) errorDiv.classList.remove('active');
-  if (infoDiv) {
-    infoDiv.style.display = 'none';
-    infoDiv.textContent = '';
-  }
 
   try {
     const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
@@ -76,14 +77,9 @@ async function handleForgotPassword() {
     if (document.getElementById('loginEmail') && !document.getElementById('loginEmail').value) {
       document.getElementById('loginEmail').value = email;
     }
-    if (infoDiv) {
-      infoDiv.textContent = `If an account exists for ${email}, a reset link has been sent.`;
-      infoDiv.style.display = 'block';
-    }
+
+    await showToast(`If an account exists for ${email}, a reset link has been sent.`, 'success');
   } catch (err) {
-    if (errorDiv) {
-      errorDiv.textContent = err.message || 'Could not send reset email.';
-      errorDiv.classList.add('active');
-    }
+    await showToast(err.message || 'Could not send reset email.', 'error');
   }
 }
