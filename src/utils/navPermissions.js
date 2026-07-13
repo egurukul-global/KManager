@@ -103,12 +103,12 @@ function canAccessTeamsPage() {
 export function canAccessPage(pageName) {
   if (pageName === 'team-roster') pageName = 'team-mgmt';
 
-  // One Kailasa menu matrix (platform) — applies even for system admin unless OK admin
-  if (state.okMenus?.length && !state.isOkAdmin && !hasMenuAccess('finance', pageName)) {
+  if (isSystemAdmin()) return true;
+
+  // One Kailasa Finance menu matrix
+  if (state.okMenus?.length && !hasMenuAccess('finance', pageName)) {
     return false;
   }
-
-  if (isSystemAdmin()) return true;
 
   if (pageName === 'team-mgmt') {
     return canAccessTeamsPage();
@@ -161,7 +161,7 @@ export function applyNavPermissions() {
       const role = String(state.user?.role || 'user').toLowerCase();
       if (!['admin', 'oh', 'caoh'].includes(role)) hide = true;
     }
-    if (state.okMenus?.length && !state.isOkAdmin && !hasMenuAccess('finance', page)) hide = true;
+    if (state.okMenus?.length && !hasMenuAccess('finance', page)) hide = true;
 
     el.style.display = hide ? 'none' : '';
   });

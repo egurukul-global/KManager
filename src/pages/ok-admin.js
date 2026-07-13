@@ -1,14 +1,13 @@
-// ==================== ONE KAILASA ADMIN (platform people + app access) ====================
-import { state } from '../state.js';
+// ==================== ONE KAILASA ADMIN ====================
 import { supabaseClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { setButtonLoading } from '../utils/uiHelpers.js';
 import {
   isOkAdmin,
   OK_APPS,
-  FINANCE_MENU_KEYS,
-  navigateOk
+  FINANCE_MENU_KEYS
 } from '../utils/okAccess.js';
+import { renderOkShell, initOkShell } from './ok-shell.js';
 
 let allUsers = [];
 let selectedUserId = null;
@@ -22,89 +21,100 @@ function escapeHtml(text) {
 
 export function getOkAdminPage() {
   if (!isOkAdmin()) {
-    return `
-      <div class="ok-shell ok-shell--simple">
-        <main class="ok-main">
-          <h1 class="page-title">One Kailasa Admin</h1>
-          <div class="card"><p class="empty-state">Only One Kailasa administrators can open this screen.</p></div>
-          <button type="button" class="secondary" data-ok-nav="/">Back to One Kailasa</button>
-        </main>
-      </div>
-    `;
+    return renderOkShell({
+      activePath: '/admin',
+      title: 'Admin',
+      bottomTab: 'admin',
+      mainHtml: `
+        <h1 class="page-title">One Kailasa Admin</h1>
+        <div class="card"><p class="empty-state">Only One Kailasa administrators can open this screen.</p></div>
+      `
+    });
   }
 
-  return `
-    <div class="ok-shell ok-shell--admin">
-      <aside class="ok-sidebar">
-        <div class="ok-brand">
-          <span class="ok-brand-mark" aria-hidden="true">🔱</span>
-          <div class="ok-brand-title">OK Admin</div>
-        </div>
-        <nav class="ok-side-nav">
-          <button type="button" class="ok-side-link" data-ok-nav="/">← One Kailasa</button>
-        </nav>
-        <div class="ok-side-footer">
-          <button type="button" class="ok-signout" onclick="window.handleLogout()">Sign Out</button>
-        </div>
-      </aside>
-      <main class="ok-main">
-        <header class="ok-main-header">
-          <h1>People &amp; app access</h1>
-          <p>Create logins and decide which apps and Finance menus each person can open.</p>
-        </header>
+  return renderOkShell({
+    activePath: '/admin',
+    title: 'Admin',
+    bottomTab: 'admin',
+    mainHtml: `
+      <h1 class="page-title">People &amp; app access</h1>
+      <p class="page-intro">Create logins and decide which apps and Finance menus each person can open.</p>
 
-        <div class="ok-admin-grid">
-          <section class="card ok-admin-list-card">
-            <div class="ok-admin-toolbar">
-              <input type="text" id="okAdminSearch" placeholder="Search name or email" oninput="window.filterOkAdminUsers()">
-              <button type="button" id="okAdminNewBtn">+ New person</button>
+      <div class="card">
+        <div class="form-grid-row form-grid-row--user-filters">
+          <div class="form-group">
+            <label>Search</label>
+            <input type="text" id="okAdminSearch" placeholder="Name or email" oninput="window.filterOkAdminUsers()">
+          </div>
+          <div class="form-group user-mgmt-filter-actions">
+            <label>&nbsp;</label>
+            <div class="btn-group">
+              <button type="button" onclick="window.filterOkAdminUsers()">Search</button>
+              <button type="button" class="success" id="okAdminNewBtn">+ New person</button>
             </div>
-            <div id="okAdminUserList" class="ok-admin-user-list"><p class="ok-empty">Loading…</p></div>
-          </section>
-
-          <section class="card ok-admin-detail-card" id="okAdminDetail">
-            <p class="ok-empty">Select a person to edit access.</p>
-          </section>
-        </div>
-
-        <div id="okAdminCreateModal" class="modal" style="display:none;">
-          <div class="modal-content" style="max-width:440px;">
-            <button type="button" class="close-modal" id="okAdminCreateClose">&times;</button>
-            <h2>New person</h2>
-            <form id="okAdminCreateForm">
-              <div class="form-group">
-                <label for="okCreateName">Full name</label>
-                <input type="text" id="okCreateName" required autocomplete="name">
-              </div>
-              <div class="form-group">
-                <label for="okCreateEmail">Email (login)</label>
-                <input type="email" id="okCreateEmail" required autocomplete="email">
-              </div>
-              <div class="form-group">
-                <label for="okCreatePassword">Password (8+)</label>
-                <input type="password" id="okCreatePassword" required minlength="8" autocomplete="new-password">
-              </div>
-              <label class="ok-pin-check"><input type="checkbox" id="okCreateFinance" checked> Grant Finance app</label>
-              <div class="btn-group" style="margin-top:16px;">
-                <button type="submit" id="okCreateSubmit">Create</button>
-                <button type="button" class="secondary" id="okAdminCreateCancel">Cancel</button>
-              </div>
-            </form>
           </div>
         </div>
-      </main>
-    </div>
-  `;
+      </div>
+
+      <div class="card">
+        <h2>All people</h2>
+        <div class="table-container show-desktop">
+          <table class="table-stack-mobile user-mgmt-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="okAdminTableBody">
+              <tr><td colspan="4" class="empty-state">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div id="okAdminMobile" class="show-mobile data-card-list"></div>
+      </div>
+
+      <div class="card" id="okAdminDetailCard" style="display:none;">
+        <div id="okAdminDetail"></div>
+      </div>
+
+      <div id="okAdminCreateModal" class="modal">
+        <div class="modal-content" style="max-width:440px;">
+          <button type="button" class="close-modal" id="okAdminCreateClose">&times;</button>
+          <h2>New person</h2>
+          <form id="okAdminCreateForm">
+            <div class="form-group">
+              <label for="okCreateName">Full name</label>
+              <input type="text" id="okCreateName" required autocomplete="name">
+            </div>
+            <div class="form-group">
+              <label for="okCreateEmail">Email (login)</label>
+              <input type="email" id="okCreateEmail" required autocomplete="email">
+            </div>
+            <div class="form-group">
+              <label for="okCreatePassword">Password (8+)</label>
+              <input type="password" id="okCreatePassword" required minlength="8" autocomplete="new-password">
+            </div>
+            <label class="ok-pin-check"><input type="checkbox" id="okCreateFinance" checked> Grant Finance app</label>
+            <div class="btn-group" style="margin-top:16px;">
+              <button type="submit" id="okCreateSubmit">Create</button>
+              <button type="button" class="secondary" id="okAdminCreateCancel">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `
+  });
 }
 
 export function initOkAdminPage() {
-  document.querySelectorAll('[data-ok-nav]').forEach(btn => {
-    btn.addEventListener('click', () => navigateOk(btn.getAttribute('data-ok-nav')));
-  });
-
+  initOkShell();
   if (!isOkAdmin()) return;
 
   window.filterOkAdminUsers = filterOkAdminUsers;
+  window.selectOkAdminUser = selectUser;
   setupCreateModal();
   loadUsers();
 }
@@ -124,36 +134,59 @@ async function loadUsers() {
 
 function filterOkAdminUsers() {
   const q = (document.getElementById('okAdminSearch')?.value || '').trim().toLowerCase();
-  const list = document.getElementById('okAdminUserList');
-  if (!list) return;
+  const tbody = document.getElementById('okAdminTableBody');
+  const mobile = document.getElementById('okAdminMobile');
   const filtered = allUsers.filter(u => {
     if (!q) return true;
     return (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
   });
+
   if (!filtered.length) {
-    list.innerHTML = `<p class="ok-empty">No people found.</p>`;
+    if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No people found.</td></tr>';
+    if (mobile) mobile.innerHTML = '<p class="empty-state">No people found.</p>';
     return;
   }
-  list.innerHTML = filtered.map(u => `
-    <button type="button" class="ok-admin-user ${u.id === selectedUserId ? 'active' : ''}" data-user-id="${u.id}">
-      <strong>${escapeHtml(u.name || '—')}</strong>
-      <span>${escapeHtml(u.email || '')}</span>
-      ${u.on_hold ? '<span class="ok-admin-hold">On hold</span>' : ''}
-    </button>
-  `).join('');
-  list.querySelectorAll('[data-user-id]').forEach(btn => {
-    btn.addEventListener('click', () => selectUser(btn.getAttribute('data-user-id')));
-  });
+
+  if (tbody) {
+    tbody.innerHTML = filtered.map(u => `
+      <tr class="${u.id === selectedUserId ? 'row-selected' : ''}">
+        <td data-label="Name">${escapeHtml(u.name || '—')}</td>
+        <td data-label="Email">${escapeHtml(u.email || '')}</td>
+        <td data-label="Status">${u.on_hold ? '<span class="status-badge status-hold">On hold</span>' : '<span class="status-badge status-active">Active</span>'}</td>
+        <td data-label="">
+          <button type="button" class="secondary" onclick="window.selectOkAdminUser('${u.id}')">Select</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  if (mobile) {
+    mobile.innerHTML = filtered.map(u => `
+      <article class="data-card data-card--compact ${u.id === selectedUserId ? 'data-card--selected' : ''}">
+        <div class="data-card-top">
+          <span class="data-card-title">${escapeHtml(u.name || '—')}</span>
+          ${u.on_hold ? '<span class="status-badge status-hold">On hold</span>' : '<span class="status-badge status-active">Active</span>'}
+        </div>
+        <div class="data-card-row"><span class="data-card-row-label">Email</span><span class="data-card-row-value">${escapeHtml(u.email || '')}</span></div>
+        <div class="btn-group" style="margin-top:10px;">
+          <button type="button" onclick="window.selectOkAdminUser('${u.id}')">Select</button>
+        </div>
+      </article>
+    `).join('');
+  }
 }
 
 async function selectUser(userId) {
   selectedUserId = userId;
   filterOkAdminUsers();
+  const detailCard = document.getElementById('okAdminDetailCard');
   const detail = document.getElementById('okAdminDetail');
   const user = allUsers.find(u => u.id === userId);
   if (!detail || !user) return;
 
-  detail.innerHTML = `<p class="ok-empty">Loading access…</p>`;
+  if (detailCard) detailCard.style.display = '';
+  detail.innerHTML = `<p class="empty-state">Loading access…</p>`;
+  detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const [appsRes, menusRes, adminRes] = await Promise.all([
     supabaseClient.from('ok_app_access').select('app_code, enabled').eq('user_id', userId),
@@ -267,8 +300,21 @@ async function saveAccess(userId) {
     if (error) return showToast(error.message, 'error');
   }
 
-  // Ensure Finance pin if finance granted and no pins
-  if (appRows.some(r => r.app_code === 'finance')) {
+  const granted = new Set(appRows.map(r => r.app_code));
+  const { data: existingPins } = await supabaseClient
+    .from('ok_home_pins')
+    .select('app_code')
+    .eq('user_id', userId);
+  for (const pin of existingPins || []) {
+    if (!granted.has(pin.app_code)) {
+      await supabaseClient
+        .from('ok_home_pins')
+        .delete()
+        .eq('user_id', userId)
+        .eq('app_code', pin.app_code);
+    }
+  }
+  if (granted.has('finance')) {
     await supabaseClient.from('ok_home_pins').upsert({
       user_id: userId,
       app_code: 'finance',
@@ -282,10 +328,13 @@ async function saveAccess(userId) {
 function setupCreateModal() {
   const modal = document.getElementById('okAdminCreateModal');
   const openBtn = document.getElementById('okAdminNewBtn');
-  const close = () => { if (modal) modal.style.display = 'none'; };
-  openBtn?.addEventListener('click', () => { if (modal) modal.style.display = 'flex'; });
+  const close = () => { modal?.classList.remove('active'); };
+  openBtn?.addEventListener('click', () => { modal?.classList.add('active'); });
   document.getElementById('okAdminCreateClose')?.addEventListener('click', close);
   document.getElementById('okAdminCreateCancel')?.addEventListener('click', close);
+  modal?.addEventListener('click', (e) => {
+    if (e.target === modal) close();
+  });
 
   document.getElementById('okAdminCreateForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();

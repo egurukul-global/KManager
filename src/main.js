@@ -43,6 +43,7 @@ import { getMyFinancesPage, initMyFinancesPage } from './pages/my-finances.js';
 import { getMyIncomePage, initMyIncomePage } from './pages/my-income.js';
 import { getOkHomePage, initOkHomePage } from './pages/ok-home.js';
 import { getOkAdminPage, initOkAdminPage } from './pages/ok-admin.js';
+import { getOkProfilePage, initOkProfilePage } from './pages/ok-profile.js';
 import { getComingSoonPage, initComingSoonPage } from './pages/ok-coming-soon.js';
 import {
   loadOkAccess,
@@ -217,6 +218,11 @@ async function routeAfterAuth() {
     return;
   }
 
+  if (route === 'ok-profile') {
+    renderOkProfile();
+    return;
+  }
+
   if (route === 'gurukul' || route === 'utilities') {
     renderComingSoon(route);
     return;
@@ -383,6 +389,12 @@ function renderOkAdmin() {
   initOkAdminPage();
 }
 
+function renderOkProfile() {
+  app.innerHTML = getOkProfilePage();
+  window.handleLogout = handleLogout;
+  initOkProfilePage();
+}
+
 function renderComingSoon(appCode) {
   app.innerHTML = getComingSoonPage(appCode);
   window.handleLogout = handleLogout;
@@ -403,8 +415,10 @@ function renderAppShell() {
     <div class="app-shell active">
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-user">
-          <span class="sidebar-trident" aria-hidden="true">🔱</span>
-          <span id="userDisplayName" class="sidebar-display-name" title="${state.user?.name || ''}">${displayName}</span>
+          <div class="sidebar-user-text">
+            <span class="sidebar-app-title">Finance</span>
+            <span id="userDisplayName" class="sidebar-display-name" title="${state.user?.name || ''}">${displayName}</span>
+          </div>
           <span id="userAccessLevel" class="sidebar-access-badge"></span>
         </div>
 

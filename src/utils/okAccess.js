@@ -61,14 +61,13 @@ export function isOkAdmin() {
 }
 
 export function hasAppAccess(appCode) {
-  if (state.isOkAdmin) return true;
   const apps = state.okApps || [];
-  return apps.some(a => a.app_code === appCode && a.enabled !== false);
+  return apps.some(a => a.app_code === appCode && a.enabled === true);
 }
 
 export function hasMenuAccess(appCode, menuKey) {
-  if (state.isOkAdmin) return true;
   if (!hasAppAccess(appCode)) return false;
+  if (state.isOkAdmin) return true;
   const menus = state.okMenus || [];
   // If no menu rows loaded yet, fall back to team role rules only (legacy)
   if (!menus.length) return true;
@@ -97,14 +96,16 @@ export async function loadOkAccess(userId) {
   ]);
 
   state.isOkAdmin = !!adminRes.data;
-  state.okApps = appsRes.data || [];
+  // Only enabled apps count — empty list means no apps (do not auto-grant Finance)
+  state.okApps = (appsRes.data || []).filter(a => a.enabled === true);
   state.okMenus = menusRes.data || [];
   state.okPins = pinsRes.data || [];
 
-  // Soft fallback if migration not run yet: treat as Finance-only
-  if (appsRes.error || (!state.okApps.length && !state.isOkAdmin)) {
+  // Soft fallback only when tables are missing (migration not run)
+  if (appsRes.error) {
+    console.warn('ok_app_access load:', appsRes.error.message);
     state.okApps = [{ app_code: 'finance', enabled: true }];
-    state.okPins = state.okPins?.length ? state.okPins : [{ app_code: 'finance', sort_order: 0 }];
+    if (!state.okPins.length) state.okPins = [{ app_code: 'finance', sort_order: 0 }];
   }
 }
 
@@ -151,6 +152,7 @@ export function parseAppPath() {
   if (lower === '/gurukul' || lower.startsWith('/gurukul/')) return 'gurukul';
   if (lower === '/utilities' || lower.startsWith('/utilities/')) return 'utilities';
   if (lower === '/admin' || lower.startsWith('/admin/')) return 'ok-admin';
+  if (lower === '/profile' || lower.startsWith('/profile/')) return 'ok-profile';
   return 'home';
 }
 
