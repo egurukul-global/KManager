@@ -38,6 +38,7 @@ import { getDisplayName } from './utils/displayName.js';
 import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher, updateAccessBadge } from './utils/teamAccess.js';
 import { applyNavPermissions, canAccessPage, defaultPageForRole, defaultPageForTab } from './utils/navPermissions.js';
 import { getTeamMgmtPage, initTeamMgmtPage } from './pages/team-mgmt.js';
+import { getUserMgmtPage, initUserMgmtPage } from './pages/user-mgmt.js';
 import { getMyFinancesPage, initMyFinancesPage } from './pages/my-finances.js';
 import { getMyIncomePage, initMyIncomePage } from './pages/my-income.js';
 import swamijiImg from './Swamiji.png';
@@ -113,7 +114,7 @@ async function initializeApp() {
     // 1. Get user profile
     const { data: userData, error: userError } = await supabaseClient
       .from('users')
-      .select('id, email, name, role, team_id, gender, request_alias, request_counter')
+      .select('id, email, name, role, team_id, gender, request_alias, request_counter, on_hold')
       .eq('id', state.session.user.id)
       .single();
 
@@ -124,10 +125,24 @@ async function initializeApp() {
         name: state.session.user.user_metadata?.name || state.session.user.email.split('@')[0],
         role: 'user',
         team_id: null,
-        gender: null
+        gender: null,
+        on_hold: false
       };
     } else {
       state.user = userData;
+    }
+
+    if (state.user.on_hold) {
+      await supabaseClient.auth.signOut();
+      state.session = null;
+      state.user = null;
+      renderLoginScreen();
+      const errorDiv = document.getElementById('loginError');
+      if (errorDiv) {
+        errorDiv.textContent = 'Your account is on hold. Contact an administrator.';
+        errorDiv.classList.add('active');
+      }
+      return;
     }
 
     // 2. Get all teams for this user
@@ -603,7 +618,7 @@ export function showPage(pageName) {
     'role-assignments': { html: getRoleAssignmentsPage, init: initRoleAssignmentsPage },
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
-    'user-mgmt': { html: () => placeholderPage('User Management', 'Session 8'), init: () => {} },
+    'user-mgmt': { html: getUserMgmtPage, init: initUserMgmtPage },
     'team-mgmt': { html: getTeamMgmtPage, init: initTeamMgmtPage }
   };
 

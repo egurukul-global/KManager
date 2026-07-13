@@ -106,6 +106,28 @@ body {
   display: none;
 }
 .error-msg.active { display: block; }
+.login-info-msg {
+  background: #d4edda;
+  color: #155724;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  font-size: 0.9em;
+}
+.login-forgot {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 0.9em;
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--primary, #9a4452);
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  font: inherit;
+}
 .loading-spinner {
   display: inline-block;
   width: 18px; height: 18px;
@@ -1134,6 +1156,18 @@ tr.selected { background: #F5EDE8 !important; }
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--border, #e9ecef);
+}
+
+.form-grid-row--user-filters {
+  grid-template-columns:
+    minmax(12rem, 1.5fr)
+    minmax(9rem, 0.75fr)
+    auto;
+  align-items: end;
+}
+
+.user-mgmt-filter-actions .btn-group {
+  flex-wrap: nowrap;
 }
 
 .team-rename-row {
