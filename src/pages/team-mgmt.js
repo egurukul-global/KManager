@@ -7,6 +7,7 @@ import { refreshAccessibleTeams } from '../utils/teamAccess.js';
 import { ensurePersonalTeamForUser } from '../utils/personalTeamHelpers.js';
 import { ensureMemberBucketOnWorkTeam } from '../utils/memberBucketHelpers.js';
 import { findNonZeroBucketsOnTeam, formatNonZeroBucketList } from '../utils/balanceGuards.js';
+import { consumePendingTeamMgmtTeamId } from '../utils/teamMgmtNavigation.js';
 
 const ACCESS_LEVELS = [
   { value: 'view', label: 'View only' },
@@ -244,7 +245,8 @@ async function loadManageableTeams() {
       select.innerHTML += `<option value="${team.id}">${escapeHtml(team.name)}</option>`;
     });
 
-    const preferred = activeTeamId || state.currentTeam?.team_id;
+    const pendingTeamId = consumePendingTeamMgmtTeamId();
+    const preferred = pendingTeamId || activeTeamId || state.currentTeam?.team_id;
     if (preferred && teamsCache.some(t => t.id === preferred)) {
       select.value = preferred;
       await onTeamsPageSelectChange();

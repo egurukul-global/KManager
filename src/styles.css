@@ -1162,8 +1162,76 @@ tr.selected { background: #F5EDE8 !important; }
   grid-template-columns:
     minmax(12rem, 1.5fr)
     minmax(9rem, 0.75fr)
+    minmax(10rem, 0.9fr)
     auto;
   align-items: end;
+}
+
+.user-select-modal h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.25rem;
+}
+
+.user-select-modal .user-select-email {
+  color: #666;
+  margin: 0 0 1.25rem;
+  font-size: 0.95rem;
+}
+
+.user-select-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #eee;
+}
+
+.user-select-section h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.user-select-section .section-hint {
+  margin: 0 0 0.75rem;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.user-select-section .section-link {
+  margin-top: 0.75rem;
+}
+
+.user-select-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.user-select-table th,
+.user-select-table td {
+  text-align: left;
+  padding: 0.5rem 0.75rem 0.5rem 0;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.user-select-table th {
+  color: #666;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.user-team-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary, #2563eb);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.user-team-link:hover {
+  color: var(--primary-dark, #1d4ed8);
 }
 
 .user-mgmt-filter-actions .btn-group {
