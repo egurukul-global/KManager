@@ -61,6 +61,7 @@ export function monthlyBudgetExistsForEntry(budgets, entry) {
   return (budgets || []).some(b =>
     b.budget_type === 'monthly' &&
     b.status !== 'archive' &&
+    b.status !== 'archived' &&
     (b.calendar_entry_id === entry.id ||
       b.budget_period_date === entry.budget_period_date)
   );

@@ -131,7 +131,10 @@ export async function initDashboardPage() {
         : 'Team balance (USD)';
     }
 
-    const currentBudgets = budgets.filter(b => b.status === 'current');
+    const currentBudgets = budgets.filter(b => {
+      const s = String(b.status || '').toLowerCase();
+      return s === 'approved' || s === 'current';
+    });
     const currentBudgetIds = new Set(currentBudgets.map(b => b.id));
 
     let allocatedIncome = 0;

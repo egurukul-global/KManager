@@ -156,6 +156,7 @@ async function loadTeamBudgets() {
     .eq('team_id', teamId)
     .eq('is_deleted', false)
     .neq('status', 'archive')
+    .neq('status', 'archived')
     .order('name');
 
   if (error) throw error;

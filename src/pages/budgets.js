@@ -5,9 +5,9 @@ import { showToast, showConfirm } from '../components/toasts.js';
 import {
   getLatestUsdRate,
   getLocalCurrenciesFromRates,
-  usdToLocal,
+  localToUsd,
   rateForInput,
-  formatLocalAmountInput
+  roundUsd
 } from '../utils/currency.js';
 import { loadCategoryMasterLines, normalizeBudgetCategory, formatCategoryLabel } from '../utils/categoryMaster.js';
 import { formatDisplayDate, isDateCnBudgetName, DATE_CN_BUDGET_NAME_WARNING, filterOpenCalendarEntries, isCalendarEntryOpen } from '../utils/budgetCalendar.js';
@@ -19,12 +19,24 @@ import {
   buildBudgetTypeOptionsHtml
 } from '../utils/budgetTypes.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
-import { approvalStatusBadge } from '../utils/approvalConstants.js';
 import { canSubmitBudgetApproval } from '../utils/approvalAccess.js';
 import { submitBudgetForApproval } from '../utils/approvalEngine.js';
+import { isSystemAdmin } from '../utils/navPermissions.js';
+import {
+  BUDGET_STATUS,
+  getBudgetStatus,
+  budgetStatusBadgeHtml,
+  budgetStatusOptionsHtml,
+  canEditBudgetLines,
+  canOpenBudgetEditor,
+  canArchiveBudget,
+  canSubmitBudgetByStatus
+} from '../utils/budgetStatus.js';
 
 let calendarEntriesCache = [];
 let editTemplateRowKeys = null;
+/** Active form mode: 'create' | 'edit' */
+let budgetFormMode = 'create';
 
 async function ensureEditTemplateRowKeys() {
   if (editTemplateRowKeys) return editTemplateRowKeys;
@@ -43,16 +55,6 @@ function escapeHtmlAttr(s) {
     .replace(/&/g, '&amp;')
     .replace(/"/g, '&quot;')
     .replace(/</g, '&lt;');
-}
-
-function getEditRowCategoryName(row) {
-  const hidden = row.querySelector('.edit-budget-cat-name-value');
-  if (hidden?.value) return hidden.value.trim();
-  const input = row.querySelector('.edit-budget-cat-name-input');
-  if (input?.value) return input.value.trim();
-  const sel = row.querySelector('.edit-budget-cat-name');
-  if (sel) return (sel.value || sel.getAttribute('data-selected') || '').trim();
-  return '';
 }
 
 function formatLocalInput(value) {
@@ -137,7 +139,7 @@ export function getCreateBudgetPage() {
           <div class="form-grid-row form-grid-row--budget-b">
             <div class="form-group">
               <label>Status</label>
-              <select id="newBudgetStatus" required><option value="draft" selected>Draft</option><option value="current">Current</option><option value="archive">Archive</option></select>
+              <select id="newBudgetStatus" required>${budgetStatusOptionsHtml('draft', { forCreate: true })}</select>
             </div>
             <div class="form-group">
               <label>Currency</label>
@@ -148,25 +150,25 @@ export function getCreateBudgetPage() {
               <input type="number" class="input-rate" id="newBudgetRate" step="any" placeholder="Rate" required oninput="window.onCreateBudgetRateChange()">
             </div>
           </div>
-          <p class="form-hint">1 USD = X local currency. Line amounts are entered in USD; local is calculated from this rate.</p>
+          <p class="form-hint">1 USD = X local currency. Enter local amounts; USD is calculated from this rate.</p>
         </div>
 
         <h3 style="margin-top: 25px;">Categories &amp; Amounts</h3>
-        <p class="page-intro" id="budgetLineUsdHint">Enter USD amounts. Local amounts use the currency and exchange rate above.</p>
+        <p class="page-intro" id="budgetLineUsdHint">Enter local amounts. USD uses the currency and exchange rate above.</p>
 
         <div class="budget-line-table-wrap show-desktop">
           <div class="budget-line-table-head">
             <span>Category</span>
-            <span>USD Amount</span>
             <span>Local Amount</span>
+            <span>USD Amount</span>
             <span></span>
           </div>
         </div>
         <div id="budgetCategoriesContainer" class="budget-line-cards"></div>
 
         <div class="budget-grand-total-card">
-          ${cardRow('Total USD', '<span id="createBudgetTotalUsd">0.00</span>')}
           ${cardRow('Total Local', '<span id="createBudgetTotalLocal">0.00</span>')}
+          ${cardRow('Total USD', '<span id="createBudgetTotalUsd">0.00</span>')}
         </div>
 
         <div class="btn-group">
@@ -191,10 +193,11 @@ export async function initCreateBudgetPage() {
   window.onBudgetCalendarEntryChange = onBudgetCalendarEntryChange;
   window.onCreateBudgetCurrencyChange = onCreateBudgetCurrencyChange;
   window.onCreateBudgetRateChange = onCreateBudgetRateChange;
-  window.onCreateBudgetUSDChange = onCreateBudgetUSDChange;
+  window.onCreateBudgetLocalChange = onCreateBudgetLocalChange;
 
+  budgetFormMode = 'create';
   onBudgetTypeChange();
-  updateBudgetLineUsdHint();
+  updateBudgetLineAmountHint();
 }
 
 async function loadCalendarEntriesCache() {
@@ -345,38 +348,41 @@ function onCreateBudgetCurrencyChange() {
     const rate = getLatestUsdRate(state.exchangeRates || [], currency);
     rateInput.value = rate !== null ? rateForInput(rate) : '';
   }
-  updateBudgetLineUsdHint();
-  recalculateAllCreateBudgetLocals();
+  updateBudgetLineAmountHint();
+  recalculateAllBudgetUsdFromLocal('#budgetCategoriesContainer', getCreateBudgetHeaderCurrency);
 }
 
 function onCreateBudgetRateChange() {
-  recalculateAllCreateBudgetLocals();
+  recalculateAllBudgetUsdFromLocal('#budgetCategoriesContainer', getCreateBudgetHeaderCurrency);
 }
 
-function onCreateBudgetUSDChange() {
+function onCreateBudgetLocalChange() {
   updateCreateBudgetTotals();
 }
 
-function updateBudgetLineUsdHint() {
-  const hint = document.getElementById('budgetLineUsdHint');
-  const { currency } = getCreateBudgetHeaderCurrency();
+function updateBudgetLineAmountHint() {
+  const hint = document.getElementById('budgetLineUsdHint') || document.getElementById('editBudgetRateNote');
+  const { currency } = getActiveHeaderCurrency();
   if (!hint) return;
   if (!currency) {
-    hint.textContent = 'Enter USD amounts. Local amounts use the currency and exchange rate above.';
+    hint.textContent = 'Enter local amounts. USD uses the currency and exchange rate above.';
     return;
   }
   if (currency === 'USD') {
-    hint.textContent = 'Enter USD amounts. Local amount matches USD when budget currency is USD.';
+    hint.textContent = 'Enter amounts. When currency is USD, local and USD match.';
   } else {
-    hint.textContent = `Enter USD amounts. Local (${currency}) is calculated from the exchange rate above.`;
+    hint.textContent = `Enter local (${currency}) amounts. USD is calculated from the exchange rate above.`;
   }
 }
 
 function updateCreateBudgetTotals() {
-  const rows = document.querySelectorAll('#budgetCategoriesContainer .category-row');
+  updateBudgetFormTotals('#budgetCategoriesContainer', 'createBudgetTotalUsd', 'createBudgetTotalLocal');
+}
+
+function updateBudgetFormTotals(containerSel, usdId, localId) {
+  const rows = document.querySelectorAll(`${containerSel} .category-row`);
   let totalUsd = 0;
   let totalLocal = 0;
-  const { rate } = getCreateBudgetHeaderCurrency();
 
   rows.forEach(row => {
     const usd = parseFloat(row.querySelector('.budget-cat-usd')?.value) || 0;
@@ -385,14 +391,10 @@ function updateCreateBudgetTotals() {
     totalLocal += local;
   });
 
-  const usdEl = document.getElementById('createBudgetTotalUsd');
-  const localEl = document.getElementById('createBudgetTotalLocal');
+  const usdEl = document.getElementById(usdId);
+  const localEl = document.getElementById(localId);
   if (usdEl) usdEl.textContent = totalUsd.toFixed(2);
-  if (localEl) {
-    localEl.textContent = totalLocal > 0
-      ? totalLocal.toFixed(2)
-      : (rate > 0 ? usdToLocal(totalUsd, rate).toFixed(2) : totalUsd.toFixed(2));
-  }
+  if (localEl) localEl.textContent = totalLocal.toFixed(2);
 }
 
 function getCreateBudgetHeaderCurrency() {
@@ -404,23 +406,56 @@ function getCreateBudgetHeaderCurrency() {
   return { currency, rate };
 }
 
+function getEditBudgetHeaderCurrency() {
+  const currency = document.getElementById('editBudgetCurrency')?.value || '';
+  const rateRaw = parseFloat(document.getElementById('editBudgetRate')?.value);
+  const rate = Number.isFinite(rateRaw)
+    ? rateRaw
+    : (currency === 'USD' ? 1 : 0);
+  return { currency, rate };
+}
+
+function getActiveHeaderCurrency() {
+  return budgetFormMode === 'edit'
+    ? getEditBudgetHeaderCurrency()
+    : getCreateBudgetHeaderCurrency();
+}
+
+function buildCategoryRowHtml({ displayName, category, subcategory, localVal = '0', usdVal = '0', isTemplate = false, isCustom = false }) {
+  const remove = isTemplate
+    ? '<div class="budget-line-card-actions"></div>'
+    : `<div class="budget-line-card-actions">${btnIconDelete('window.removeBudgetCategoryRow(this)', 'Remove')}</div>`;
+
+  const title = isCustom
+    ? `<div class="budget-line-card-title"><input type="text" class="budget-cat-name" required placeholder="Category name" value="${escapeHtmlAttr(displayName)}"></div>`
+    : `<input type="hidden" class="budget-cat-category" value="${escapeHtmlAttr(category || '')}">
+       <input type="hidden" class="budget-cat-subcategory" value="${escapeHtmlAttr(subcategory || '')}">
+       <input type="hidden" class="budget-cat-name-value" value="${escapeHtmlAttr(displayName)}">
+       <div class="budget-line-card-title">${escapeHtmlAttr(displayName)}</div>`;
+
+  return `
+    ${title}
+    <div class="field-labeled"><span>Local Amount</span>
+      <input type="number" class="budget-cat-local" step="0.01" value="${escapeHtmlAttr(localVal)}" min="0" oninput="window.onBudgetLocalChange(this)">
+    </div>
+    <div class="field-labeled"><span>USD Amount</span>
+      <input type="number" class="budget-cat-usd" step="0.01" value="${escapeHtmlAttr(usdVal)}" min="0" readonly>
+    </div>
+    ${remove}
+  `;
+}
+
 function buildCreateCategoryRow(line) {
   const displayName = formatCategoryLabel(line.category, line.subcategory);
   const row = document.createElement('div');
   row.className = 'budget-line-card category-row';
   row.dataset.template = 'true';
-  row.innerHTML = `
-    <input type="hidden" class="budget-cat-category" value="${escapeHtmlAttr(line.category)}">
-    <input type="hidden" class="budget-cat-subcategory" value="${escapeHtmlAttr(line.subcategory || '')}">
-    <div class="budget-line-card-title">${escapeHtmlAttr(displayName)}</div>
-    <div class="field-labeled"><span>USD Amount</span>
-      <input type="number" class="budget-cat-usd" step="0.01" value="0" min="0" oninput="window.onBudgetUSDChange(this)">
-    </div>
-    <div class="field-labeled"><span>Local Amount</span>
-      <input type="number" class="budget-cat-local" step="0.01" value="0" readonly>
-    </div>
-    <div class="budget-line-card-actions"></div>
-  `;
+  row.innerHTML = buildCategoryRowHtml({
+    displayName,
+    category: line.category,
+    subcategory: line.subcategory,
+    isTemplate: true
+  });
   return row;
 }
 
@@ -431,11 +466,7 @@ async function seedCreateBudgetCategoryRows() {
   container.innerHTML = '';
   const lines = await loadCategoryMasterLines();
   lines.forEach(line => container.appendChild(buildCreateCategoryRow(line)));
-  recalculateAllCreateBudgetLocals();
-}
-
-async function populateCategoryRows() {
-  // Line currency/rate removed — header currency drives conversion.
+  recalculateAllBudgetUsdFromLocal('#budgetCategoriesContainer', getCreateBudgetHeaderCurrency);
 }
 
 window.addCategoryRow = function() {
@@ -444,77 +475,76 @@ window.addCategoryRow = function() {
   const row = document.createElement('div');
   row.className = 'budget-line-card category-row';
   row.dataset.custom = 'true';
-  row.innerHTML = `
-    <div class="budget-line-card-title">
-      <input type="text" class="budget-cat-name" required placeholder="Category name">
-    </div>
-    <div class="field-labeled"><span>USD Amount</span>
-      <input type="number" class="budget-cat-usd" step="0.01" value="0" min="0" oninput="window.onBudgetUSDChange(this)">
-    </div>
-    <div class="field-labeled"><span>Local Amount</span>
-      <input type="number" class="budget-cat-local" step="0.01" value="0" readonly>
-    </div>
-    <div class="budget-line-card-actions">
-      ${btnIconDelete('window.removeCategoryRow(this)', 'Remove')}
-    </div>
-  `;
+  row.innerHTML = buildCategoryRowHtml({ displayName: '', isCustom: true });
   container.appendChild(row);
-  recalculateBudgetLocal(row);
+  recalculateBudgetUsdFromLocal(row, getCreateBudgetHeaderCurrency());
 };
 
-window.removeCategoryRow = function(btn) {
+window.removeBudgetCategoryRow = function(btn) {
   const row = btn.closest('.category-row');
   if (!row) return;
   if (row.dataset.template === 'true') {
     showToast('Template categories cannot be removed', 'warning');
     return;
   }
+  const container = row.parentElement;
   row.remove();
-  updateCreateBudgetTotals();
+  if (container?.id === 'editBudgetCategoriesContainer') {
+    updateBudgetFormTotals('#editBudgetCategoriesContainer', 'editBudgetTotalUsd', 'editBudgetTotalLocal');
+  } else {
+    updateCreateBudgetTotals();
+  }
 };
 
-window.onBudgetUSDChange = function(usdInput) {
-  const row = usdInput.closest('.category-row');
+window.removeCategoryRow = window.removeBudgetCategoryRow;
+
+window.onBudgetLocalChange = function(localInput) {
+  const row = localInput.closest('.category-row');
   if (!row) return;
-  recalculateBudgetLocal(row);
+  const headerFn = row.closest('#editBudgetCategoriesContainer')
+    ? getEditBudgetHeaderCurrency
+    : getCreateBudgetHeaderCurrency;
+  recalculateBudgetUsdFromLocal(row, headerFn());
 };
 
-window.onBudgetCurrencyChange = function() {
-  recalculateAllCreateBudgetLocals();
-};
-
-window.onBudgetRateChange = function() {
-  recalculateAllCreateBudgetLocals();
-};
-
-function recalculateAllCreateBudgetLocals() {
-  document.querySelectorAll('#budgetCategoriesContainer .category-row').forEach(row => {
-    recalculateBudgetLocal(row, { skipTotals: true });
+function recalculateAllBudgetUsdFromLocal(containerSel, headerFn) {
+  document.querySelectorAll(`${containerSel} .category-row`).forEach(row => {
+    recalculateBudgetUsdFromLocal(row, headerFn(), { skipTotals: true });
   });
-  updateCreateBudgetTotals();
+  if (containerSel.includes('edit')) {
+    updateBudgetFormTotals('#editBudgetCategoriesContainer', 'editBudgetTotalUsd', 'editBudgetTotalLocal');
+  } else {
+    updateCreateBudgetTotals();
+  }
 }
 
-function recalculateBudgetLocal(row, options = {}) {
+function recalculateBudgetUsdFromLocal(row, header, options = {}) {
   const usdInput = row.querySelector('.budget-cat-usd');
   const localInput = row.querySelector('.budget-cat-local');
   if (!usdInput || !localInput) return;
 
-  const { currency, rate } = getCreateBudgetHeaderCurrency();
-  const usdRaw = parseFloat(usdInput.value);
-  const usd = Number.isFinite(usdRaw) ? usdRaw : 0;
-  if (!Number.isFinite(usdRaw) || usdInput.value === '') {
-    usdInput.value = '0';
+  const { currency, rate } = header;
+  const localRaw = parseFloat(localInput.value);
+  const local = Number.isFinite(localRaw) ? localRaw : 0;
+  if (!Number.isFinite(localRaw) || localInput.value === '') {
+    localInput.value = '0';
   }
 
-  let local = 0;
+  let usd = 0;
   if (currency === 'USD') {
-    local = usd;
+    usd = local;
   } else if (currency && rate > 0) {
-    local = usd * rate;
+    usd = roundUsd(localToUsd(local, rate));
   }
 
-  localInput.value = formatLocalAmountInput(local);
-  if (!options.skipTotals) updateCreateBudgetTotals();
+  usdInput.value = usd.toFixed(2);
+  if (!options.skipTotals) {
+    if (row.closest('#editBudgetCategoriesContainer')) {
+      updateBudgetFormTotals('#editBudgetCategoriesContainer', 'editBudgetTotalUsd', 'editBudgetTotalLocal');
+    } else {
+      updateCreateBudgetTotals();
+    }
+  }
 }
 
 window.validateBudgetName = function(input) {
@@ -665,12 +695,13 @@ window.createBudget = async function(e) {
   }
 
   const totalAmount = categories.reduce((sum, c) => sum + c.usdAmount, 0);
-  const status = document.getElementById('newBudgetStatus').value;
+  const status = BUDGET_STATUS.DRAFT;
 
   const budget = {
     team_id: teamId,
     name: resolvedName,
     status: status,
+    approval_status: 'DRAFT',
     budget_type: budgetType,
     calendar_entry_id,
     budget_period_date,
@@ -722,10 +753,12 @@ export function getViewBudgetsPage() {
           <div class="form-group">
             <label>Status</label>
             <select id="budgetFilterStatus" onchange="window.initViewBudgetsPage()">
-              <option value="current" selected>Current</option>
+              <option value="approved" selected>Approved</option>
               <option value="all">All</option>
               <option value="draft">Draft</option>
-              <option value="archive">Archive</option>
+              <option value="submitted">Submitted</option>
+              <option value="rejected">Rejected</option>
+              <option value="archived">Archived</option>
             </select>
           </div>
           <div class="form-group">
@@ -741,32 +774,56 @@ export function getViewBudgetsPage() {
     <div id="editBudgetModal" class="modal">
       <div class="modal-content" style="max-width: 900px;">
         <button class="close-modal" onclick="window.closeEditBudgetModal()">&times;</button>
-        <h2>Edit Budget</h2>
+        <h2 id="editBudgetModalTitle">Edit Budget</h2>
         <form id="editBudgetForm" onsubmit="window.saveEditedBudget(); return false;">
           <input type="hidden" id="editBudgetId">
-          <input type="hidden" id="editBudgetType">
-          <div class="form-group">
-            <label>Budget Type</label>
-            <input type="text" id="editBudgetTypeDisplay" readonly>
-          </div>
-          <div class="form-grid-row form-grid-row--meta edit-budget-meta">
-            <div class="form-group">
-              <label>Budget Name</label>
-              <input type="text" id="editBudgetName" required onblur="window.validateEditBudgetName(this)">
-              <p id="editBudgetNameHint" class="form-hint" style="display:none;">Monthly budgets use the org calendar label and cannot be renamed here.</p>
+          <div class="form-stack">
+            <div class="form-grid-row form-grid-row--budget-header">
+              <div class="form-group budget-type-first">
+                <label>Budget Type</label>
+                <input type="text" id="editBudgetTypeDisplay" readonly>
+                <input type="hidden" id="editBudgetType">
+              </div>
+              <div class="form-group" id="editMonthlyNameGroup">
+                <label>Budget Name</label>
+                <input type="text" id="editBudgetName" required onblur="window.validateEditBudgetName(this)">
+                <p id="editBudgetNameHint" class="form-hint" style="display:none;">Monthly budgets use the org calendar label and cannot be renamed here.</p>
+              </div>
             </div>
-            <div class="form-group">
-              <label>Status</label>
-              <select id="editBudgetStatus" required>
-                <option value="draft">Draft</option>
-                <option value="current">Current</option>
-                <option value="archive">Archive</option>
-              </select>
+
+            <div class="form-grid-row form-grid-row--budget-b">
+              <div class="form-group">
+                <label>Status</label>
+                <select id="editBudgetStatus" required></select>
+              </div>
+              <div class="form-group">
+                <label>Currency</label>
+                <select id="editBudgetCurrency" required onchange="window.onEditBudgetHeaderCurrencyChange()"><option value="">—</option></select>
+              </div>
+              <div class="form-group">
+                <label>Exch Rate</label>
+                <input type="number" class="input-rate" id="editBudgetRate" step="any" placeholder="Rate" required oninput="window.onEditBudgetHeaderRateChange()">
+              </div>
+            </div>
+            <p class="form-hint" id="editBudgetRateNote">Enter local amounts; USD is calculated from the exchange rate above.</p>
+          </div>
+
+          <h3 style="margin-top: 25px;">Categories &amp; Amounts</h3>
+          <div class="budget-line-table-wrap show-desktop">
+            <div class="budget-line-table-head">
+              <span>Category</span>
+              <span>Local Amount</span>
+              <span>USD Amount</span>
+              <span></span>
             </div>
           </div>
-          <h3 style="margin-top: 25px;">Categories & Amounts</h3>
-          <p id="editBudgetRateNote" style="margin-bottom: 15px; color: #666;">USD amounts are primary. Select currency to auto-fill rate (1 USD = X local). Local amount = USD × rate.</p>
           <div id="editBudgetCategoriesContainer" class="budget-line-cards"></div>
+
+          <div class="budget-grand-total-card">
+            ${cardRow('Total Local', '<span id="editBudgetTotalLocal">0.00</span>')}
+            ${cardRow('Total USD', '<span id="editBudgetTotalUsd">0.00</span>')}
+          </div>
+
           <div class="btn-group">
             <button type="button" class="secondary" id="addEditCatBtn" onclick="window.addEditCategoryRow()">+ Add Category</button>
             <button type="submit" class="success" id="saveEditBudgetBtn">Save Changes</button>
@@ -789,7 +846,7 @@ export async function initViewBudgetsPage() {
 
   const statusFilterEl = document.getElementById('budgetFilterStatus');
   const nameFilterEl = document.getElementById('budgetFilterName');
-  const statusFilter = statusFilterEl ? statusFilterEl.value : 'current';
+  const statusFilter = statusFilterEl ? statusFilterEl.value : 'approved';
   const nameFilter = nameFilterEl ? nameFilterEl.value : '';
 
   const teamId = state.currentTeam?.team_id;
@@ -817,7 +874,7 @@ export async function initViewBudgetsPage() {
   }
 
   if (statusFilter !== 'all') {
-    budgets = budgets.filter(b => (b.status || 'current') === statusFilter);
+    budgets = budgets.filter(b => getBudgetStatus(b) === statusFilter);
   }
   if (nameFilter) {
     budgets = budgets.filter(b => b.id === nameFilter);
@@ -874,19 +931,9 @@ function renderBudgetSummaryTable(container, budgets) {
 
     const remaining = totalBudgetedUSD - totalSpentUSD;
     const isOver = remaining < 0;
-    const budgetStatus = budget.status || 'current';
+    const statusBadge = budgetStatusBadgeHtml(budget);
 
-    let statusBadge = '';
-    if (budgetStatus === 'draft') statusBadge = '<span class="badge badge-secondary">Draft</span>';
-    else if (budgetStatus === 'archive') statusBadge = '<span class="badge badge-info">Archive</span>';
-    else statusBadge = '<span class="badge badge-success">Current</span>';
-
-    const apBadge = approvalStatusBadge(budget.approval_status);
-    const approvalBadge = `<span class="badge ${apBadge.class}">${apBadge.label}</span>`;
-    const combinedStatus = `${statusBadge} ${approvalBadge}`;
-
-    const apStatus = String(budget.approval_status || 'DRAFT').toUpperCase();
-    const canSubmitApproval = canSubmitBudgetApproval() && (apStatus === 'DRAFT' || apStatus === 'REJECTED');
+    const canSubmitApproval = canSubmitBudgetApproval() && canSubmitBudgetByStatus(budget);
     const submitBtn = canSubmitApproval
       ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
       : '';
@@ -899,7 +946,7 @@ function renderBudgetSummaryTable(container, budgets) {
     grandTotalBudgeted += totalBudgetedUSD;
     grandTotalSpent += totalSpentUSD;
 
-    const canEdit = state.canEditBudgets;
+    const canEdit = canOpenBudgetEditor(budget);
     const canDelete = state.canDeleteBudgets;
 
     const typeBadge = `<span class="badge badge-secondary">${getBudgetTypeLabel(budget.budget_type)}</span>`;
@@ -907,7 +954,7 @@ function renderBudgetSummaryTable(container, budgets) {
     tableRows += `
       <tr style="cursor: pointer;" onclick="window.viewBudgetDetail('${budget.id}')">
         <td data-label="Budget"><strong>${budget.name}</strong><br><span style="font-size:0.8em;">${typeBadge}</span></td>
-        <td data-label="Status">${combinedStatus}</td>
+        <td data-label="Status">${statusBadge}</td>
         <td data-label="Budgeted">$${totalBudgetedUSD.toFixed(2)}</td>
         <td data-label="Spent">$${totalSpentUSD.toFixed(2)}</td>
         <td data-label="Remaining" class="${isOver ? 'negative' : 'positive'}" style="font-weight: bold;">$${remaining.toFixed(2)}</td>
@@ -931,7 +978,7 @@ function renderBudgetSummaryTable(container, budgets) {
           </span>
         </div>
         ${cardRow('Type', typeBadge)}
-        ${cardRow('Status', combinedStatus)}
+        ${cardRow('Status', statusBadge)}
         ${cardRow('Budgeted', `$${totalBudgetedUSD.toFixed(2)}`)}
         ${cardRow('Spent', `$${totalSpentUSD.toFixed(2)}`)}
         ${cardRow('Remaining', `$${remaining.toFixed(2)}`, isOver ? 'negative' : 'positive')}
@@ -997,20 +1044,11 @@ function renderBudgetDetailCards(container, budgets) {
   budgets.forEach(budget => {
     let totalBudgetedUSD = 0;
     let totalSpentUSD = 0;
-    let categoriesHtml = '';
-    const budgetStatus = budget.status || 'current';
+    let tableRows = '';
+    let mobileCards = '';
+    const statusBadge = budgetStatusBadgeHtml(budget);
 
-    let statusBadge = '';
-    if (budgetStatus === 'draft') statusBadge = '<span class="badge badge-secondary">Draft</span>';
-    else if (budgetStatus === 'archive') statusBadge = '<span class="badge badge-info">Archive</span>';
-    else statusBadge = '<span class="badge badge-success">Current</span>';
-
-    const apBadge = approvalStatusBadge(budget.approval_status);
-    const approvalBadge = `<span class="badge ${apBadge.class}">${apBadge.label}</span>`;
-    const combinedStatus = `${statusBadge} ${approvalBadge}`;
-
-    const apStatus = String(budget.approval_status || 'DRAFT').toUpperCase();
-    const canSubmitApproval = canSubmitBudgetApproval() && (apStatus === 'DRAFT' || apStatus === 'REJECTED');
+    const canSubmitApproval = canSubmitBudgetApproval() && canSubmitBudgetByStatus(budget);
     const submitBtn = canSubmitApproval
       ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
       : '';
@@ -1018,49 +1056,49 @@ function renderBudgetDetailCards(container, budgets) {
     (budget.categories || []).forEach(cat => {
       const budgetedUSD = cat.usdAmount || cat.usd_amount || 0;
       totalBudgetedUSD += budgetedUSD;
-
       const spentUSD = 0;
       totalSpentUSD += spentUSD;
-
       const remainingUSD = budgetedUSD - spentUSD;
       const percent = budgetedUSD > 0 ? (spentUSD / budgetedUSD * 100) : 0;
-
-      let progressClass = '';
-      if (percent > 90) progressClass = 'danger';
-      else if (percent > 75) progressClass = 'warning';
-
       const localAmtVal = cat.localAmount || cat.local_amount || 0;
       const localDisplay = localAmtVal
-        ? `${localAmtVal.toLocaleString()} ${cat.currency}`
-        : '';
-      const rateDisplay = cat.rate ? ` @ ${cat.rate}` : '';
+        ? `${Number(localAmtVal).toLocaleString()} ${cat.currency || ''}`
+        : '—';
 
-      categoriesHtml += `
-        <div class="budget-line-card">
-          <div class="budget-line-card-title">${cat.name}</div>
-          ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)} USD${localDisplay ? ' = ' + localDisplay + rateDisplay : ''}`)}
+      tableRows += `
+        <tr>
+          <td data-label="Category"><strong>${cat.name || ''}</strong></td>
+          <td data-label="Local">${localDisplay}</td>
+          <td data-label="Budgeted">$${budgetedUSD.toFixed(2)}</td>
+          <td data-label="Spent">$${spentUSD.toFixed(2)}</td>
+          <td data-label="Remaining">$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)</td>
+        </tr>
+      `;
+
+      mobileCards += `
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${cat.name || ''}</span>
+          </div>
+          ${cardRow('Local', localDisplay)}
+          ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)}`)}
           ${cardRow('Spent', `$${spentUSD.toFixed(2)}`)}
           ${cardRow('Remaining', `$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)`)}
-          <div class="progress-bar" style="height: 15px; margin-top: 8px;">
-            <div class="progress-fill ${progressClass}" style="width: ${Math.min(percent, 100)}%"></div>
-          </div>
-        </div>
+        </article>
       `;
     });
 
     const totalRemaining = totalBudgetedUSD - totalSpentUSD;
     const totalPercent = totalBudgetedUSD > 0 ? (totalSpentUSD / totalBudgetedUSD * 100) : 0;
     const isOverBudget = totalRemaining < 0;
-
-    const canEdit = state.canEditBudgets;
+    const canEdit = canOpenBudgetEditor(budget);
     const canDelete = state.canDeleteBudgets;
-
     const typeLabel = getBudgetTypeLabel(budget.budget_type);
 
     html += `
       <div class="budget-plan-card">
         <h3>
-          <span>${budget.name} ${combinedStatus} <span class="badge badge-secondary">${typeLabel}</span></span>
+          <span>${budget.name} ${statusBadge} <span class="badge badge-secondary">${typeLabel}</span></span>
           <span class="action-icon-group">
             ${submitBtn ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit</button>` : ''}
             ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
@@ -1086,7 +1124,21 @@ function renderBudgetDetailCards(container, budgets) {
           </div>
         </div>
         <h4 style="margin: 20px 0 15px;">Category Breakdown</h4>
-        ${categoriesHtml}
+        <div class="table-container show-desktop">
+          <table class="table-stack-mobile">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Local</th>
+                <th>Budgeted (USD)</th>
+                <th>Spent (USD)</th>
+                <th>Remaining</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows || '<tr><td colspan="5">No categories</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div class="show-mobile data-card-list">${mobileCards || '<p class="empty-state">No categories</p>'}</div>
       </div>
     `;
   });
@@ -1102,6 +1154,10 @@ async function submitBudgetApprovalHandler(budgetId) {
   }
   if (!canSubmitBudgetApproval()) {
     showToast('Only OPL can submit budgets for approval', 'warning');
+    return;
+  }
+  if (!canSubmitBudgetByStatus(budget)) {
+    showToast('Only draft or rejected budgets can be submitted', 'warning');
     return;
   }
 
@@ -1128,13 +1184,37 @@ window.viewBudgetDetail = function(budgetId) {
   initViewBudgetsPage();
 };
 
-// ========== EDIT BUDGET ==========
-window.editBudgetPlan = async function(id) {
-  if (!state.canEditBudgets) {
-    showToast('You do not have permission to edit budgets', 'error');
-    return;
-  }
+function populateEditBudgetCurrencySelect(selected) {
+  const select = document.getElementById('editBudgetCurrency');
+  if (!select) return;
+  const currencies = getLocalCurrenciesFromRates(state.exchangeRates || []);
+  select.innerHTML = '<option value="">—</option>';
+  currencies.forEach(c => {
+    select.innerHTML += `<option value="${c}">${c}</option>`;
+  });
+  select.innerHTML += '<option value="USD">USD</option>';
+  if (selected) select.value = selected;
+}
 
+window.onEditBudgetHeaderCurrencyChange = function() {
+  const currency = document.getElementById('editBudgetCurrency')?.value;
+  const rateInput = document.getElementById('editBudgetRate');
+  if (!currency || !rateInput) return;
+  if (currency === 'USD') {
+    rateInput.value = '1';
+  } else {
+    const rate = getLatestUsdRate(state.exchangeRates || [], currency);
+    rateInput.value = rate !== null ? rateForInput(rate) : '';
+  }
+  updateBudgetLineAmountHint();
+  recalculateAllBudgetUsdFromLocal('#editBudgetCategoriesContainer', getEditBudgetHeaderCurrency);
+};
+
+window.onEditBudgetHeaderRateChange = function() {
+  recalculateAllBudgetUsdFromLocal('#editBudgetCategoriesContainer', getEditBudgetHeaderCurrency);
+};
+
+window.editBudgetPlan = async function(id) {
   const allBudgets = state.budgetPlans || state._budgets || [];
   const budget = normalizeBudgetPlan(allBudgets.find(b => b.id === id));
   if (!budget) {
@@ -1142,102 +1222,103 @@ window.editBudgetPlan = async function(id) {
     return;
   }
 
+  if (!canOpenBudgetEditor(budget) && !isSystemAdmin()) {
+    showToast('You do not have permission to edit budgets', 'error');
+    return;
+  }
+
+  budgetFormMode = 'edit';
+  await ensureExchangeRatesLoaded();
+  await ensureEditTemplateRowKeys();
+
+  const linesEditable = canEditBudgetLines(budget);
+  const status = getBudgetStatus(budget);
+
   document.getElementById('editBudgetId').value = budget.id;
   const budgetType = budget.budget_type || 'adhoc';
   document.getElementById('editBudgetType').value = budgetType;
   document.getElementById('editBudgetTypeDisplay').value = getBudgetTypeLabel(budgetType);
   document.getElementById('editBudgetName').value = budget.name;
   applyEditBudgetNameState(budgetType);
-  document.getElementById('editBudgetStatus').value = budget.status || 'current';
-  document.getElementById('editBudgetStatus').dataset.originalStatus = budget.status || 'current';
+
+  const statusSelect = document.getElementById('editBudgetStatus');
+  statusSelect.innerHTML = budgetStatusOptionsHtml(status, {
+    allowArchive: canArchiveBudget(budget) || status === BUDGET_STATUS.ARCHIVED
+  });
+
+  const firstCat = (budget.categories || [])[0] || {};
+  const headerCurrency = firstCat.currency || '';
+  const headerRate = firstCat.rate || (headerCurrency === 'USD' ? 1 : '');
+  populateEditBudgetCurrencySelect(headerCurrency);
+  const rateEl = document.getElementById('editBudgetRate');
+  if (rateEl) rateEl.value = headerRate !== '' && headerRate != null ? rateForInput(headerRate) : '';
 
   const container = document.getElementById('editBudgetCategoriesContainer');
   container.innerHTML = '';
 
   const cats = (budget.categories || []).map(normalizeBudgetCategory);
   cats.forEach(cat => {
-    if (typeof window.addEditCategoryRow === 'function') {
-      window.addEditCategoryRow(cat, { deferPopulate: true });
-    }
+    window.addEditCategoryRow(cat, { deferLock: true });
   });
 
-  await populateEditBudgetRows();
-
-  const rows = container.querySelectorAll('.category-row');
-  rows.forEach((row, idx) => {
-    const cat = cats[idx];
-    if (!cat) return;
-
-    const catCurrency = cat.currency || '';
-    const catUsd = cat.usd_amount ?? cat.usdAmount ?? '';
-    const catLocal = cat.local_amount ?? cat.localAmount ?? '';
-    const catRate = cat.rate || '';
-
-    const currSelect = row.querySelector('.edit-budget-cat-currency');
-    if (currSelect && catCurrency) currSelect.value = catCurrency;
-    const usdEl = row.querySelector('.edit-budget-cat-usd');
-    if (usdEl) usdEl.value = catUsd;
-    const localEl = row.querySelector('.edit-budget-cat-local');
-    if (localEl) localEl.value = formatLocalInput(catLocal);
-    const rateEl = row.querySelector('.edit-budget-cat-rate');
-    if (rateEl) rateEl.value = catRate;
-  });
-
-  const isDraft = (budget.status || 'current') === 'draft';
-  rows.forEach(row => {
-    row.querySelector('.edit-budget-cat-rate').readOnly = !isDraft;
-    row.querySelector('.edit-budget-cat-currency').disabled = !isDraft;
-    const nameInput = row.querySelector('.edit-budget-cat-name-input');
-    if (nameInput) nameInput.readOnly = !isDraft;
-    if (!isDraft) {
-      const removeBtn = row.querySelector('.cat-remove-btn');
-      if (removeBtn) removeBtn.style.display = 'none';
-    }
-  });
-
-  const addBtn = document.getElementById('addEditCatBtn');
-  if (addBtn) addBtn.style.display = isDraft ? 'inline-block' : 'none';
+  recalculateAllBudgetUsdFromLocal('#editBudgetCategoriesContainer', getEditBudgetHeaderCurrency);
 
   const note = document.getElementById('editBudgetRateNote');
+  const addBtn = document.getElementById('addEditCatBtn');
+  const saveBtn = document.getElementById('saveEditBudgetBtn');
+
+  setEditBudgetFormLocked(!linesEditable, budget);
+
   if (note) {
-    const monthlyLocked = isMonthlyBudgetType(budgetType);
-    note.textContent = isDraft
-      ? 'USD amounts are primary. Select currency to auto-fill rate. Local amount auto-calculates.'
-      : monthlyLocked
-        ? '⚠️ This budget is not in Draft status. Categories are locked. You can only change status (name is fixed for monthly budgets).'
-        : '⚠️ This budget is not in Draft status. Categories are locked. You can edit the budget name and status.';
-    note.style.color = isDraft ? '#666' : '#856404';
+    if (linesEditable) {
+      note.style.color = '#666';
+      updateBudgetLineAmountHint();
+    } else {
+      note.textContent = isSystemAdmin()
+        ? 'SYS override: you can edit this budget.'
+        : '⚠️ This budget is locked. Only SYS can edit amounts. Team lead may archive an approved budget.';
+      note.style.color = '#856404';
+    }
   }
 
-  const saveBtn = document.getElementById('saveEditBudgetBtn') || document.querySelector('#editBudgetModal button[type="submit"]');
+  if (addBtn) addBtn.style.display = linesEditable ? 'inline-block' : 'none';
   if (saveBtn) {
     saveBtn.textContent = 'Save Changes';
     saveBtn.disabled = false;
+    saveBtn.style.display = (linesEditable || canArchiveBudget(budget) || isSystemAdmin()) ? '' : 'none';
   }
-  
+
   document.getElementById('editBudgetModal').classList.add('active');
 };
 
-async function populateEditBudgetRows() {
-  const container = document.getElementById('editBudgetCategoriesContainer');
-  if (!container) return;
-  
-  const rows = container.querySelectorAll('.category-row');
+function setEditBudgetFormLocked(locked, budget) {
+  const linesEditable = !locked;
+  const nameInput = document.getElementById('editBudgetName');
+  const currencyEl = document.getElementById('editBudgetCurrency');
+  const rateEl = document.getElementById('editBudgetRate');
+  const statusEl = document.getElementById('editBudgetStatus');
 
-  rows.forEach(row => {
-    const currSelect = row.querySelector('.edit-budget-cat-currency');
-    const currentCurr = currSelect ? (currSelect.getAttribute('data-selected') || currSelect.value) : '';
+  if (nameInput && isMonthlyBudgetType(budget?.budget_type)) {
+    nameInput.readOnly = true;
+  } else if (nameInput) {
+    nameInput.readOnly = !linesEditable;
+  }
 
-    if (currSelect) {
-      currSelect.innerHTML = '<option value="">Currency</option>';
-      const uniqueCurrencies = getLocalCurrenciesFromRates(state.exchangeRates || []);
-      uniqueCurrencies.forEach(c => {
-        const isSelected = c === currentCurr ? 'selected' : '';
-        currSelect.innerHTML += `<option value="${c}" ${isSelected}>${c}</option>`;
-      });
-      const isUsdSelected = currentCurr === 'USD' ? 'selected' : '';
-      currSelect.innerHTML += `<option value="USD" ${isUsdSelected}>USD</option>`;
-      if (currentCurr) currSelect.value = currentCurr;
+  if (currencyEl) currencyEl.disabled = !linesEditable;
+  if (rateEl) rateEl.readOnly = !linesEditable;
+
+  if (statusEl) {
+    const canArchive = canArchiveBudget(budget);
+    statusEl.disabled = !(linesEditable || canArchive || isSystemAdmin());
+  }
+
+  document.querySelectorAll('#editBudgetCategoriesContainer .category-row').forEach(row => {
+    const localEl = row.querySelector('.budget-cat-local');
+    const nameEl = row.querySelector('.budget-cat-name');
+    if (localEl) localEl.readOnly = !linesEditable;
+    if (nameEl) nameEl.readOnly = !linesEditable;
+    if (!linesEditable) {
+      row.querySelectorAll('.budget-line-card-actions').forEach(el => { el.style.visibility = 'hidden'; });
     }
   });
 }
@@ -1251,107 +1332,41 @@ window.addEditCategoryRow = function(categoryData = null, options = {}) {
   const isCustom = !categoryData || (!isTemplate && !normalized?.category);
 
   const displayName = normalized ? normalized.name : (categoryData?.name || '');
-  const catUsd = categoryData ? (categoryData.usd_amount ?? categoryData.usdAmount ?? '') : '';
-  const catCurrency = categoryData ? (categoryData.currency || '') : '';
-  const catRate = categoryData ? (categoryData.rate || '') : '';
-  const catLocal = categoryData ? formatLocalInput(categoryData.local_amount ?? categoryData.localAmount ?? '') : '';
-
-  const removeBtn = isTemplate
-    ? ''
-    : `<div class="line-card-header">
-        <span class="line-card-header-label">${escapeHtmlAttr(displayName) || 'Category'}</span>
-        ${btnIconDelete('window.removeEditCategoryRow(this)', 'Remove')}
-      </div>`;
-
-  let nameFields;
-  if (isTemplate || (normalized && normalized.category && !isCustom)) {
-    nameFields = `
-      <input type="hidden" class="edit-budget-cat-category" value="${escapeHtmlAttr(normalized?.category || '')}">
-      <input type="hidden" class="edit-budget-cat-subcategory" value="${escapeHtmlAttr(normalized?.subcategory || '')}">
-      <input type="hidden" class="edit-budget-cat-name-value" value="${escapeHtmlAttr(displayName)}">
-      ${isTemplate ? `<div class="budget-line-card-title">${escapeHtmlAttr(displayName)}</div>` : ''}`;
-  } else {
-    nameFields = `
-      <div class="field-labeled"><span>Category</span>
-        <input type="text" class="edit-budget-cat-name-input" value="${escapeHtmlAttr(displayName)}" required placeholder="Category name">
-      </div>`;
+  const catUsd = categoryData ? (categoryData.usd_amount ?? categoryData.usdAmount ?? 0) : 0;
+  let catLocal = categoryData
+    ? formatLocalInput(categoryData.local_amount ?? categoryData.localAmount ?? '')
+    : '0';
+  if (categoryData && !catLocal) {
+    const rate = parseFloat(categoryData.rate) || 0;
+    const currency = categoryData.currency || '';
+    if (currency === 'USD') catLocal = formatLocalInput(catUsd);
+    else if (rate > 0) catLocal = formatLocalInput(Number(catUsd) * rate);
   }
 
   const row = document.createElement('div');
   row.className = 'budget-line-card category-row';
   if (isTemplate) row.dataset.template = 'true';
-  if (isCustom && categoryData) row.dataset.custom = 'true';
+  if (isCustom) row.dataset.custom = 'true';
 
-  row.innerHTML = `
-    <div class="edit-budget-cat-name-cell">${nameFields}</div>
-    <div class="field-labeled"><span>USD Amount</span>
-      <input type="number" class="edit-budget-cat-usd" step="0.01" placeholder="USD" value="${catUsd}" required oninput="window.onEditBudgetUSDChange(this)">
-    </div>
-    <div class="field-labeled"><span>Currency</span>
-      <select class="edit-budget-cat-currency" required onchange="window.onEditBudgetCurrencyChange(this)" data-selected="${escapeHtmlAttr(catCurrency)}">
-        <option value="">Currency</option>
-      </select>
-    </div>
-    <div class="field-labeled"><span>Exchange Rate</span>
-      <input type="number" class="edit-budget-cat-rate" step="0.000001" placeholder="Rate" value="${catRate}" oninput="window.onEditBudgetRateChange(this)">
-    </div>
-    <div class="field-labeled"><span>Local Amount</span>
-      <input type="number" class="edit-budget-cat-local" step="0.01" placeholder="Local" value="${catLocal}" readonly>
-    </div>
-    ${removeBtn}
-  `;
+  row.innerHTML = buildCategoryRowHtml({
+    displayName,
+    category: normalized?.category || (isCustom ? '' : displayName),
+    subcategory: normalized?.subcategory || '',
+    localVal: catLocal || '0',
+    usdVal: Number(catUsd || 0).toFixed(2),
+    isTemplate,
+    isCustom
+  });
+
   container.appendChild(row);
-
-  if (!options.deferPopulate && typeof populateEditBudgetRows === 'function') {
-    populateEditBudgetRows();
+  if (!options.deferLock) {
+    recalculateBudgetUsdFromLocal(row, getEditBudgetHeaderCurrency());
   }
 };
 
-window.onEditBudgetUSDChange = function(usdInput) {
-  const row = usdInput.closest('.category-row');
-  if (!row) return;
-  recalculateEditBudgetLocal(row);
+window.removeEditCategoryRow = function(btn) {
+  window.removeBudgetCategoryRow(btn);
 };
-
-window.onEditBudgetCurrencyChange = function(currencySelect) {
-  const row = currencySelect.closest('.category-row');
-  if (!row) return;
-  const currency = currencySelect.value;
-  const rateInput = row.querySelector('.edit-budget-cat-rate');
-  if (!currency || !rateInput) return;
-
-  if (currency === 'USD') {
-    rateInput.value = '1';
-    recalculateEditBudgetLocal(row);
-    return;
-  }
-
-  const rate = getLatestUsdRate(state.exchangeRates || [], currency);
-  rateInput.value = rate !== null ? rateForInput(rate) : '';
-  recalculateEditBudgetLocal(row);
-};
-
-window.onEditBudgetRateChange = function(rateInput) {
-  const row = rateInput.closest('.category-row');
-  if (!row) return;
-  recalculateEditBudgetLocal(row);
-};
-
-function recalculateEditBudgetLocal(row) {
-  const usdInput = row.querySelector('.edit-budget-cat-usd');
-  const rateInput = row.querySelector('.edit-budget-cat-rate');
-  const localInput = row.querySelector('.edit-budget-cat-local');
-  if (!usdInput || !rateInput || !localInput) return;
-
-  const usdAmount = parseFloat(usdInput.value) || 0;
-  const rate = parseFloat(rateInput.value) || 0;
-
-  if (usdAmount > 0 && rate > 0) {
-    localInput.value = formatLocalAmountInput(usdToLocal(usdAmount, rate));
-  } else {
-    localInput.value = '';
-  }
-}
 
 function applyEditBudgetNameState(budgetType) {
   const nameInput = document.getElementById('editBudgetName');
@@ -1391,11 +1406,6 @@ window.validateEditBudgetName = function(input) {
 };
 
 window.saveEditedBudget = async function() {
-  if (!state.canEditBudgets) {
-    showToast('You do not have permission to edit budgets', 'error');
-    return;
-  }
-
   const id = document.getElementById('editBudgetId').value;
   const allBudgets = state.budgetPlans || state._budgets || [];
   const budgetIndex = allBudgets.findIndex(b => b.id === id);
@@ -1404,12 +1414,28 @@ window.saveEditedBudget = async function() {
     return;
   }
 
-  const budgetType = document.getElementById('editBudgetType')?.value || 'adhoc';
-  let newName = document.getElementById('editBudgetName').value.trim();
+  const existing = allBudgets[budgetIndex];
+  const linesEditable = canEditBudgetLines(existing);
   const newStatus = document.getElementById('editBudgetStatus').value;
 
+  if (!linesEditable && !isSystemAdmin()) {
+    const onlyArchive = canArchiveBudget(existing) && newStatus === BUDGET_STATUS.ARCHIVED;
+    if (!onlyArchive) {
+      showToast('Only SYS can edit this budget', 'error');
+      return;
+    }
+  }
+
+  if (!state.canEditBudgets && !isSystemAdmin()) {
+    showToast('You do not have permission to edit budgets', 'error');
+    return;
+  }
+
+  const budgetType = document.getElementById('editBudgetType')?.value || 'adhoc';
+  let newName = document.getElementById('editBudgetName').value.trim();
+
   if (isMonthlyBudgetType(budgetType)) {
-    newName = allBudgets[budgetIndex].name;
+    newName = existing.name;
   }
 
   if (!newName) {
@@ -1428,45 +1454,56 @@ window.saveEditedBudget = async function() {
     return;
   }
 
-  const categories = [];
-  const rows = document.querySelectorAll('#editBudgetCategoriesContainer .category-row');
+  let categories = existing.categories || [];
+  const { currency: headerCurrency, rate: headerRate } = getEditBudgetHeaderCurrency();
 
-  rows.forEach(row => {
-    const catName = getEditRowCategoryName(row);
-    const usdStr = row.querySelector('.edit-budget-cat-usd')?.value;
-    const localStr = row.querySelector('.edit-budget-cat-local')?.value;
-    const currSelect = row.querySelector('.edit-budget-cat-currency');
-    const rateStr = row.querySelector('.edit-budget-cat-rate')?.value;
-
-    const currency = currSelect ? (currSelect.value || currSelect.getAttribute('data-selected')) : '';
-    const usdAmount = parseFloat(usdStr) || 0;
-    const rate = parseFloat(rateStr) || 0;
-    const localAmount = parseFloat(localStr) || 0;
-
-    if (catName && currency) {
-      categories.push({
-        name: catName,
-        category: row.querySelector('.edit-budget-cat-category')?.value || undefined,
-        subcategory: row.querySelector('.edit-budget-cat-subcategory')?.value || null,
-        usdAmount,
-        localAmount: localAmount || (currency === 'USD' ? usdAmount : usdToLocal(usdAmount, rate || 1)),
-        currency,
-        rate: rate || (currency === 'USD' ? 1 : 0)
-      });
+  if (linesEditable || isSystemAdmin()) {
+    if (!headerCurrency) {
+      showToast('Select a budget currency', 'error');
+      return;
     }
-  });
+    if (!(headerRate > 0) && headerCurrency !== 'USD') {
+      showToast('Enter a valid exchange rate', 'error');
+      return;
+    }
 
-  if (categories.length === 0) {
-    showToast('Please add at least one category with USD amount', 'error');
-    return;
+    const rate = headerCurrency === 'USD' ? 1 : headerRate;
+    categories = [];
+    const rows = document.querySelectorAll('#editBudgetCategoriesContainer .category-row');
+
+    rows.forEach(row => {
+      const catCategory = row.querySelector('.budget-cat-category')?.value?.trim()
+        || row.querySelector('.budget-cat-name')?.value?.trim()
+        || row.querySelector('.budget-cat-name-value')?.value?.trim();
+      const catSub = row.querySelector('.budget-cat-subcategory')?.value?.trim() || null;
+      const usdRaw = parseFloat(row.querySelector('.budget-cat-usd')?.value);
+      const usdAmount = Number.isFinite(usdRaw) ? usdRaw : 0;
+      const localRaw = parseFloat(row.querySelector('.budget-cat-local')?.value);
+      const localAmount = Number.isFinite(localRaw) ? localRaw : 0;
+
+      if (catCategory) {
+        categories.push({
+          category: catCategory,
+          subcategory: catSub,
+          name: formatCategoryLabel(catCategory, catSub),
+          usdAmount,
+          localAmount,
+          currency: headerCurrency,
+          rate
+        });
+      }
+    });
+
+    if (categories.length === 0) {
+      showToast('Please add at least one category', 'error');
+      return;
+    }
   }
 
-  const totalAmount = categories.reduce((sum, c) => sum + c.usdAmount, 0);
+  const totalAmount = categories.reduce((sum, c) => sum + (c.usdAmount || c.usd_amount || 0), 0);
 
-  // Re-build the full record structure so the local offline DB doesn't lose properties
-  const existingRecord = allBudgets[budgetIndex] || {};
   const updateData = {
-    ...existingRecord,
+    ...existing,
     name: newName,
     status: newStatus,
     categories: categories,
@@ -1481,69 +1518,39 @@ window.saveEditedBudget = async function() {
   }
 
   try {
-    // 1. Update remote Cloud Database (Supabase)
     const result = await sbUpdate('budget_plans', id, updateData);
     if (result && result.error) {
       throw new Error(result.error.message || 'Supabase update failed');
     }
 
-    // 2. FORCE OFFLINE CACHE SYNCHRONIZATION via localPut
     if (typeof localPut === 'function') {
       await localPut('budget_plans', updateData);
     }
 
-    // 3. Sync transient memory state array
     const all = await localGetAll('budget_plans');
-    state.budgetPlans = all.filter(b => b.team_id === teamId && !b.is_deleted);
+    state.budgetPlans = all.filter(b => b.team_id === teamId && !b.is_deleted).map(normalizeBudgetPlan);
 
     if (btn) {
       btn.textContent = 'Save Changes';
       btn.disabled = false;
     }
 
-    // 4. Refresh view layout
-    initViewBudgetsPage();
-
-    showToast('Budget updated successfully!', 'success');
     document.getElementById('editBudgetModal').classList.remove('active');
-
-  } catch (error) {
-    console.error('Edit budget error:', error);
-    showToast(`Failed to update budget: ${error.message}`, 'error');
-    
+    showToast('Budget updated', 'success');
+    await initViewBudgetsPage();
+  } catch (err) {
+    console.error('Save budget error:', err);
+    showToast(err.message || 'Failed to save budget', 'error');
     if (btn) {
       btn.textContent = 'Save Changes';
       btn.disabled = false;
     }
-    
-    let errorBanner = document.getElementById('editBudgetErrorBanner');
-    if (!errorBanner) {
-      errorBanner = document.createElement('div');
-      errorBanner.id = 'editBudgetErrorBanner';
-      errorBanner.style.color = '#721c24';
-      errorBanner.style.backgroundColor = '#f8d7da';
-      errorBanner.style.padding = '10px';
-      errorBanner.style.marginTop = '10px';
-      errorBanner.style.borderRadius = '4px';
-      const modalContent = document.querySelector('#editBudgetModal .modal-content');
-      if (modalContent) modalContent.prepend(errorBanner);
-    }
-    errorBanner.textContent = `⚠️ Critical Error: ${error.message}`;
-  }
-};
-
-window.removeEditCategoryRow = function(btn) {
-  const container = document.getElementById('editBudgetCategoriesContainer');
-  if (!container) return;
-  if (container.children.length > 1) {
-    btn.closest('.category-row').remove();
-  } else {
-    showToast('Budget must have at least one category', 'warning');
   }
 };
 
 window.closeEditBudgetModal = function() {
   document.getElementById('editBudgetModal').classList.remove('active');
+  budgetFormMode = 'create';
 };
 
 // ========== DELETE BUDGET ==========

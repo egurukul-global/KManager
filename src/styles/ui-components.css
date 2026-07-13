@@ -214,7 +214,7 @@
   display: none;
 }
 
-/* Desktop: budget create lines as table rows */
+/* Desktop: budget line rows as table */
 @media (min-width: 769px) {
   .budget-line-table-wrap {
     margin-bottom: 0;
@@ -233,11 +233,11 @@
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   }
 
-  #budgetCategoriesContainer.budget-line-cards {
+  .budget-line-cards {
     gap: 0;
   }
 
-  #budgetCategoriesContainer > .budget-line-card.category-row {
+  .budget-line-cards > .budget-line-card.category-row {
     display: grid;
     grid-template-columns: minmax(12rem, 2fr) minmax(7rem, 1fr) minmax(7rem, 1fr) 2.5rem;
     gap: 10px;
@@ -249,41 +249,41 @@
     padding: 8px 12px;
   }
 
-  #budgetCategoriesContainer > .budget-line-card .budget-line-card-title,
-  #budgetCategoriesContainer > .budget-line-card .line-card-header,
-  #budgetCategoriesContainer > .budget-line-card .budget-line-name-field {
+  .budget-line-cards > .budget-line-card .budget-line-card-title,
+  .budget-line-cards > .budget-line-card .line-card-header,
+  .budget-line-cards > .budget-line-card .budget-line-name-field {
     margin: 0;
     padding: 0;
     border: none;
     font-weight: 600;
   }
 
-  #budgetCategoriesContainer > .budget-line-card .line-card-header {
+  .budget-line-cards > .budget-line-card .line-card-header {
     display: none;
   }
 
-  #budgetCategoriesContainer > .budget-line-card .field-labeled {
+  .budget-line-cards > .budget-line-card .field-labeled {
     margin: 0;
     display: block;
   }
 
-  #budgetCategoriesContainer > .budget-line-card .field-labeled > span {
+  .budget-line-cards > .budget-line-card .field-labeled > span {
     display: none;
   }
 
-  #budgetCategoriesContainer > .budget-line-card .field-labeled input,
-  #budgetCategoriesContainer > .budget-line-card .field-labeled select {
+  .budget-line-cards > .budget-line-card .field-labeled input,
+  .budget-line-cards > .budget-line-card .field-labeled select {
     max-width: 100%;
     width: 100%;
   }
 
-  #budgetCategoriesContainer > .budget-line-card .budget-line-card-actions {
+  .budget-line-cards > .budget-line-card .budget-line-card-actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
   }
 
-  #budgetCategoriesContainer > .budget-line-card .budget-line-card-title input {
+  .budget-line-cards > .budget-line-card .budget-line-card-title input {
     width: 100%;
     margin: 0;
   }
@@ -295,7 +295,7 @@
     display: none !important;
   }
 
-  #budgetCategoriesContainer > .budget-line-card .budget-line-card-actions {
+  .budget-line-cards > .budget-line-card .budget-line-card-actions {
     display: flex;
     justify-content: flex-end;
     margin-top: 4px;

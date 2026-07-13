@@ -12,6 +12,7 @@ import {
   canCancelRequest
 } from './approvalAccess.js';
 import { approveOhfTransfer } from './transferActions.js';
+import { mapApprovalToBudgetStatus } from './budgetStatus.js';
 
 /** Resolve flow steps for request type / team / user (highest priority match). */
 export async function resolveFlowSteps(requestType, teamId = null, userId = null) {
@@ -68,12 +69,15 @@ async function applyBudgetStatus(budgetPlanId, approvalStatus, requestId = null)
   if (!budgetPlanId) return;
   const patch = { approval_status: approvalStatus };
   if (requestId) patch.approval_request_id = requestId;
+  const lifecycle = mapApprovalToBudgetStatus(approvalStatus);
+  if (lifecycle) patch.status = lifecycle;
 
   await supabaseClient.from('budget_plans').update(patch).eq('id', budgetPlanId);
 
   const local = (state.budgetPlans || []).find(b => b.id === budgetPlanId);
   if (local) {
     local.approval_status = approvalStatus;
+    if (lifecycle) local.status = lifecycle;
     if (requestId) local.approval_request_id = requestId;
   }
 }

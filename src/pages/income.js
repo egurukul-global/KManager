@@ -18,6 +18,7 @@ import {
 } from '../utils/currency.js';
 import { applyDefaultsToIncomeForm, loadUserTeamDefaultsForCurrentTeam } from '../utils/userTeamDefaults.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
+import { getBudgetStatus } from '../utils/budgetStatus.js';
 
 // ==========================================
 // MODULE-LEVEL CACHE (team-scoped)
@@ -378,7 +379,7 @@ window.openAllocationEntryModal = async function(forEdit = false) {
   const plans = await getBudgetPlansForTeam();
   select.innerHTML = '<option value="">Select Budget Plan</option>';
   plans.forEach(plan => {
-    select.innerHTML += `<option value="${plan.id}">${plan.name} (${plan.status || 'draft'})</option>`;
+    select.innerHTML += `<option value="${plan.id}">${plan.name} (${getBudgetStatus(plan)})</option>`;
   });
   if (amount) amount.value = '';
   modal.classList.add('active');
