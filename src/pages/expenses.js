@@ -499,7 +499,7 @@ export async function initAddExpensePage() {
     progressLabelId: 'expReceiptOcrLabel',
     dropzoneId: 'expReceiptDropzone',
     enableOcr: true,
-    useJscanifyCamera: true,
+    useJscanifyCamera: false,
     fillForm: {
       itemId: 'expItem',
       dateId: 'expDate',
@@ -768,7 +768,24 @@ function wireReceiptUpload({
         }
         return;
       }
-      cameraInput?.click();
+      if (cameraInput) {
+        cameraInput.click();
+      } else {
+        let tempInput = document.getElementById('temp-native-camera-input');
+        if (!tempInput) {
+          tempInput = document.createElement('input');
+          tempInput.id = 'temp-native-camera-input';
+          tempInput.type = 'file';
+          tempInput.accept = 'image/*';
+          tempInput.capture = 'environment';
+          tempInput.style.display = 'none';
+          tempInput.onchange = () => {
+            if (tempInput.files?.[0]) runPipeline(tempInput.files[0]);
+          };
+          document.body.appendChild(tempInput);
+        }
+        tempInput.click();
+      }
     };
   }
 
@@ -1122,7 +1139,7 @@ export async function initExpenseManagerPage() {
     fileInputId: 'editExpReceiptFileInput',
     hintId: 'editExpReceiptHint',
     previewId: 'editExpReceiptPreview',
-    useJscanifyCamera: true,
+    useJscanifyCamera: false,
     enableOcr: true,
     fillForm: {
       itemId: 'editExpItem',
