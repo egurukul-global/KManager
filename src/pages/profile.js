@@ -3,6 +3,15 @@ import { state } from '../state.js';
 import { showToast } from '../components/toasts.js';
 import { validateRequestAlias, formatRequestNumber, saveUserRequestAlias } from '../utils/requestNumbers.js';
 import { orgRoleLabel, teamAccessLabel } from '../utils/roleLabels.js';
+import { supabaseClient } from '../db.js';
+import { refreshAccessibleTeams } from '../utils/teamAccess.js';
+
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
+}
 
 export function getProfilePage() {
   const alias = state.user?.request_alias || '';
@@ -25,6 +34,26 @@ export function getProfilePage() {
     </div>
 
     <div class="card">
+      <h2>Default team</h2>
+      <p class="page-intro">Select the team that opens by default when you access the app.</p>
+      <form id="profileDefaultTeamForm" onsubmit="window.saveProfileDefaultTeam(event)">
+        <div class="form-group">
+          <label for="profileDefaultTeam">Default team</label>
+          <select id="profileDefaultTeam">
+            ${state.teams.map(t => `
+              <option value="${t.team_id}" ${t.is_primary ? 'selected' : ''}>
+                ${escapeHtml(t.team_name)}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+        <div class="btn-group">
+          <button type="submit">Save default team</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
       <h2>Request alias</h2>
       <p class="page-intro">3–5 characters, unique. Used for approval request numbers like <strong>TTM-42</strong>.</p>
       <form id="profileAliasForm" onsubmit="window.saveProfileAlias(event)">
@@ -44,6 +73,7 @@ export function getProfilePage() {
 
 export function initProfilePage() {
   window.saveProfileAlias = saveProfileAlias;
+  window.saveProfileDefaultTeam = saveProfileDefaultTeam;
 
   const input = document.getElementById('profileAlias');
   const preview = document.getElementById('profileNextNumber');
@@ -72,5 +102,32 @@ async function saveProfileAlias(e) {
     }
   } catch (err) {
     showToast(err.message || 'Failed to save alias', 'error');
+  }
+}
+
+async function saveProfileDefaultTeam(e) {
+  e.preventDefault();
+  const select = document.getElementById('profileDefaultTeam');
+  const teamId = select?.value;
+  if (!teamId || !state.user?.id) return;
+
+  try {
+    await supabaseClient
+      .from('user_teams')
+      .update({ is_primary: false })
+      .eq('user_id', state.user.id);
+
+    const { error } = await supabaseClient
+      .from('user_teams')
+      .update({ is_primary: true })
+      .eq('user_id', state.user.id)
+      .eq('team_id', teamId);
+
+    if (error) throw error;
+
+    showToast('Default team updated', 'success');
+    await refreshAccessibleTeams();
+  } catch (err) {
+    showToast(err.message || 'Failed to save default team', 'error');
   }
 }
