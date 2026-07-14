@@ -121,6 +121,8 @@ export async function loadOkMessages(userId) {
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(200);
+
+  let messages = data || [];
   if (error) {
     console.warn('ok_messages load:', error.message);
     const fallback = await supabaseClient
@@ -129,9 +131,53 @@ export async function loadOkMessages(userId) {
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
       .limit(200);
-    return fallback.data || [];
+    messages = fallback.data || [];
   }
-  return data || [];
+
+  return enrichMessageCategories(messages);
+}
+
+/** Fill missing category from the linked approval request type. */
+async function enrichMessageCategories(messages) {
+  if (!messages.length) return messages;
+
+  const ids = [...new Set(
+    messages
+      .filter(m => !m.category || m.category === 'other')
+      .map(m => m.action_id)
+      .filter(Boolean)
+  )];
+
+  if (!ids.length) return messages;
+
+  const { data: reqs } = await supabaseClient
+    .from('approval_requests')
+    .select('id, request_type')
+    .in('id', ids);
+
+  const typeById = Object.fromEntries((reqs || []).map(r => [r.id, r.request_type]));
+
+  return messages.map(m => {
+    if (m.category && m.category !== 'other') return m;
+    const fromReq = typeById[m.action_id];
+    if (fromReq) return { ...m, category: fromReq };
+    return { ...m, category: inferCategoryFromText(m) };
+  });
+}
+
+function inferCategoryFromText(m) {
+  const t = `${m.title || ''} ${m.body || ''}`.toLowerCase();
+  if (t.includes('budget')) return 'budget';
+  if (t.includes('transfer')) return 'money_transfer';
+  if (t.includes('reconcil')) return 'reconciliation_adjustment';
+  if (t.includes('gurukul')) return 'gurukul';
+  if (t.includes('role')) return 'role_change';
+  // Compact line ends with type label from notify: "...  Budget"
+  const last = t.trim().split(/\s+/).pop();
+  if (last === 'budget') return 'budget';
+  if (last === 'transfer') return 'money_transfer';
+  if (last === 'reconciliation') return 'reconciliation_adjustment';
+  return 'other';
 }
 
 export async function markOkMessageRead(messageId) {
@@ -165,40 +211,31 @@ export function getNotificationMode() {
   return state.user?.notification_mode === 'detail' ? 'detail' : 'summary';
 }
 
-/** Aggregate unread messages into short summary lines. */
+/**
+ * Aggregate unread home messages by type (not a live DB queue count —
+ * it's "how many open alerts are waiting for you right now").
+ */
 export function summarizeOkMessages(messages) {
   const unread = (messages || []).filter(m => !m.read_at);
   if (!unread.length) return [];
 
   const labels = {
-    budget: 'budget approval',
-    money_transfer: 'transfer approval',
-    reconciliation_adjustment: 'reconciliation approval',
+    budget: 'budget request',
+    money_transfer: 'transfer request',
+    reconciliation_adjustment: 'reconciliation request',
+    gurukul: 'gurukul request',
+    role_change: 'role change request',
     other: 'other request'
   };
 
   const counts = {};
   unread.forEach(m => {
-    let cat = String(m.category || '').toLowerCase();
-    if (!cat || cat === 'other') {
-      const t = `${m.title || ''} ${m.body || ''}`.toLowerCase();
-      if (t.includes('budget')) cat = 'budget';
-      else if (t.includes('transfer')) cat = 'money_transfer';
-      else if (t.includes('reconcil')) cat = 'reconciliation_adjustment';
-      else if (t.includes('gurukul')) cat = 'gurukul';
-      else if (t.includes('role')) cat = 'role_change';
-      else cat = 'other';
-    }
+    const cat = String(m.category || inferCategoryFromText(m) || 'other').toLowerCase();
     counts[cat] = (counts[cat] || 0) + 1;
   });
 
-  const extra = {
-    gurukul: 'gurukul request',
-    role_change: 'role change approval'
-  };
-
   return Object.entries(counts).map(([cat, n]) => {
-    const base = labels[cat] || extra[cat] || 'request';
+    const base = labels[cat] || 'request';
     const plural = n === 1 ? base : `${base}s`;
     return { category: cat, count: n, text: `You have ${n} ${plural}` };
   });
