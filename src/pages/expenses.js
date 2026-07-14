@@ -1,4 +1,6 @@
 /* ========== EXPENSES MODULE ========== */
+import Cropper from 'cropperjs';
+import 'cropperjs/dist/cropper.css';
 import { state } from '../state.js';
 import {
   localGetAll,
@@ -511,8 +513,122 @@ function wireReceiptUpload({
     if (hint) hint.textContent = busy ? 'Uploading receipt…' : '';
   };
 
+  const openCropModal = (file, onCropAndUpload) => {
+    const existing = document.getElementById('receipt-crop-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'receipt-crop-modal';
+    modal.className = 'modal active';
+    modal.innerHTML = `
+      <div class="modal-content receipt-crop-modal-content">
+        <h3>Crop Receipt</h3>
+        <div class="receipt-crop-container">
+          <img id="receipt-crop-image" src="" alt="Receipt to crop">
+        </div>
+        <div class="receipt-crop-actions">
+          <button type="button" class="btn btn-secondary" id="receipt-crop-cancel">Cancel</button>
+          <button type="button" class="btn btn-secondary" id="receipt-crop-rotate">Rotate</button>
+          <button type="button" class="btn btn-primary" id="receipt-crop-upload">
+            <span class="spinner-inline" id="receipt-crop-spinner" style="display: none;"></span>
+            <span id="receipt-crop-upload-text">Crop & Upload</span>
+          </button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const imageEl = modal.querySelector('#receipt-crop-image');
+    const cancelBtn = modal.querySelector('#receipt-crop-cancel');
+    const rotateBtn = modal.querySelector('#receipt-crop-rotate');
+    const uploadBtn = modal.querySelector('#receipt-crop-upload');
+    const spinner = modal.querySelector('#receipt-crop-spinner');
+    const uploadText = modal.querySelector('#receipt-crop-upload-text');
+
+    const fileUrl = URL.createObjectURL(file);
+    imageEl.src = fileUrl;
+
+    let cropper;
+    imageEl.onload = () => {
+      cropper = new Cropper(imageEl, {
+        aspectRatio: 3 / 4,
+        viewMode: 1,
+        autoCropArea: 1,
+        responsive: true,
+        restore: false,
+        checkCrossOrigin: false,
+      });
+    };
+
+    cancelBtn.onclick = () => {
+      if (cropper) cropper.destroy();
+      URL.revokeObjectURL(fileUrl);
+      modal.remove();
+      cameraInput.value = '';
+      fileInput.value = '';
+    };
+
+    rotateBtn.onclick = () => {
+      if (cropper) cropper.rotate(90);
+    };
+
+    uploadBtn.onclick = () => {
+      if (!cropper) return;
+
+      cancelBtn.disabled = true;
+      rotateBtn.disabled = true;
+      uploadBtn.disabled = true;
+      spinner.style.display = 'inline-block';
+      uploadText.textContent = 'Uploading...';
+
+      cropper.getCroppedCanvas({
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageSmoothingHigh: true
+      }).toBlob(async (blob) => {
+        if (!blob) {
+          showToast('Could not crop image', 'error');
+          cancelBtn.disabled = false;
+          rotateBtn.disabled = false;
+          uploadBtn.disabled = false;
+          spinner.style.display = 'none';
+          uploadText.textContent = 'Crop & Upload';
+          return;
+        }
+
+        const croppedFile = new File([blob], file.name || 'receipt.jpg', {
+          type: 'image/jpeg',
+          lastModified: Date.now()
+        });
+        croppedFile.isCropped = true;
+
+        try {
+          await onCropAndUpload(croppedFile);
+          if (cropper) cropper.destroy();
+          URL.revokeObjectURL(fileUrl);
+          modal.remove();
+        } catch (err) {
+          cancelBtn.disabled = false;
+          rotateBtn.disabled = false;
+          uploadBtn.disabled = false;
+          spinner.style.display = 'none';
+          uploadText.textContent = 'Crop & Upload';
+        }
+      }, 'image/jpeg', 0.9);
+    };
+  };
+
   const runUpload = async (file) => {
     if (!file) return;
+
+    const isImage = file.type?.startsWith('image/');
+    if (isImage && !file.isCropped) {
+      openCropModal(file, async (croppedFile) => {
+        await runUpload(croppedFile);
+      });
+      return;
+    }
+
     setBusy(true);
     try {
       const { objectKey } = await uploadReceipt(file);
@@ -524,6 +640,7 @@ function wireReceiptUpload({
     } catch (err) {
       if (hint) hint.textContent = '';
       showToast(err.message || 'Upload failed', 'error');
+      if (file.isCropped) throw err;
     } finally {
       setBusy(false);
       cameraInput.value = '';
