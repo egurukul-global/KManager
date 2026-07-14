@@ -8,8 +8,87 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.6/pdfmake.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.6/vfs_fonts.min.js"></script>
+    <!-- OpenCV.js: load outside Vite (do not import/bundle). Required by jscanify receipt scanner. -->
+    <style>
+      #opencvLoadBanner {
+        position: fixed;
+        z-index: 99999;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        max-width: 420px;
+        margin: 0 auto;
+        padding: 10px 14px;
+        border-radius: 10px;
+        background: rgba(30, 30, 30, 0.92);
+        color: #fff;
+        font: 14px/1.4 system-ui, sans-serif;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+        display: none;
+      }
+      #opencvLoadBanner.is-visible { display: block; }
+      #opencvLoadBanner.is-error { background: rgba(155, 34, 38, 0.95); }
+    </style>
+    <script>
+      window.__opencvReady = false;
+      window.__opencvLoadError = '';
+      window.__opencvStatus = 'loading';
+
+      function __setOpenCvBanner(text, isError) {
+        var el = document.getElementById('opencvLoadBanner');
+        if (!el) return;
+        el.textContent = text;
+        el.classList.add('is-visible');
+        el.classList.toggle('is-error', !!isError);
+      }
+      function __hideOpenCvBanner() {
+        var el = document.getElementById('opencvLoadBanner');
+        if (el) el.classList.remove('is-visible');
+      }
+      function __markOpenCvReady() {
+        window.__opencvReady = true;
+        window.__opencvStatus = 'ready';
+        window.__opencvLoadError = '';
+        __hideOpenCvBanner();
+        try { window.dispatchEvent(new Event('opencv-ready')); } catch (e) {}
+      }
+      function __onOpenCvScriptLoad() {
+        __setOpenCvBanner('Loading receipt scanner engine (OpenCV)…', false);
+        if (!window.cv) {
+          window.__opencvLoadError = 'OpenCV.js loaded but cv is missing';
+          window.__opencvStatus = 'error';
+          __setOpenCvBanner(window.__opencvLoadError, true);
+          return;
+        }
+        if (window.cv.Mat) {
+          __markOpenCvReady();
+          return;
+        }
+        window.cv.onRuntimeInitialized = function () {
+          __markOpenCvReady();
+        };
+      }
+      function __onOpenCvScriptError() {
+        window.__opencvStatus = 'error';
+        window.__opencvLoadError = 'Failed to download OpenCV.js. Check your network / VPN and refresh.';
+        __setOpenCvBanner(window.__opencvLoadError, true);
+      }
+      window.addEventListener('load', function () {
+        if (window.__opencvReady) __hideOpenCvBanner();
+        else if (window.__opencvStatus === 'loading') {
+          __setOpenCvBanner('Still loading receipt scanner engine…', false);
+        }
+      });
+    </script>
+    <script
+      src="https://docs.opencv.org/4.7.0/opencv.js"
+      async
+      onload="__onOpenCvScriptLoad()"
+      onerror="__onOpenCvScriptError()"
+    ></script>
 </head>
 <body>
+    <div id="opencvLoadBanner" role="status" aria-live="polite">Loading receipt scanner engine…</div>
     <div id="app"></div>
     <script type="module" src="/src/main.js"></script>
 </body>
