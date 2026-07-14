@@ -27,22 +27,29 @@ Deno.serve(async (req) => {
     const secretAccessKey = Deno.env.get('R2_SECRET_ACCESS_KEY');
     const accountId = Deno.env.get('CLOUDFLARE_ACCOUNT_ID');
     const bucket = Deno.env.get('R2_BUCKET_NAME');
-    const publicBase = Deno.env.get('R2_PUBLIC_BASE_URL');
 
     if (!accessKeyId || !secretAccessKey || !accountId || !bucket) {
-      return json({
-        error: 'Missing R2 secrets (R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, CLOUDFLARE_ACCOUNT_ID, R2_BUCKET_NAME)'
-      }, 500);
+      return json({ error: 'Missing R2 secrets' }, 500);
     }
 
     const url = new URL(req.url);
-    const filename = (url.searchParams.get('filename') || 'receipt').trim();
-    const contentType = (url.searchParams.get('contentType') || 'application/octet-stream').trim();
+    let objectKey = (url.searchParams.get('key') || '').trim();
+    if (!objectKey) {
+      return json({ error: 'Missing "key" parameter' }, 400);
+    }
 
-    const safeName = filename
-      .replace(/[^a-zA-Z0-9._-]/g, '_')
-      .slice(0, 120) || 'receipt';
-    const objectKey = `receipts/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${safeName}`;
+    // Allow accidental full URLs; normalize to object key
+    if (objectKey.startsWith('http')) {
+      try {
+        const u = new URL(objectKey);
+        const parts = u.pathname.replace(/^\//, '').split('/');
+        const idx = parts.findIndex((p) => p === 'receipts');
+        objectKey = idx >= 0 ? parts.slice(idx).join('/') : parts.slice(1).join('/');
+      } catch {
+        /* keep as-is */
+      }
+    }
+    objectKey = objectKey.replace(/^\/+/, '');
 
     const endpoint = `https://${accountId}.r2.cloudflarestorage.com`;
     const objectUrl = `${endpoint}/${bucket}/${objectKey}`;
@@ -55,20 +62,13 @@ Deno.serve(async (req) => {
     });
 
     const signed = await client.sign(
-      new Request(objectUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': contentType }
-      }),
+      new Request(objectUrl, { method: 'GET' }),
       { aws: { signQuery: true } }
     );
 
-    const signedUrl = signed.url;
-    const base = (publicBase || `${endpoint}/${bucket}`).replace(/\/$/, '');
-    const publicUrl = `${base}/${objectKey}`;
-
-    return json({ signedUrl, publicUrl, objectKey });
+    return json({ viewUrl: signed.url, objectKey });
   } catch (err) {
-    console.error('get-upload-url:', err);
-    return json({ error: err?.message || 'Failed to create upload URL' }, 500);
+    console.error('get-receipt-url:', err);
+    return json({ error: err?.message || 'Failed to create view URL' }, 500);
   }
 });

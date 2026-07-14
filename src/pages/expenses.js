@@ -28,7 +28,7 @@ import {
 } from '../utils/userTeamDefaults.js';
 import { formatUsdDisplay, normalizeUsdMultiplierRate, rateForInput } from '../utils/currency.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
-import { uploadReceipt } from '../utils/upload.js';
+import { uploadReceipt, resolveReceiptViewUrl, extractReceiptObjectKey, isExternalReceiptUrl } from '../utils/upload.js';
 
 let teamBucketsCache = [];
 let teamBudgetsCache = [];
@@ -390,7 +390,7 @@ export function getAddExpensePage() {
           </div>
           <div class="form-group form-span-full">
             <label for="expReceiptUrl">Receipt</label>
-            <input type="url" name="receipt_url" id="expReceiptUrl" placeholder="Paste URL, or scan / upload">
+            <input type="text" name="receipt_url" id="expReceiptUrl" placeholder="Paste URL, or scan / upload (stores file key)">
             <div class="btn-group" style="margin-top:8px;flex-wrap:wrap;">
               <button type="button" class="secondary" id="expReceiptCameraBtn">Scan with camera</button>
               <button type="button" class="secondary" id="expReceiptFileBtn">Choose file</button>
@@ -398,6 +398,7 @@ export function getAddExpensePage() {
               <input type="file" id="expReceiptFileInput" accept="image/*,application/pdf" style="display:none">
             </div>
             <p class="form-hint" id="expReceiptHint" style="margin-top:6px;"></p>
+            <div id="expReceiptPreview" style="margin-top:8px;"></div>
           </div>
           <div class="form-group form-span-full"><label for="expDescription">Notes</label><textarea name="description" id="expDescription" rows="2" placeholder="Optional notes"></textarea></div>
         </div>
@@ -478,18 +479,20 @@ export async function initAddExpensePage() {
     fileBtnId: 'expReceiptFileBtn',
     cameraInputId: 'expReceiptCameraInput',
     fileInputId: 'expReceiptFileInput',
-    hintId: 'expReceiptHint'
+    hintId: 'expReceiptHint',
+    previewId: 'expReceiptPreview'
   });
 }
 
-/** Camera + file picker → R2 upload → fills receipt URL field */
+/** Camera + file picker → R2 upload → stores objectKey in receipt field */
 function wireReceiptUpload({
   urlInputId,
   cameraBtnId,
   fileBtnId,
   cameraInputId,
   fileInputId,
-  hintId
+  hintId,
+  previewId
 }) {
   const urlInput = document.getElementById(urlInputId);
   const cameraBtn = document.getElementById(cameraBtnId);
@@ -497,6 +500,7 @@ function wireReceiptUpload({
   const cameraInput = document.getElementById(cameraInputId);
   const fileInput = document.getElementById(fileInputId);
   const hint = document.getElementById(hintId);
+  const preview = previewId ? document.getElementById(previewId) : null;
   if (!urlInput || !cameraBtn || !fileBtn || !cameraInput || !fileInput) return;
 
   const setBusy = (busy) => {
@@ -511,9 +515,11 @@ function wireReceiptUpload({
     if (!file) return;
     setBusy(true);
     try {
-      const publicUrl = await uploadReceipt(file);
-      urlInput.value = publicUrl;
-      if (hint) hint.textContent = 'Receipt uploaded.';
+      const { objectKey } = await uploadReceipt(file);
+      // Store the R2 path in receipt_url (private bucket — not a public HTTP URL)
+      urlInput.value = objectKey;
+      if (hint) hint.textContent = `Saved: ${objectKey}`;
+      await showReceiptPreview(preview, objectKey);
       showToast('Receipt uploaded', 'success');
     } catch (err) {
       if (hint) hint.textContent = '';
@@ -529,6 +535,78 @@ function wireReceiptUpload({
   fileBtn.onclick = () => fileInput.click();
   cameraInput.onchange = () => runUpload(cameraInput.files?.[0]);
   fileInput.onchange = () => runUpload(fileInput.files?.[0]);
+}
+
+function normalizeExpenseReceiptField(payload) {
+  if (!payload?.receipt_url) return;
+  const raw = String(payload.receipt_url).trim();
+  if (!raw) {
+    payload.receipt_url = null;
+    return;
+  }
+  if (isExternalReceiptUrl(raw)) {
+    payload.receipt_url = raw;
+    return;
+  }
+  payload.receipt_url = extractReceiptObjectKey(raw) || raw;
+}
+
+async function showReceiptPreview(container, stored) {
+  if (!container) return;
+  if (!stored) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = '<p class="form-hint">Loading preview…</p>';
+  try {
+    if (isExternalReceiptUrl(stored)) {
+      container.innerHTML = `<a href="${stored}" target="_blank" rel="noopener">Open receipt</a>`;
+      return;
+    }
+    const viewUrl = await resolveReceiptViewUrl(stored);
+    const key = extractReceiptObjectKey(stored);
+    const isPdf = /\.pdf($|\?)/i.test(key) || /\.pdf($|\?)/i.test(viewUrl);
+    if (isPdf) {
+      container.innerHTML = `<a href="${viewUrl}" target="_blank" rel="noopener">Open PDF receipt</a>`;
+    } else {
+      container.innerHTML = `<a href="${viewUrl}" target="_blank" rel="noopener"><img src="${viewUrl}" alt="Receipt" style="max-width:220px;max-height:160px;border-radius:6px;border:1px solid var(--border);"></a>`;
+    }
+  } catch (err) {
+    container.innerHTML = `<p class="form-hint" style="color:#dc3545;">${err.message || 'Could not load receipt'}</p>`;
+  }
+}
+
+function receiptCellHtml(exp) {
+  if (!exp.receipt_url) return '—';
+  const id = `receipt-${exp.id}`;
+  return `<span class="receipt-cell" data-receipt-stored="${String(exp.receipt_url).replace(/"/g, '&quot;')}" id="${id}">…</span>`;
+}
+
+async function hydrateReceiptCells() {
+  const cells = document.querySelectorAll('.receipt-cell[data-receipt-stored]');
+  await Promise.all([...cells].map(async (el) => {
+    const stored = el.getAttribute('data-receipt-stored') || '';
+    if (!stored) {
+      el.textContent = '—';
+      return;
+    }
+    try {
+      if (isExternalReceiptUrl(stored)) {
+        el.innerHTML = `<a href="${stored}" target="_blank" rel="noopener">📎</a>`;
+        return;
+      }
+      const viewUrl = await resolveReceiptViewUrl(stored);
+      const key = extractReceiptObjectKey(stored);
+      const isPdf = /\.pdf($|\?)/i.test(key);
+      if (isPdf) {
+        el.innerHTML = `<a href="${viewUrl}" target="_blank" rel="noopener">📎 PDF</a>`;
+      } else {
+        el.innerHTML = `<a href="${viewUrl}" target="_blank" rel="noopener" title="Open receipt"><img src="${viewUrl}" alt="Receipt" style="width:36px;height:36px;object-fit:cover;border-radius:4px;vertical-align:middle;"></a>`;
+      }
+    } catch {
+      el.innerHTML = '<span title="Could not load">📎</span>';
+    }
+  }));
 }
 
 function updateExpenseDefaultsSummary() {
@@ -632,6 +710,7 @@ async function handleAddExpenseSubmit(e) {
   }
 
   const payload = buildExpensePayload(form, state.currentTeam.team_id, state.user.id);
+  normalizeExpenseReceiptField(payload);
   const btn = form.querySelector('button[type="submit"]');
   btn.disabled = true;
 
@@ -736,7 +815,7 @@ export function getExpenseManagerPage() {
             </div>
             <div class="form-group form-span-full">
               <label>Receipt</label>
-              <input type="url" id="editExpReceiptUrl" name="receipt_url" placeholder="Paste URL, or scan / upload">
+              <input type="text" id="editExpReceiptUrl" name="receipt_url" placeholder="Paste URL, or scan / upload (stores file key)">
               <div class="btn-group" style="margin-top:8px;flex-wrap:wrap;">
                 <button type="button" class="secondary" id="editExpReceiptCameraBtn">Scan with camera</button>
                 <button type="button" class="secondary" id="editExpReceiptFileBtn">Choose file</button>
@@ -744,6 +823,7 @@ export function getExpenseManagerPage() {
                 <input type="file" id="editExpReceiptFileInput" accept="image/*,application/pdf" style="display:none">
               </div>
               <p class="form-hint" id="editExpReceiptHint" style="margin-top:6px;"></p>
+              <div id="editExpReceiptPreview" style="margin-top:8px;"></div>
             </div>
             <div class="form-group form-span-full"><label>Notes</label><textarea id="editExpDescription" name="description" rows="2"></textarea></div>
           </div>
@@ -785,7 +865,8 @@ export async function initExpenseManagerPage() {
     fileBtnId: 'editExpReceiptFileBtn',
     cameraInputId: 'editExpReceiptCameraInput',
     fileInputId: 'editExpReceiptFileInput',
-    hintId: 'editExpReceiptHint'
+    hintId: 'editExpReceiptHint',
+    previewId: 'editExpReceiptPreview'
   });
 
   window.onExpenseBudgetFilterChange = () => {
@@ -925,7 +1006,7 @@ function refreshExpenseList() {
     const bucket = getBucketById(exp.bucket_id);
     const catLabel = getExpenseCategoryLabel(exp, teamCategoriesCache);
     const canEdit = canEditExpense(exp);
-    const receipt = exp.receipt_url ? `<a href="${exp.receipt_url}" target="_blank" rel="noopener">📎</a>` : '—';
+    const receipt = receiptCellHtml(exp);
     const selected = selectedExpenseIds.has(exp.id);
 
     tableHtml += `
@@ -965,6 +1046,7 @@ function refreshExpenseList() {
   if (tbody) tbody.innerHTML = tableHtml;
   if (mobile) mobile.innerHTML = mobileHtml;
   updateExpenseSelectionUi();
+  hydrateReceiptCells();
 }
 
 function toggleExpenseSelection(id, checkbox) {
@@ -1021,6 +1103,7 @@ function editExpense(id) {
   document.getElementById('editExpLocalAmount').value = exp.local_amount;
   document.getElementById('editExpDescription').value = exp.description || '';
   document.getElementById('editExpReceiptUrl').value = exp.receipt_url || '';
+  showReceiptPreview(document.getElementById('editExpReceiptPreview'), exp.receipt_url || '');
 
   populateBudgetSelect(document.getElementById('editExpBudget'), false);
   document.getElementById('editExpBudget').value = exp.budget_id;
@@ -1067,6 +1150,7 @@ async function handleEditExpenseSubmit(e) {
   form._rates = exchangeRatesCache;
 
   const payload = buildExpensePayload(form, state.currentTeam.team_id, existing.created_by);
+  normalizeExpenseReceiptField(payload);
   payload.updated_at = new Date().toISOString();
 
   validateAndWarnExpense(payload, id, async () => {
