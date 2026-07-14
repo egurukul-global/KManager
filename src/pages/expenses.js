@@ -625,7 +625,7 @@ function wireReceiptUpload({
     let cropper;
     imageEl.onload = () => {
       cropper = new Cropper(imageEl, {
-        aspectRatio: 3 / 4,
+        aspectRatio: NaN,
         viewMode: 1,
         autoCropArea: 1,
         responsive: true,
