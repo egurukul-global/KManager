@@ -1062,7 +1062,7 @@ export function renderBudgetReviewHtml(budget, options = {}) {
     const spentUSD = 0;
     totalSpentUSD += spentUSD;
     const remainingUSD = budgetedUSD - spentUSD;
-    const percent = budgetedUSD > 0 ? (spentUSD / budgetedUSD * 100) : 0;
+    const percent = budgetedUSD > 0 ? (remainingUSD / budgetedUSD * 100) : 0;
     const localAmtVal = cat.localAmount || cat.local_amount || 0;
     const localDisplay = localAmtVal
       ? `${Number(localAmtVal).toLocaleString()} ${cat.currency || ''}`
