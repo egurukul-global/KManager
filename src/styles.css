@@ -2412,6 +2412,86 @@ tr.selected { background: #F5EDE8 !important; }
   .ok-app-tile { min-height: 120px; }
 }
 
+
+/* Receipt OCR scanner */
+.receipt-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm, 8px);
+  padding: 16px;
+  text-align: center;
+  background: var(--bg-secondary, rgba(0,0,0,0.02));
+}
+.receipt-dropzone--active {
+  border-color: var(--primary);
+  background: rgba(154, 68, 82, 0.06);
+}
+.receipt-local-preview-img {
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.receipt-ocr-progress-bar {
+  height: 8px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.receipt-ocr-progress-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--primary);
+  transition: width 0.15s ease;
+}
+
+/* jscanify receipt camera modal */
+.receipt-scan-modal-content {
+  max-width: min(920px, 96vw);
+}
+.receipt-scan-stage {
+  position: relative;
+  width: 100%;
+  background: #111;
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 240px;
+}
+.receipt-scan-highlight {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  object-fit: contain;
+  margin: 0 auto;
+}
+.receipt-scan-preview-wrap {
+  text-align: center;
+}
+.receipt-scan-preview-img {
+  max-width: 100%;
+  max-height: 60vh;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.receipt-scan-loader {
+  text-align: center;
+  padding: 24px 12px;
+}
+.receipt-scan-spinner {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 12px;
+  border: 3px solid rgba(255,255,255,0.25);
+  border-top-color: var(--primary, #9a4452);
+  border-radius: 50%;
+  animation: receipt-spin 0.8s linear infinite;
+}
+@keyframes receipt-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Cropper modal layout */
 .receipt-crop-modal-content {
   max-width: 550px;
@@ -2452,8 +2532,4 @@ tr.selected { background: #F5EDE8 !important; }
   margin-right: 6px;
   vertical-align: middle;
 }
-@keyframes receipt-spin {
-  to { transform: rotate(360deg); }
-}
-
 

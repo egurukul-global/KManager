@@ -31,6 +31,8 @@ import {
 import { formatUsdDisplay, normalizeUsdMultiplierRate, rateForInput } from '../utils/currency.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 import { uploadReceipt, resolveReceiptViewUrl, extractReceiptObjectKey, isExternalReceiptUrl } from '../utils/upload.js';
+import { scanAndParseReceipt } from '../utils/receipt-scanner.js';
+import { openReceiptCameraScanner } from '../utils/receipt-camera-scanner.js';
 
 let teamBucketsCache = [];
 let teamBudgetsCache = [];
@@ -391,20 +393,29 @@ export function getAddExpensePage() {
             <div class="form-group"><label>USD</label><input type="number" class="input-amount" id="expUSD" step="0.01" readonly></div>
           </div>
           <div class="form-group form-span-full">
-            <label for="expReceiptUrl">Receipt</label>
-            <input type="text" name="receipt_url" id="expReceiptUrl" placeholder="Paste URL, or scan / upload (stores file key)">
-            <div class="btn-group" style="margin-top:8px;flex-wrap:wrap;">
-              <button type="button" class="secondary" id="expReceiptCameraBtn">Scan with camera</button>
-              <button type="button" class="secondary" id="expReceiptFileBtn">Choose file</button>
-              <input type="file" id="expReceiptCameraInput" accept="image/*" capture="environment" style="display:none">
+            <label>Receipt scanner</label>
+            <div id="expReceiptDropzone" class="receipt-dropzone">
+              <p><strong>Drop receipt image here</strong></p>
+              <p class="form-hint">or use Scan / Choose file — we’ll read the text, fill fields, then upload</p>
+              <div class="btn-group" style="margin-top:10px;flex-wrap:wrap;justify-content:center;">
+                <button type="button" class="secondary" id="expReceiptCameraBtn">Scan with camera</button>
+                <button type="button" class="secondary" id="expReceiptFileBtn">Choose file</button>
+              </div>
               <input type="file" id="expReceiptFileInput" accept="image/*,application/pdf" style="display:none">
             </div>
+            <div id="expReceiptLocalPreview" style="margin-top:10px;"></div>
+            <div id="expReceiptOcrProgress" class="receipt-ocr-progress" style="display:none;margin-top:10px;">
+              <div class="receipt-ocr-progress-bar"><span id="expReceiptOcrBar"></span></div>
+              <p class="form-hint" id="expReceiptOcrLabel">Reading receipt…</p>
+            </div>
+            <label for="expReceiptUrl" style="margin-top:12px;">Receipt file key / URL</label>
+            <input type="text" name="receipt_url" id="expReceiptUrl" placeholder="Filled after upload (or paste an external URL)">
             <p class="form-hint" id="expReceiptHint" style="margin-top:6px;"></p>
             <div id="expReceiptPreview" style="margin-top:8px;"></div>
           </div>
           <div class="form-group form-span-full"><label for="expDescription">Notes</label><textarea name="description" id="expDescription" rows="2" placeholder="Optional notes"></textarea></div>
         </div>
-        <div class="btn-group"><button type="submit">Add expense</button></div>
+        <div class="btn-group"><button type="submit">Confirm &amp; Save expense</button></div>
       </form>
     </div>
   `;
@@ -479,14 +490,27 @@ export async function initAddExpensePage() {
     urlInputId: 'expReceiptUrl',
     cameraBtnId: 'expReceiptCameraBtn',
     fileBtnId: 'expReceiptFileBtn',
-    cameraInputId: 'expReceiptCameraInput',
     fileInputId: 'expReceiptFileInput',
     hintId: 'expReceiptHint',
-    previewId: 'expReceiptPreview'
+    previewId: 'expReceiptPreview',
+    localPreviewId: 'expReceiptLocalPreview',
+    progressWrapId: 'expReceiptOcrProgress',
+    progressBarId: 'expReceiptOcrBar',
+    progressLabelId: 'expReceiptOcrLabel',
+    dropzoneId: 'expReceiptDropzone',
+    enableOcr: true,
+    useJscanifyCamera: true,
+    fillForm: {
+      itemId: 'expItem',
+      dateId: 'expDate',
+      amountId: 'expLocalAmount',
+      notesId: 'expDescription',
+      onAmountFilled: () => window.onExpenseMathChange?.()
+    }
   });
 }
 
-/** Camera + file picker → R2 upload → stores objectKey in receipt field */
+/** Camera (jscanify) / file / drop → optional OCR → R2 upload → store objectKey */
 function wireReceiptUpload({
   urlInputId,
   cameraBtnId,
@@ -494,23 +518,73 @@ function wireReceiptUpload({
   cameraInputId,
   fileInputId,
   hintId,
-  previewId
+  previewId,
+  localPreviewId,
+  progressWrapId,
+  progressBarId,
+  progressLabelId,
+  dropzoneId,
+  enableOcr = false,
+  useJscanifyCamera = false,
+  fillForm = null
 }) {
   const urlInput = document.getElementById(urlInputId);
   const cameraBtn = document.getElementById(cameraBtnId);
   const fileBtn = document.getElementById(fileBtnId);
-  const cameraInput = document.getElementById(cameraInputId);
+  const cameraInput = cameraInputId ? document.getElementById(cameraInputId) : null;
   const fileInput = document.getElementById(fileInputId);
   const hint = document.getElementById(hintId);
   const preview = previewId ? document.getElementById(previewId) : null;
-  if (!urlInput || !cameraBtn || !fileBtn || !cameraInput || !fileInput) return;
+  const localPreview = localPreviewId ? document.getElementById(localPreviewId) : null;
+  const progressWrap = progressWrapId ? document.getElementById(progressWrapId) : null;
+  const progressBar = progressBarId ? document.getElementById(progressBarId) : null;
+  const progressLabel = progressLabelId ? document.getElementById(progressLabelId) : null;
+  const dropzone = dropzoneId ? document.getElementById(dropzoneId) : null;
+  if (!urlInput || !fileBtn || !fileInput) return;
+  if (!cameraBtn && !useJscanifyCamera) return;
 
-  const setBusy = (busy) => {
-    cameraBtn.disabled = busy;
+  const setBusy = (busy, phase = '') => {
+    if (cameraBtn) {
+      cameraBtn.disabled = busy;
+      cameraBtn.textContent = busy ? (phase || 'Working…') : 'Scan with camera';
+    }
     fileBtn.disabled = busy;
-    cameraBtn.textContent = busy ? 'Uploading…' : 'Scan with camera';
-    fileBtn.textContent = busy ? 'Uploading…' : 'Choose file';
-    if (hint) hint.textContent = busy ? 'Uploading receipt…' : '';
+    fileBtn.textContent = busy ? (phase || 'Working…') : 'Choose file';
+  };
+
+  const showLocalPreview = (file) => {
+    if (!localPreview) return;
+    if (!file || !file.type?.startsWith('image/')) {
+      localPreview.innerHTML = file ? `<p class="form-hint">${file.name}</p>` : '';
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    localPreview.innerHTML = `<img src="${url}" alt="Receipt preview" class="receipt-local-preview-img">`;
+  };
+
+  const setOcrProgress = (show, pct = 0, label = '') => {
+    if (!progressWrap) return;
+    progressWrap.style.display = show ? '' : 'none';
+    if (progressBar) progressBar.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    if (progressLabel) progressLabel.textContent = label || 'Reading receipt…';
+  };
+
+  const applyOcrFields = (parsed) => {
+    if (!fillForm || !parsed) return;
+    const itemEl = fillForm.itemId ? document.getElementById(fillForm.itemId) : null;
+    const dateEl = fillForm.dateId ? document.getElementById(fillForm.dateId) : null;
+    const amountEl = fillForm.amountId ? document.getElementById(fillForm.amountId) : null;
+    const notesEl = fillForm.notesId ? document.getElementById(fillForm.notesId) : null;
+
+    if (itemEl && parsed.merchant) itemEl.value = String(parsed.merchant).slice(0, 20);
+    if (dateEl && parsed.date) dateEl.value = parsed.date;
+    if (amountEl && parsed.total != null) {
+      amountEl.value = parsed.total;
+      fillForm.onAmountFilled?.();
+    }
+    if (notesEl && parsed.rawText && !notesEl.value.trim()) {
+      notesEl.value = `OCR: ${parsed.rawText.slice(0, 280)}`;
+    }
   };
 
   const openCropModal = (file, onCropAndUpload) => {
@@ -564,7 +638,7 @@ function wireReceiptUpload({
       if (cropper) cropper.destroy();
       URL.revokeObjectURL(fileUrl);
       modal.remove();
-      cameraInput.value = '';
+      if (cameraInput) cameraInput.value = '';
       fileInput.value = '';
     };
 
@@ -608,6 +682,7 @@ function wireReceiptUpload({
           URL.revokeObjectURL(fileUrl);
           modal.remove();
         } catch (err) {
+          showToast(err.message || 'Upload failed', 'error');
           cancelBtn.disabled = false;
           rotateBtn.disabled = false;
           uploadBtn.disabled = false;
@@ -618,40 +693,105 @@ function wireReceiptUpload({
     };
   };
 
-  const runUpload = async (file) => {
+  const runPipeline = async (file) => {
     if (!file) return;
 
     const isImage = file.type?.startsWith('image/');
-    if (isImage && !file.isCropped) {
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+
+    if (isImage && !isPdf && !file.isCropped) {
       openCropModal(file, async (croppedFile) => {
-        await runUpload(croppedFile);
+        await runPipeline(croppedFile);
       });
       return;
     }
 
-    setBusy(true);
+    showLocalPreview(file);
+    setBusy(true, 'Reading…');
+    setOcrProgress(false);
+
     try {
+      if (enableOcr && isImage && !isPdf) {
+        setOcrProgress(true, 0, 'Starting OCR…');
+        try {
+          const parsed = await scanAndParseReceipt(file, (pct, status) => {
+            setOcrProgress(true, pct, status === 'recognizing text' ? `Reading text… ${pct}%` : `Preparing… ${pct}%`);
+            setBusy(true, `OCR ${pct}%`);
+          });
+          applyOcrFields(parsed);
+          if (parsed.ocrFailed || parsed.lowConfidence) {
+            showToast(parsed.warning || 'Please check the filled fields', 'warning');
+            if (hint) hint.textContent = parsed.warning || 'Check Item / Date / Amount';
+          } else if (hint) {
+            hint.textContent = 'Fields filled from receipt — review, then save.';
+          }
+        } catch (ocrErr) {
+          console.warn('OCR failed:', ocrErr);
+          showToast('Could not read receipt text. Enter details manually — still uploading image.', 'warning');
+          if (hint) hint.textContent = 'OCR failed — fill fields manually.';
+        }
+        setOcrProgress(false);
+      } else if (enableOcr && isPdf) {
+        showToast('PDF saved as receipt — OCR works best with photos.', 'info');
+      }
+
+      setBusy(true, 'Uploading…');
+      if (hint && !hint.textContent) hint.textContent = 'Uploading receipt…';
       const { objectKey } = await uploadReceipt(file);
-      // Store the R2 path in receipt_url (private bucket — not a public HTTP URL)
       urlInput.value = objectKey;
       if (hint) hint.textContent = `Saved: ${objectKey}`;
       await showReceiptPreview(preview, objectKey);
       showToast('Receipt uploaded', 'success');
     } catch (err) {
-      if (hint) hint.textContent = '';
       showToast(err.message || 'Upload failed', 'error');
-      if (file.isCropped) throw err;
+      throw err;
     } finally {
       setBusy(false);
-      cameraInput.value = '';
+      setOcrProgress(false);
+      if (cameraInput) cameraInput.value = '';
       fileInput.value = '';
     }
   };
 
-  cameraBtn.onclick = () => cameraInput.click();
+
+  if (cameraBtn) {
+    cameraBtn.onclick = async () => {
+      if (useJscanifyCamera) {
+        setBusy(true, 'Opening camera…');
+        try {
+          const file = await openReceiptCameraScanner();
+          if (file) await runPipeline(file);
+        } catch (err) {
+          showToast(err.message || 'Camera scanner failed', 'error');
+        } finally {
+          setBusy(false);
+        }
+        return;
+      }
+      cameraInput?.click();
+    };
+  }
+
   fileBtn.onclick = () => fileInput.click();
-  cameraInput.onchange = () => runUpload(cameraInput.files?.[0]);
-  fileInput.onchange = () => runUpload(fileInput.files?.[0]);
+  if (cameraInput) cameraInput.onchange = () => runPipeline(cameraInput.files?.[0]);
+  fileInput.onchange = () => runPipeline(fileInput.files?.[0]);
+
+  if (dropzone) {
+    const prevent = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => {
+      dropzone.addEventListener(ev, prevent);
+    });
+    dropzone.addEventListener('dragover', () => dropzone.classList.add('receipt-dropzone--active'));
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('receipt-dropzone--active'));
+    dropzone.addEventListener('drop', (e) => {
+      dropzone.classList.remove('receipt-dropzone--active');
+      const file = e.dataTransfer?.files?.[0];
+      if (file) runPipeline(file);
+    });
+  }
 }
 
 function normalizeExpenseReceiptField(payload) {
@@ -936,7 +1076,6 @@ export function getExpenseManagerPage() {
               <div class="btn-group" style="margin-top:8px;flex-wrap:wrap;">
                 <button type="button" class="secondary" id="editExpReceiptCameraBtn">Scan with camera</button>
                 <button type="button" class="secondary" id="editExpReceiptFileBtn">Choose file</button>
-                <input type="file" id="editExpReceiptCameraInput" accept="image/*" capture="environment" style="display:none">
                 <input type="file" id="editExpReceiptFileInput" accept="image/*,application/pdf" style="display:none">
               </div>
               <p class="form-hint" id="editExpReceiptHint" style="margin-top:6px;"></p>
@@ -980,10 +1119,18 @@ export async function initExpenseManagerPage() {
     urlInputId: 'editExpReceiptUrl',
     cameraBtnId: 'editExpReceiptCameraBtn',
     fileBtnId: 'editExpReceiptFileBtn',
-    cameraInputId: 'editExpReceiptCameraInput',
     fileInputId: 'editExpReceiptFileInput',
     hintId: 'editExpReceiptHint',
-    previewId: 'editExpReceiptPreview'
+    previewId: 'editExpReceiptPreview',
+    useJscanifyCamera: true,
+    enableOcr: true,
+    fillForm: {
+      itemId: 'editExpItem',
+      dateId: 'editExpDate',
+      amountId: 'editExpLocalAmount',
+      notesId: 'editExpDescription',
+      onAmountFilled: () => window.onEditExpenseMathChange?.()
+    }
   });
 
   window.onExpenseBudgetFilterChange = () => {
