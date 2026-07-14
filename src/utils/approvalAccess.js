@@ -15,7 +15,8 @@ export function orgRoleToApprovalCodes(orgRole) {
   const role = String(orgRole || 'user').toLowerCase().trim();
   const codes = new Set();
   if (role === 'admin') codes.add('SYS');
-  if (role === 'caoh') { codes.add('CAO'); codes.add('FIH'); }
+  // Org titles map 1:1 to their approval step — not earlier/later steps
+  if (role === 'caoh') codes.add('CAO');
   if (role === 'oh') codes.add('FIH');
   if (role === 'ceo') codes.add('CEO');
   return codes;
@@ -93,6 +94,12 @@ export async function userCanActOnRequest(request, userId = state.user?.id) {
   const status = String(request.status || '').toUpperCase();
   if (isFinalStatus(status)) return false;
 
+  // Only system admin may act outside their step
+  if (state.user?.role === 'admin' && userId === state.user?.id) {
+    if (request.created_by === userId && request.current_role_code) return false;
+    return !!request.current_role_code || status.startsWith('CLARIFY-');
+  }
+
   if (status.startsWith('CLARIFY-')) {
     const role = clarifyRoleFromStatus(status);
     const codes = await getUserApprovalRoleCodes(userId, request.team_id);
@@ -103,17 +110,10 @@ export async function userCanActOnRequest(request, userId = state.user?.id) {
     if (request.created_by === userId) return false;
 
     const codes = await getUserApprovalRoleCodes(userId, request.team_id);
-    if (codes.includes(String(request.current_role_code).toUpperCase())) return true;
-
-    if (isOrgAdminUser() && request.created_by !== userId) return true;
-    return false;
+    return codes.includes(String(request.current_role_code).toUpperCase());
   }
 
   return request.created_by === userId;
-}
-
-function isOrgAdminUser() {
-  return ['admin', 'caoh', 'oh', 'ceo'].includes(String(state.user?.role || '').toLowerCase());
 }
 
 export function canManageRoleAssignments() {

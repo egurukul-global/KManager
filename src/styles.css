@@ -370,7 +370,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 24px;
+  padding: 8px 20px;
   background: var(--card-bg);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 4px rgba(0,0,0,0.04);
@@ -388,30 +388,33 @@ body {
 /* ===== MAIN CONTENT ===== */
 .main-content {
   flex: 1;
-  padding: 24px 30px 30px;
+  padding: 12px 24px 24px;
   min-height: 0;
 }
+/* Page title lives in the top bar / mobile header — hide duplicate in-page H1 */
 .page-title {
-  font-size: 1.8em;
-  color: var(--text);
-  margin-bottom: 25px;
-  padding-bottom: 15px;
-  border-bottom: var(--gold-border) solid var(--accent-gold);
+  display: none;
 }
+.page-intro {
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+  font-size: 0.92em;
+}
+
 
 /* ===== CARDS ===== */
 .card {
   background: var(--card-bg);
   border-radius: var(--radius);
-  padding: 25px;
-  margin-bottom: 25px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
   box-shadow: var(--shadow);
   border: 1px solid var(--border);
 }
 .card h2 {
   color: #333;
-  margin-bottom: 20px;
-  font-size: 1.3em;
+  margin-bottom: 12px;
+  font-size: 1.15em;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -789,6 +792,31 @@ input.input-rate {
   max-width: 32rem;
 }
 
+.form-grid-row--portal-filters {
+  grid-template-columns:
+    minmax(7rem, 1.1fr)
+    minmax(5.5rem, 0.7fr)
+    minmax(5.5rem, 0.7fr)
+    minmax(5.5rem, 0.7fr)
+    minmax(8rem, 1.4fr)
+    auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.filter-card {
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.filter-card .form-group {
+  margin-bottom: 0;
+}
+
+.form-group--action button {
+  white-space: nowrap;
+}
+
 /* Calendar admin */
 .form-grid-row--calendar {
   grid-template-columns:
@@ -1162,11 +1190,6 @@ tr.selected { background: #F5EDE8 !important; }
 }
 
 /* Team management admin */
-.page-intro {
-  color: var(--text-secondary);
-  margin-bottom: 16px;
-}
-
 .form-grid-row--team-meta {
   grid-template-columns: minmax(12rem, 1fr);
   max-width: 28rem;
@@ -1846,7 +1869,7 @@ tr.selected { background: #F5EDE8 !important; }
     width: 100%;
   }
   .app-topbar { display: none; }
-  .main-content { padding: 70px 15px calc(var(--bottom-nav-height) + 15px); }
+  .main-content { padding: 64px 12px calc(var(--bottom-nav-height) + 12px); }
   .mobile-header { display: flex; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid-row,

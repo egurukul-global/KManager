@@ -217,6 +217,10 @@ function updateBottomNavForRole() {
 }
 
 export function defaultPageForRole() {
+  // Approvers (FIN/FIH/CAO via assignment or org role) land on their queue
+  const org = String(state.user?.role || '').toLowerCase();
+  if (['oh', 'caoh', 'ceo'].includes(org)) return 'approval-portal';
+  if (isViewOnly()) return 'approval-portal';
   return 'dashboard';
 }
 

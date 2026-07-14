@@ -31,6 +31,10 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
     rawTeams = teamsData || [];
   }
 
+  // FIN / FIH / etc. assigned via Role Assignments may have no user_teams row
+  const roleTeams = await loadTeamsFromRoleAssignments(userId);
+  rawTeams = [...rawTeams, ...roleTeams];
+
   const seenTeamIds = new Set();
   state.teams = [];
   for (const team of rawTeams) {
@@ -57,6 +61,51 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
   }
 
   return state.teams;
+}
+
+/** Teams granted only through request_role_assignments (approvers without membership). */
+async function loadTeamsFromRoleAssignments(userId) {
+  const { data: assignments, error } = await supabaseClient
+    .from('request_role_assignments')
+    .select('team_id, role_code')
+    .eq('user_id', userId)
+    .eq('is_active', true);
+
+  if (error || !assignments?.length) {
+    if (error) console.warn('role-assignment teams:', error.message);
+    return [];
+  }
+
+  const specificIds = [...new Set(assignments.map(a => a.team_id).filter(Boolean))];
+  const hasGlobal = assignments.some(a => !a.team_id);
+
+  let teamsQuery = supabaseClient
+    .from('teams')
+    .select('id, name, is_personal_team')
+    .eq('is_deleted', false);
+
+  // Prefer assigned teams; global FIN/FIH gets all non-personal teams
+  if (!hasGlobal && specificIds.length) {
+    teamsQuery = teamsQuery.in('id', specificIds);
+  }
+
+  const { data: teams, error: teamsErr } = await teamsQuery;
+  if (teamsErr) {
+    console.warn('role-assignment team list:', teamsErr.message);
+    return [];
+  }
+
+  return (teams || [])
+    .filter(t => hasGlobal ? !t.is_personal_team : true)
+    .filter(t => hasGlobal || specificIds.includes(t.id))
+    .map(t => ({
+      team_id: t.id,
+      team_name: t.name || 'Unknown',
+      is_primary: false,
+      access_level: 'view',
+      is_personal_team: !!t.is_personal_team,
+      from_role_assignment: true
+    }));
 }
 
 /** Keep or restore current team after teams list changes. */

@@ -691,15 +691,9 @@ export async function loadRequestMessages(requestId) {
   }));
 }
 
-/** Portal inbox with filters. */
-export async function fetchApprovalInbox({
-  showAll = false,
-  statusFilter = 'active',
-  typeFilter = 'all',
-  search = '',
-  teamId = null
-} = {}) {
-  let query = supabaseClient
+/** Load all visible approval requests once (no UI filters). */
+export async function fetchApprovalInboxRaw() {
+  const { data, error } = await supabaseClient
     .from('approval_requests')
     .select(`
       id, request_number, request_type, team_id, status, title, amount_usd,
@@ -710,46 +704,82 @@ export async function fetchApprovalInbox({
     `)
     .eq('is_deleted', false)
     .order('updated_at', { ascending: false })
-    .limit(200);
+    .limit(500);
 
-  if (teamId) query = query.eq('team_id', teamId);
+  if (error) throw error;
+  return data || [];
+}
+
+/**
+ * Client-side filter of a cached inbox.
+ * stepFilter: 'mine' | 'all' | 'OPH' | 'FIN' | …
+ * Approve is still only allowed when canActMap says so (your step).
+ */
+export function filterApprovalInboxLocal(rows, filters = {}, canActMap = null) {
+  const {
+    statusFilter = 'active',
+    typeFilter = 'all',
+    stepFilter = 'mine',
+    search = '',
+    teamId = null,
+    myStepCodes = []
+  } = filters;
+
+  let list = Array.isArray(rows) ? [...rows] : [];
+
+  if (teamId) list = list.filter(r => r.team_id === teamId);
 
   if (typeFilter && typeFilter !== 'all') {
-    query = query.eq('request_type', typeFilter);
+    list = list.filter(r => r.request_type === typeFilter);
   }
-
-  if (search) {
-    const q = search.trim().toUpperCase();
-    query = query.or(`request_number.ilike.%${q}%,group_number.ilike.%${q}%,title.ilike.%${search.trim()}%`);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  let rows = data || [];
 
   if (statusFilter === 'active') {
-    rows = rows.filter(r => isActiveStatus(r.status) && r.status !== 'DRAFT');
+    list = list.filter(r => isActiveStatus(r.status) && r.status !== 'DRAFT');
   } else if (statusFilter === 'closed') {
-    rows = rows.filter(r => isFinalStatus(r.status) && r.status.endsWith('-APPROVED'));
+    list = list.filter(r => isFinalStatus(r.status) && String(r.status).endsWith('-APPROVED'));
   } else if (statusFilter === 'rejected') {
-    rows = rows.filter(r => r.status === 'REJECTED');
+    list = list.filter(r => r.status === 'REJECTED');
   }
 
-  if (!showAll && state.user?.role !== 'admin' && state.user?.role !== 'ceo') {
-    const userId = state.user.id;
-    const filtered = [];
-
-    for (const row of rows) {
-      const isMine =
-        row.created_by === userId ||
-        (await userCanActOnRequest(row, userId));
-      if (isMine) filtered.push(row);
-    }
-    rows = filtered;
+  const step = String(stepFilter || 'mine').toUpperCase();
+  if (step === 'MINE') {
+    const codes = (myStepCodes || []).map(c => String(c).toUpperCase());
+    list = list.filter(r => {
+      if (canActMap && canActMap.get(r.id) === true) return true;
+      const role = String(r.current_role_code || '').toUpperCase();
+      return role && codes.includes(role);
+    });
+  } else if (step !== 'ALL') {
+    list = list.filter(r => String(r.current_role_code || '').toUpperCase() === step);
   }
 
-  return rows;
+  const q = String(search || '').trim().toLowerCase();
+  if (q) {
+    list = list.filter(r => {
+      const num = String(r.request_number || '').toLowerCase();
+      const group = String(r.group_number || '').toLowerCase();
+      const title = String(r.title || '').toLowerCase();
+      const team = String(r.teams?.name || '').toLowerCase();
+      return num.includes(q) || group.includes(q) || title.includes(q) || team.includes(q);
+    });
+  }
+
+  return list;
+}
+
+/** @deprecated Prefer fetchApprovalInboxRaw + filterApprovalInboxLocal */
+export async function fetchApprovalInbox(opts = {}) {
+  const rows = await fetchApprovalInboxRaw();
+  const canActMap = new Map();
+  for (const row of rows) {
+    canActMap.set(row.id, await userCanActOnRequest(row));
+  }
+  const myStepCodes = opts.myStepCodes || [];
+  return filterApprovalInboxLocal(rows, {
+    ...opts,
+    stepFilter: opts.stepFilter || (opts.showAll ? 'all' : 'mine'),
+    myStepCodes
+  }, canActMap);
 }
 
 export async function rejectRequestBatch(requestIds, message = '') {

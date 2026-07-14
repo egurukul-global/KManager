@@ -1,11 +1,17 @@
-// ==================== APPROVAL PORTAL (Phase 4B) ====================
+/* ========== APPROVAL PORTAL ========== */
 import { state } from '../state.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
 import { approvalStatusBadge } from '../utils/approvalConstants.js';
-import { clarifyRoleFromStatus, userCanActOnRequest, canCancelRequest } from '../utils/approvalAccess.js';
 import {
-  fetchApprovalInbox,
+  userCanActOnRequest,
+  canCancelRequest,
+  getUserApprovalRoleCodes,
+  clarifyRoleFromStatus
+} from '../utils/approvalAccess.js';
+import {
+  fetchApprovalInboxRaw,
+  filterApprovalInboxLocal,
   loadRequestMessages,
   loadReconciliationRequestLines,
   approveAndSendRequest,
@@ -16,11 +22,14 @@ import {
   approveAndSendBatch
 } from '../utils/approvalEngine.js';
 
+/** Full list loaded once; filters/search work on this cache. */
+let inboxCache = [];
 let inboxRows = [];
 let selectedIds = new Set();
 let rowCanActMap = new Map();
 let detailRequestId = null;
 let detailMessages = [];
+let myStepCodes = [];
 
 const TYPE_LABELS = {
   budget: 'Budget',
@@ -28,57 +37,53 @@ const TYPE_LABELS = {
   reconciliation_adjustment: 'Reconciliation'
 };
 
+const STEP_OPTIONS = ['OPH', 'FIN', 'FIH', 'CAO'];
+
 export function getApprovalPortalPage() {
   return `
-    <h1 class="page-title">Approval Portal</h1>
-    <p class="page-intro">Triage and act on budget, transfer, and reconciliation requests. <strong>Submitted</strong> means the team sent it into the approval chain — use <strong>Approve</strong> at your step to move it to the next role (OPH → FIN → FIH → CAO).</p>
-
-    <div class="card">
-      <h2>Filters</h2>
-      <div class="form-grid">
+    <div class="card filter-card">
+      <div class="form-grid-row form-grid-row--portal-filters">
         <div class="form-group">
           <label>Team</label>
-          <select id="portalTeamFilter" onchange="window.refreshApprovalPortal()">
+          <select id="portalTeamFilter">
             <option value="">All teams</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group form-group--narrow">
           <label>Status</label>
-          <select id="portalStatusFilter" onchange="window.refreshApprovalPortal()">
+          <select id="portalStatusFilter">
             <option value="active" selected>Active</option>
             <option value="all">All</option>
-            <option value="closed">Approved (closed)</option>
+            <option value="closed">Approved</option>
             <option value="rejected">Rejected</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group form-group--narrow">
           <label>Type</label>
-          <select id="portalTypeFilter" onchange="window.refreshApprovalPortal()">
-            <option value="all">All types</option>
+          <select id="portalTypeFilter">
+            <option value="all">All</option>
             <option value="budget">Budget</option>
-            <option value="money_transfer">Money Transfer</option>
-            <option value="reconciliation_adjustment">Reconciliation</option>
+            <option value="money_transfer">Transfer</option>
+            <option value="reconciliation_adjustment">Recon</option>
           </select>
         </div>
-        <div class="form-group">
-          <label>Search</label>
-          <input type="text" id="portalSearch" placeholder="TTM-42 or title" onkeydown="if(event.key==='Enter')window.refreshApprovalPortal()">
+        <div class="form-group form-group--narrow">
+          <label>Step</label>
+          <select id="portalStepFilter"></select>
         </div>
-      </div>
-      <div class="form-group" style="margin-top:8px;">
-        <label class="checkbox-label">
-          <input type="checkbox" id="portalShowAll" onchange="window.refreshApprovalPortal()">
-          Show all (not just mine)
-        </label>
-      </div>
-      <div class="btn-group">
-        <button type="button" onclick="window.refreshApprovalPortal()">Refresh</button>
+        <div class="form-group form-group--search">
+          <label>Search</label>
+          <input type="text" id="portalSearch" placeholder="Name or request #" onkeydown="if(event.key==='Enter')window.searchApprovalPortal()">
+        </div>
+        <div class="form-group form-group--action">
+          <label>&nbsp;</label>
+          <button type="button" onclick="window.searchApprovalPortal()">Search</button>
+        </div>
       </div>
     </div>
 
     <div class="card" id="portalBatchBar" style="display:none;">
-      <h3>Batch actions (<span id="portalSelectedCount">0</span> selected)</h3>
-      <p class="page-intro" style="margin:0 0 8px; font-size:0.9em;">Select requests awaiting <strong>your</strong> role and click <strong>Approve</strong> to sign off and forward to the next step.</p>
+      <h3>Batch (<span id="portalSelectedCount">0</span>)</h3>
       <div class="btn-group">
         <button type="button" id="portalBatchApproveBtn" class="success" disabled onclick="window.portalBatchApprove(event)">Approve</button>
       </div>
@@ -113,7 +118,8 @@ export function getApprovalPortalPage() {
 }
 
 export async function initApprovalPortalPage() {
-  window.refreshApprovalPortal = refreshApprovalPortal;
+  window.searchApprovalPortal = searchApprovalPortal;
+  window.refreshApprovalPortal = searchApprovalPortal;
   window.portalToggleSelect = portalToggleSelect;
   window.portalToggleSelectAll = portalToggleSelectAll;
   window.portalOpenDetail = portalOpenDetail;
@@ -122,7 +128,33 @@ export async function initApprovalPortalPage() {
   window.portalBatchApprove = portalBatchApprove;
 
   populateTeamFilter();
-  await refreshApprovalPortal();
+  await setupStepFilter();
+  try {
+    await loadInboxFromServer();
+    searchApprovalPortal();
+  } catch (err) {
+    showToast(err.message || 'Failed to load approvals', 'error');
+  }
+}
+
+async function setupStepFilter() {
+  myStepCodes = (await getUserApprovalRoleCodes(state.user?.id, state.currentTeam?.team_id))
+    .map(c => String(c).toUpperCase());
+
+  const select = document.getElementById('portalStepFilter');
+  if (!select) return;
+
+  const primary = STEP_OPTIONS.find(s => myStepCodes.includes(s)) || null;
+
+  let html = '<option value="mine">My step</option>';
+  html += '<option value="all">All steps</option>';
+  STEP_OPTIONS.forEach(s => {
+    html += `<option value="${s}">${s}</option>`;
+  });
+  select.innerHTML = html;
+
+  // Default to their concrete step (FIN/FIH/CAO…) when known; else My step
+  select.value = primary || 'mine';
 }
 
 function populateTeamFilter() {
@@ -138,11 +170,12 @@ function populateTeamFilter() {
 
 function getFilters() {
   return {
-    showAll: document.getElementById('portalShowAll')?.checked || false,
     statusFilter: document.getElementById('portalStatusFilter')?.value || 'active',
     typeFilter: document.getElementById('portalTypeFilter')?.value || 'all',
+    stepFilter: document.getElementById('portalStepFilter')?.value || 'mine',
     search: document.getElementById('portalSearch')?.value || '',
-    teamId: document.getElementById('portalTeamFilter')?.value || null
+    teamId: document.getElementById('portalTeamFilter')?.value || null,
+    myStepCodes
   };
 }
 
@@ -159,48 +192,46 @@ function countActionableSelected() {
   return count;
 }
 
-async function refreshApprovalPortal() {
+async function loadInboxFromServer() {
+  const tableBody = document.getElementById('portalInboxTableBody');
+  const mobileEl = document.getElementById('portalInboxMobile');
+  if (tableBody) tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">Loading…</td></tr>';
+  if (mobileEl) mobileEl.innerHTML = '<p class="empty-state">Loading…</p>';
+
+  inboxCache = await fetchApprovalInboxRaw();
+  rowCanActMap = new Map();
+  await Promise.all(inboxCache.map(async row => {
+    rowCanActMap.set(row.id, await userCanActOnRequest(row));
+  }));
+}
+
+function searchApprovalPortal() {
   const tableBody = document.getElementById('portalInboxTableBody');
   const mobileEl = document.getElementById('portalInboxMobile');
   if (!tableBody && !mobileEl) return;
 
-  if (tableBody) tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">Loading…</td></tr>';
-  if (mobileEl) mobileEl.innerHTML = '<p class="empty-state">Loading…</p>';
   selectedIds = new Set();
-  rowCanActMap = new Map();
   updateBatchBar();
 
-  try {
-    inboxRows = await fetchApprovalInbox(getFilters());
+  inboxRows = filterApprovalInboxLocal(inboxCache, getFilters(), rowCanActMap);
 
-    if (!inboxRows.length) {
-      if (tableBody) tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">No requests match these filters.</td></tr>';
-      if (mobileEl) mobileEl.innerHTML = '<p class="empty-state">No requests match these filters.</p>';
-      portalCloseDetail();
-      return;
-    }
-
-    await Promise.all(inboxRows.map(async row => {
-      rowCanActMap.set(row.id, await userCanActOnRequest(row));
-    }));
-
-    const rendered = inboxRows.map(row => renderInboxRow(row));
-    if (tableBody) tableBody.innerHTML = rendered.map(r => r.table).join('');
-    if (mobileEl) mobileEl.innerHTML = rendered.map(r => r.mobile).join('');
-
-    const selectAll = document.getElementById('portalSelectAll');
-    if (selectAll) selectAll.checked = false;
-  } catch (err) {
-    console.error('Approval portal:', err);
-    const msg = escapeHtml(err.message);
-    if (tableBody) tableBody.innerHTML = `<tr><td colspan="9" class="empty-state" style="color:#dc3545;">${msg}</td></tr>`;
-    if (mobileEl) mobileEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${msg}</p>`;
+  if (!inboxRows.length) {
+    if (tableBody) tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">No requests match these filters.</td></tr>';
+    if (mobileEl) mobileEl.innerHTML = '<p class="empty-state">No requests match these filters.</p>';
+    portalCloseDetail();
+    return;
   }
+
+  const rendered = inboxRows.map(row => renderInboxRow(row));
+  if (tableBody) tableBody.innerHTML = rendered.map(r => r.table).join('');
+  if (mobileEl) mobileEl.innerHTML = rendered.map(r => r.mobile).join('');
+
+  const selectAll = document.getElementById('portalSelectAll');
+  if (selectAll) selectAll.checked = false;
 }
 
 function renderInboxRow(row) {
   const badge = approvalStatusBadge(row.status);
-  const canAct = rowCanActMap.get(row.id);
   const isMine = row.created_by === state.user?.id;
   const teamName = escapeHtml(row.teams?.name || '—');
   const typeLabel = TYPE_LABELS[row.request_type] || row.request_type;
@@ -232,19 +263,15 @@ function renderInboxRow(row) {
       <div class="data-card-top">
         <label class="checkbox-label" onclick="event.stopPropagation()">
           <input type="checkbox" data-portal-id="${row.id}" onchange="window.portalToggleSelect('${row.id}', this.checked)">
+          <span class="data-card-title">${row.request_number}</span>
         </label>
-        <span class="data-card-title">${row.request_number}</span>
         <span class="badge ${badge.class}">${badge.label}</span>
       </div>
-      ${cardRow('Title', row.title || '—')}
+      ${cardRow('Title', escapeHtml(row.title || '—'))}
       ${cardRow('Type', typeLabel)}
-      ${cardRow('Team', row.teams?.name || '—')}
+      ${cardRow('Team', teamName)}
       ${cardRow('Amount', amount)}
-      ${stepHint !== '—' ? cardRow('Step', stepHint + (yourTurn ? ' — your turn' : '')) : ''}
-      ${isMine ? cardRow('Submitted by', 'You') : ''}
-      <div class="btn-group" style="margin-top:8px;" onclick="event.stopPropagation()">
-        <button type="button" class="small secondary" onclick="window.portalOpenDetail('${row.id}')">Open</button>
-      </div>
+      ${cardRow('Step', `${escapeHtml(stepHint)}${yourTurn ? ' (Your turn)' : ''}`)}
     </article>
   `;
 
@@ -258,61 +285,50 @@ function portalToggleSelect(id, checked) {
 }
 
 function portalToggleSelectAll(checked) {
+  selectedIds = new Set();
   document.querySelectorAll('[data-portal-id]').forEach(el => {
     el.checked = checked;
-    portalToggleSelect(el.dataset.portalId, checked);
+    if (checked) selectedIds.add(el.getAttribute('data-portal-id'));
   });
-  if (!checked) {
-    selectedIds = new Set();
-    updateBatchBar();
-  }
+  updateBatchBar();
 }
 
 function updateBatchBar() {
   const bar = document.getElementById('portalBatchBar');
   const countEl = document.getElementById('portalSelectedCount');
-  const approveBtn = document.getElementById('portalBatchApproveBtn');
-  const actionableCount = countActionableSelected();
-
-  if (countEl) countEl.textContent = String(selectedIds.size);
-  if (bar) bar.style.display = selectedIds.size > 0 ? '' : 'none';
-  if (approveBtn) {
-    approveBtn.disabled = actionableCount === 0;
-    approveBtn.title = actionableCount === 0
-      ? 'Select at least one request awaiting your approval'
-      : `Approve ${actionableCount} request${actionableCount === 1 ? '' : 's'}`;
-  }
+  const btn = document.getElementById('portalBatchApproveBtn');
+  const actionable = countActionableSelected();
+  if (countEl) countEl.textContent = String(actionable);
+  if (bar) bar.style.display = selectedIds.size ? '' : 'none';
+  if (btn) btn.disabled = actionable === 0;
 }
 
-async function portalOpenDetail(requestId) {
-  const row = inboxRows.find(r => r.id === requestId);
-  const detailEl = document.getElementById('portalDetail');
-  if (!row || !detailEl) return;
+async function portalOpenDetail(id) {
+  detailRequestId = id;
+  const row = inboxCache.find(r => r.id === id) || inboxRows.find(r => r.id === id);
+  const detail = document.getElementById('portalDetail');
+  if (!detail || !row) return;
 
-  detailRequestId = requestId;
-  detailEl.style.display = '';
+  detail.style.display = '';
+  detail.innerHTML = '<div class="card"><p class="empty-state">Loading…</p></div>';
 
   try {
-    detailMessages = await loadRequestMessages(requestId);
-    const canAct = rowCanActMap.get(row.id) ?? await userCanActOnRequest(row);
-    rowCanActMap.set(row.id, canAct);
-    const canCancel = canCancelRequest(row);
-    const isMine = row.created_by === state.user?.id;
-    const clarifyRole = clarifyRoleFromStatus(row.status);
-    const badge = approvalStatusBadge(row.status);
-    const teamName = row.teams?.name || '—';
+    detailMessages = await loadRequestMessages(id);
+  } catch (err) {
+    detailMessages = [];
+    console.warn(err);
+  }
 
-    let reconLinesHtml = '';
-    if (row.request_type === 'reconciliation_adjustment') {
-      const reconLines = await loadReconciliationRequestLines(requestId);
-      if (reconLines.length) {
-        reconLinesHtml = `
-          <h4 style="margin-top:16px;">Buckets to adjust (mismatch only)</h4>
+  let reconHtml = '';
+  if (row.request_type === 'reconciliation_adjustment') {
+    try {
+      const reconLines = await loadReconciliationRequestLines(id);
+      if (reconLines?.length) {
+        reconHtml = `
+          <h3 style="margin-top:16px;">Reconciliation lines</h3>
           <div class="table-container show-desktop">
             <table class="table-stack-mobile">
-              <thead>
-                <tr><th>Bucket</th><th>Balance</th><th>Actual</th><th>Difference</th><th>Reason</th></tr>
-              </thead>
+              <thead><tr><th>Bucket</th><th>Balance</th><th>Actual</th><th>Difference</th><th>Reason</th></tr></thead>
               <tbody>
                 ${reconLines.map(line => `
                   <tr>
@@ -326,199 +342,160 @@ async function portalOpenDetail(requestId) {
               </tbody>
             </table>
           </div>
-          <div class="show-mobile data-card-list">
-            ${reconLines.map(line => `
-              <article class="data-card data-card--compact">
-                <div class="data-card-top"><span class="data-card-title">${escapeHtml(line.bucket_name)}</span></div>
-                ${cardRow('Balance', `${fmtPortal(line.closing_balance)} ${line.currency || ''}`)}
-                ${cardRow('Actual', fmtPortal(line.actual_balance))}
-                ${cardRow('Difference', fmtPortal(line.difference))}
-                ${cardRow('Reason', line.comments || '—')}
-              </article>
-            `).join('')}
-          </div>
         `;
       }
+    } catch (err) {
+      console.warn(err);
     }
-
-    const messagesHtml = detailMessages.length
-      ? detailMessages.map(m => {
-          const author = m.users?.name || m.users?.email || m.author_id?.slice(0, 8) || 'User';
-          const when = new Date(m.created_at).toLocaleString();
-          return `
-            <article class="data-card data-card--compact">
-              <div class="data-card-top">
-                <span class="data-card-title">${author}</span>
-                <span class="data-card-meta">${when}</span>
-              </div>
-              <p style="margin:0; white-space:pre-wrap;">${escapeHtml(m.body)}</p>
-            </article>
-          `;
-        }).join('')
-      : '<p class="empty-state">No messages yet.</p>';
-
-    const actionButtons = [];
-    let waitingHtml = '';
-    if (canAct) {
-      actionButtons.push(`<button type="button" class="success" data-portal-action="approve" onclick="window.portalAction(event,'approve','${row.id}')">Approve</button>`);
-      actionButtons.push(`<button type="button" class="secondary danger" data-portal-action="reject" onclick="window.portalAction(event,'reject','${row.id}')">Reject</button>`);
-      actionButtons.push(`<button type="button" class="secondary" data-portal-action="clarify" onclick="window.portalAction(event,'clarify','${row.id}')">Clarify</button>`);
-    } else if (isMine && row.current_role_code) {
-      waitingHtml = `<p class="page-intro" style="margin-top:16px; font-size:0.9em;">Waiting for <strong>${row.current_role_code}</strong> — you submitted this request and cannot approve your own.</p>`;
-    }
-
-    detailEl.innerHTML = `
-      <div class="card">
-        <div class="btn-group" style="margin-bottom:12px;">
-          <button type="button" class="secondary" onclick="window.portalCloseDetail()">Close</button>
-        </div>
-        <div class="data-card-top">
-          <h3 style="margin:0;">${row.request_number} — ${row.title || ''}</h3>
-          <span class="badge ${badge.class}">${badge.label}</span>
-        </div>
-        ${cardRow('Team', teamName)}
-        ${cardRow('Type', TYPE_LABELS[row.request_type] || row.request_type)}
-        ${row.amount_usd != null ? cardRow('Amount', `$${parseFloat(row.amount_usd).toFixed(2)}`) : ''}
-        ${row.current_role_code ? cardRow('Current step', `Awaiting ${row.current_role_code}`) : ''}
-        ${isMine ? cardRow('Submitted by', 'You — use Cancel if you need to withdraw') : ''}
-
-        ${reconLinesHtml}
-
-        ${canCancel ? `
-          <div class="btn-group" style="margin-top:16px;">
-            <button type="button" class="secondary" data-portal-action="cancel" onclick="window.portalAction(event,'cancel','${row.id}')">Cancel request</button>
-          </div>
-          <p class="page-intro" style="margin-top:8px; font-size:0.9em;">Cancelling returns this request to <strong>Draft</strong> so you can edit and resubmit later.</p>
-        ` : ''}
-
-        ${waitingHtml}
-
-        ${canAct ? `
-          <div class="form-group" style="margin-top:16px;">
-            <label>Message (optional for approve; required for reject, clarify, and reply)</label>
-            <textarea id="portalActionMessage" rows="3" placeholder="Add a note…"></textarea>
-          </div>
-          <div class="btn-group" id="portalDetailActions">
-            ${actionButtons.join('')}
-          </div>
-        ` : ''}
-
-        ${clarifyRole ? `
-          <div class="form-group" style="margin-top:12px;">
-            <label>Reply to clarification (${clarifyRole})</label>
-            <textarea id="portalReplyMessage" rows="2"></textarea>
-            <button type="button" style="margin-top:8px;" data-portal-action="reply" onclick="window.portalAction(event,'reply','${row.id}')">Reply</button>
-          </div>
-        ` : ''}
-
-        <h4 style="margin-top:20px;">Messages</h4>
-        <div class="data-card-list">${messagesHtml}</div>
-      </div>
-    `;
-  } catch (err) {
-    detailEl.innerHTML = `<div class="card"><p class="empty-state" style="color:#dc3545;">${err.message}</p></div>`;
   }
+
+  const canAct = await userCanActOnRequest(row);
+  const isMine = row.created_by === state.user?.id;
+  const canCancel = canCancelRequest(row);
+  const badge = approvalStatusBadge(row.status);
+  const clarifyRole = clarifyRoleFromStatus(row.status);
+
+  const messagesHtml = detailMessages.length
+    ? detailMessages.map(m => {
+        const author = m.users?.name || m.users?.email || m.author_id?.slice(0, 8) || 'User';
+        const when = new Date(m.created_at).toLocaleString();
+        return `
+          <article class="data-card data-card--compact">
+            <div class="data-card-top">
+              <span class="data-card-title">${escapeHtml(author)}</span>
+              <span class="data-card-meta">${when}</span>
+            </div>
+            <p style="margin:0; white-space:pre-wrap;">${escapeHtml(m.body)}</p>
+          </article>
+        `;
+      }).join('')
+    : '<p class="empty-state">No messages yet.</p>';
+
+  const actionButtons = [];
+  let waitingHtml = '';
+  if (canAct) {
+    actionButtons.push(`<button type="button" class="success" data-portal-action="approve" onclick="window.portalAction(event,'approve','${row.id}')">Approve</button>`);
+    actionButtons.push(`<button type="button" class="secondary danger" data-portal-action="reject" onclick="window.portalAction(event,'reject','${row.id}')">Reject</button>`);
+    actionButtons.push(`<button type="button" class="secondary" data-portal-action="clarify" onclick="window.portalAction(event,'clarify','${row.id}')">Clarify</button>`);
+  } else if (isMine && row.current_role_code) {
+    waitingHtml = `<p class="page-intro" style="margin-top:16px; font-size:0.9em;">Waiting for <strong>${row.current_role_code}</strong> — you submitted this and cannot approve your own.</p>`;
+  }
+
+  if (clarifyRole && (canAct || isMine)) {
+    actionButtons.push(`<button type="button" class="secondary" data-portal-action="reply" onclick="window.portalAction(event,'reply','${row.id}')">Reply to clarify</button>`);
+  }
+  if (canCancel) {
+    actionButtons.push(`<button type="button" class="secondary danger" data-portal-action="cancel" onclick="window.portalAction(event,'cancel','${row.id}')">Cancel request</button>`);
+  }
+
+  detail.innerHTML = `
+    <div class="card">
+      <div class="data-card-top">
+        <h2 style="margin:0;">${escapeHtml(row.request_number)} — ${escapeHtml(row.title || '')}</h2>
+        <button type="button" class="small secondary" onclick="window.portalCloseDetail()">Close</button>
+      </div>
+      ${cardRow('Status', `<span class="badge ${badge.class}">${badge.label}</span>`)}
+      ${cardRow('Type', TYPE_LABELS[row.request_type] || row.request_type)}
+      ${cardRow('Team', escapeHtml(row.teams?.name || '—'))}
+      ${row.current_role_code ? cardRow('Current step', `Awaiting ${row.current_role_code}`) : ''}
+      ${row.amount_usd != null ? cardRow('Amount', `$${parseFloat(row.amount_usd).toFixed(2)}`) : ''}
+      ${waitingHtml}
+      ${reconHtml}
+      <h3 style="margin-top:16px;">Messages</h3>
+      <div class="data-card-list">${messagesHtml}</div>
+      ${actionButtons.length ? `<div class="btn-group" style="margin-top:16px;">${actionButtons.join('')}</div>` : ''}
+      <div class="form-group" style="margin-top:12px;">
+        <label>Note (optional)</label>
+        <textarea id="portalActionNote" rows="2" placeholder="Message for the next step"></textarea>
+      </div>
+    </div>
+  `;
+  detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function portalCloseDetail() {
   detailRequestId = null;
-  const detailEl = document.getElementById('portalDetail');
-  if (detailEl) {
-    detailEl.style.display = 'none';
-    detailEl.innerHTML = '';
+  const detail = document.getElementById('portalDetail');
+  if (detail) {
+    detail.style.display = 'none';
+    detail.innerHTML = '';
   }
 }
 
-async function portalAction(ev, action, requestId) {
-  const btn = ev?.currentTarget || ev?.target;
-  const msg = document.getElementById('portalActionMessage')?.value
-    || document.getElementById('portalReplyMessage')?.value
-    || '';
-
-  const idleLabels = {
-    approve: 'Approve',
-    reject: 'Reject',
-    clarify: 'Clarify',
-    reply: 'Reply',
-    cancel: 'Cancel request'
-  };
-
+async function portalAction(event, action, id) {
+  const btn = event?.currentTarget;
+  const note = document.getElementById('portalActionNote')?.value || '';
+  setButtonLoading(btn, true);
   try {
-    if (btn?.tagName === 'BUTTON') setButtonLoading(btn, true, idleLabels[action] || 'Submit');
-
     if (action === 'approve') {
-      await approveAndSendRequest(requestId, msg);
-      showToast('Approved and sent to the next step', 'success');
-    } else if (action === 'cancel') {
-      const ok = await showConfirm('Cancel this approval request and return it to draft?');
-      if (!ok) return;
-      await cancelRequest(requestId, msg || 'Cancelled by requester');
-      showToast('Request cancelled — now in draft', 'info');
+      await approveAndSendRequest(id, note);
+      showToast('Approved and sent forward', 'success');
     } else if (action === 'reject') {
-      if (!msg.trim()) {
-        showToast('Enter a reject reason in the message box before rejecting.', 'warning');
-        return;
-      }
-      await rejectRequest(requestId, msg);
-      showToast('Request rejected — returned to team', 'info');
+      await rejectRequest(id, note || 'Rejected');
+      showToast('Rejected', 'success');
     } else if (action === 'clarify') {
-      const row = inboxRows.find(r => r.id === requestId);
+      const row = inboxCache.find(r => r.id === id);
       const role = row?.current_role_code || 'OPL';
-      if (!msg.trim()) {
+      if (!note.trim()) {
         showToast('Enter a clarification message', 'warning');
         return;
       }
-      await clarifyRequest(requestId, role, msg);
-      showToast(`Clarification requested from ${role}`, 'info');
+      await clarifyRequest(id, role, note);
+      showToast('Clarification requested', 'success');
     } else if (action === 'reply') {
-      if (!msg.trim()) {
+      if (!note.trim()) {
         showToast('Enter a reply', 'warning');
         return;
       }
-      await replyClarification(requestId, msg);
+      await replyClarification(id, note);
       showToast('Reply sent', 'success');
+    } else if (action === 'cancel') {
+      const ok = await new Promise(resolve => {
+        showConfirm('Cancel this request back to Draft?', () => resolve(true), () => resolve(false));
+      });
+      if (!ok) return;
+      await cancelRequest(id, note || 'Cancelled by requester');
+      showToast('Cancelled', 'success');
     }
-
-    await refreshApprovalPortal();
-    if (detailRequestId === requestId) await portalOpenDetail(requestId);
+    await loadInboxFromServer();
+    searchApprovalPortal();
+    portalCloseDetail();
   } catch (err) {
     showToast(err.message || 'Action failed', 'error');
   } finally {
-    if (btn?.tagName === 'BUTTON') setButtonLoading(btn, false, idleLabels[action] || 'Submit');
+    setButtonLoading(btn, false);
   }
 }
 
-async function portalBatchApprove(ev) {
-  const btn = ev?.currentTarget || document.getElementById('portalBatchApproveBtn');
-  const ids = [...selectedIds].filter(id => rowIsActionable(inboxRows.find(r => r.id === id)));
+async function portalBatchApprove(event) {
+  const ids = [...selectedIds].filter(id => rowCanActMap.get(id));
   if (!ids.length) {
-    showToast('Select at least one request awaiting your approval', 'warning');
+    showToast('Select requests that are your turn', 'warning');
     return;
   }
-
-  setButtonLoading(btn, true, 'Approve');
+  const btn = event?.currentTarget;
+  setButtonLoading(btn, true);
   try {
-    const result = await approveAndSendBatch(ids);
-    const n = result.sent.length;
-    const f = result.failed.length;
-    let text = `Approved ${n} request${n === 1 ? '' : 's'}`;
-    if (f) text += ` — ${f} failed`;
-    showToast(text, f ? 'warning' : 'success');
-    await refreshApprovalPortal();
+    const result = await approveAndSendBatch(ids, '');
+    showToast(`Approved ${result.sent?.length || 0}`, 'success');
+    if (result.failed?.length) showToast(`${result.failed.length} failed`, 'warning');
+    await loadInboxFromServer();
+    searchApprovalPortal();
   } catch (err) {
-    showToast(err.message || 'Batch approve failed', 'error');
+    showToast(err.message || 'Batch failed', 'error');
   } finally {
-    setButtonLoading(btn, false, 'Approve');
+    setButtonLoading(btn, false);
   }
+}
+
+function fmtPortal(n) {
+  const x = parseFloat(n);
+  return Number.isFinite(x) ? x.toFixed(2) : '—';
 }
 
 function escapeHtml(text) {
   return String(text || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function fmtPortal(n) {
-  return (parseFloat(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    .replace(/"/g, '&quot;');
 }
