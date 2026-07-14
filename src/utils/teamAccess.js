@@ -35,11 +35,25 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
   const roleTeams = await loadTeamsFromRoleAssignments(userId);
   rawTeams = [...rawTeams, ...roleTeams];
 
+  // Fetch is_primary values from user_teams table for this user
+  const { data: userTeamsList } = await supabaseClient
+    .from('user_teams')
+    .select('team_id, is_primary')
+    .eq('user_id', userId);
+
+  const primaryMap = {};
+  if (userTeamsList) {
+    userTeamsList.forEach(ut => {
+      primaryMap[ut.team_id] = !!ut.is_primary;
+    });
+  }
+
   const seenTeamIds = new Set();
   state.teams = [];
   for (const team of rawTeams) {
     if (team && team.team_id && !seenTeamIds.has(team.team_id)) {
       seenTeamIds.add(team.team_id);
+      team.is_primary = !!primaryMap[team.team_id];
       state.teams.push(team);
     }
   }
