@@ -81,8 +81,7 @@ async function loadTeamsFromRoleAssignments(userId) {
 
   let teamsQuery = supabaseClient
     .from('teams')
-    .select('id, name, is_personal_team')
-    .eq('is_deleted', false);
+    .select('id, name, is_personal_team');
 
   // Prefer assigned teams; global FIN/FIH gets all non-personal teams
   if (!hasGlobal && specificIds.length) {
