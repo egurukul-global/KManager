@@ -4,6 +4,9 @@ import {
   getAppMeta,
   loadOkMessages,
   markOkMessageRead,
+  markAllOkMessagesRead,
+  getNotificationMode,
+  summarizeOkMessages,
   navigateOk
 } from '../utils/okAccess.js';
 import { state } from '../state.js';
@@ -55,6 +58,29 @@ function logosHtml() {
   `;
 }
 
+function openApprovals(page, actionId, teamId) {
+  sessionStorage.setItem('ok_open_page', page || 'approval-portal');
+  if (actionId) sessionStorage.setItem('ok_open_request_id', actionId);
+  else sessionStorage.removeItem('ok_open_request_id');
+  if (teamId) sessionStorage.setItem('ok_open_team_id', teamId);
+  else sessionStorage.removeItem('ok_open_team_id');
+
+  if (parseAppPathSafe() !== 'finance') {
+    navigateOk('/finance');
+    return;
+  }
+  if (typeof window.showPage === 'function') {
+    window.showPage(page || 'approval-portal');
+  }
+}
+
+function parseAppPathSafe() {
+  const raw = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+  const lower = raw.toLowerCase();
+  if (lower === '/finance' || lower.startsWith('/finance/')) return 'finance';
+  return 'other';
+}
+
 export function getOkHomePage() {
   return renderOkShell({
     activePath: '/',
@@ -87,17 +113,38 @@ async function loadNotifications() {
   const el = document.getElementById('okNotificationsList');
   if (!el) return;
   const messages = await loadOkMessages(state.user?.id);
+  const mode = getNotificationMode();
+
   if (!messages.length) {
     el.innerHTML = `<p class="empty-state">No notifications yet.</p>`;
     return;
   }
+
+  if (mode === 'summary') {
+    const lines = summarizeOkMessages(messages);
+    if (!lines.length) {
+      el.innerHTML = `<p class="empty-state">No new notifications.</p>`;
+      return;
+    }
+    el.innerHTML = `
+      <button type="button" class="ok-notif ok-notif--summary ok-notif--unread" data-summary="1">
+        <span class="ok-notif-line">${escapeHtml(lines.map(l => l.text).join('. ') + '.')}</span>
+      </button>
+    `;
+    el.querySelector('[data-summary]')?.addEventListener('click', async () => {
+      await markAllOkMessagesRead(state.user?.id);
+      openApprovals('approval-portal', '', '');
+    });
+    return;
+  }
+
+  // Detail: one compact line per message
   el.innerHTML = messages.map(m => {
     const unread = !m.read_at;
+    const line = (m.title || m.body || 'Notification').trim();
     return `
-      <button type="button" class="ok-notif ${unread ? 'ok-notif--unread' : ''}" data-msg-id="${m.id}" data-action-page="${escapeHtml(m.action_page || '')}" data-action-id="${escapeHtml(m.action_id || '')}" data-team-id="${escapeHtml(m.team_id || '')}">
-        <strong>${escapeHtml(m.title)}</strong>
-        <span>${escapeHtml(m.body)}</span>
-        <time>${escapeHtml(new Date(m.created_at).toLocaleString())}</time>
+      <button type="button" class="ok-notif ok-notif--line ${unread ? 'ok-notif--unread' : ''}" data-msg-id="${m.id}" data-action-page="${escapeHtml(m.action_page || '')}" data-action-id="${escapeHtml(m.action_id || '')}" data-team-id="${escapeHtml(m.team_id || '')}">
+        <span class="ok-notif-line">${escapeHtml(line)}</span>
       </button>
     `;
   }).join('');
@@ -110,28 +157,7 @@ async function loadNotifications() {
       const teamId = btn.getAttribute('data-team-id') || '';
       await markOkMessageRead(id);
       btn.classList.remove('ok-notif--unread');
-
-      sessionStorage.setItem('ok_open_page', page);
-      if (actionId) sessionStorage.setItem('ok_open_request_id', actionId);
-      else sessionStorage.removeItem('ok_open_request_id');
-      if (teamId) sessionStorage.setItem('ok_open_team_id', teamId);
-      else sessionStorage.removeItem('ok_open_team_id');
-
-      // From One Kailasa home, open Finance app then the target page
-      if (parseAppPathSafe() !== 'finance') {
-        navigateOk('/finance');
-        return;
-      }
-      if (typeof window.showPage === 'function') {
-        window.showPage(page);
-      }
+      openApprovals(page, actionId, teamId);
     });
   });
-}
-
-function parseAppPathSafe() {
-  const raw = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
-  const lower = raw.toLowerCase();
-  if (lower === '/finance' || lower.startsWith('/finance/')) return 'finance';
-  return 'other';
 }

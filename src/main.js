@@ -138,22 +138,36 @@ async function initializeApp() {
     // 1. Get user profile
     const { data: userData, error: userError } = await supabaseClient
       .from('users')
-      .select('id, email, name, role, team_id, gender, request_alias, request_counter, on_hold')
+      .select('id, email, name, role, team_id, gender, request_alias, request_counter, on_hold, notification_mode')
       .eq('id', state.session.user.id)
       .single();
 
     if (userError) {
-      state.user = {
-        id: state.session.user.id,
-        email: state.session.user.email,
-        name: state.session.user.user_metadata?.name || state.session.user.email.split('@')[0],
-        role: 'user',
-        team_id: null,
-        gender: null,
-        on_hold: false
-      };
+      // Older schema without notification_mode
+      const fallback = await supabaseClient
+        .from('users')
+        .select('id, email, name, role, team_id, gender, request_alias, request_counter, on_hold')
+        .eq('id', state.session.user.id)
+        .single();
+      if (fallback.error) {
+        state.user = {
+          id: state.session.user.id,
+          email: state.session.user.email,
+          name: state.session.user.user_metadata?.name || state.session.user.email.split('@')[0],
+          role: 'user',
+          team_id: null,
+          gender: null,
+          on_hold: false,
+          notification_mode: 'summary'
+        };
+      } else {
+        state.user = { ...fallback.data, notification_mode: 'summary' };
+      }
     } else {
-      state.user = userData;
+      state.user = {
+        ...userData,
+        notification_mode: userData.notification_mode === 'detail' ? 'detail' : 'summary'
+      };
     }
 
     if (state.user.on_hold) {

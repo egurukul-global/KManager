@@ -3,7 +3,8 @@ import { state } from '../state.js';
 import {
   OK_APPS,
   hasAppAccess,
-  saveOkHomePins
+  saveOkHomePins,
+  saveNotificationMode
 } from '../utils/okAccess.js';
 import { showToast } from '../components/toasts.js';
 import { renderOkShell, initOkShell } from './ok-shell.js';
@@ -27,6 +28,8 @@ export function getOkProfilePage() {
       `).join('')
     : '<p class="empty-state">No apps assigned. Contact a One Kailasa administrator.</p>';
 
+  const notifMode = state.user?.notification_mode === 'detail' ? 'detail' : 'summary';
+
   return renderOkShell({
     activePath: '/profile',
     title: 'Profile',
@@ -41,6 +44,24 @@ export function getOkProfilePage() {
             <div class="data-card-row"><span class="data-card-row-label">Name</span><span class="data-card-row-value">${escapeHtml(state.user?.name || '—')}</span></div>
             <div class="data-card-row"><span class="data-card-row-label">Email</span><span class="data-card-row-value">${escapeHtml(state.user?.email || '—')}</span></div>
           </article>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Notifications</h2>
+        <p class="page-intro">Choose how approvals appear on your home screen.</p>
+        <div class="ok-access-checks" id="okNotifModeGroup">
+          <label class="ok-pin-check">
+            <input type="radio" name="okNotifMode" value="summary" ${notifMode === 'summary' ? 'checked' : ''}>
+            Summary — e.g. “You have 10 budget approvals”
+          </label>
+          <label class="ok-pin-check">
+            <input type="radio" name="okNotifMode" value="detail" ${notifMode === 'detail' ? 'checked' : ''}>
+            Detail — one line per request
+          </label>
+        </div>
+        <div class="btn-group" style="margin-top:16px;">
+          <button type="button" id="okProfileSaveNotif">Save notification style</button>
         </div>
       </div>
 
@@ -64,6 +85,16 @@ export function initOkProfilePage() {
     try {
       await saveOkHomePins(state.user.id, selected);
       showToast('Apps saved', 'success');
+    } catch (err) {
+      showToast(err.message || 'Could not save', 'error');
+    }
+  });
+
+  document.getElementById('okProfileSaveNotif')?.addEventListener('click', async () => {
+    const mode = document.querySelector('input[name="okNotifMode"]:checked')?.value || 'summary';
+    try {
+      await saveNotificationMode(state.user.id, mode);
+      showToast('Notification style saved', 'success');
     } catch (err) {
       showToast(err.message || 'Could not save', 'error');
     }

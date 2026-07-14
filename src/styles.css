@@ -2246,8 +2246,8 @@ tr.selected { background: #F5EDE8 !important; }
 .ok-notif-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-height: 64px;
+  gap: 6px;
+  min-height: 40px;
 }
 
 .ok-notif {
@@ -2264,6 +2264,26 @@ tr.selected { background: #F5EDE8 !important; }
   cursor: pointer;
   font: inherit;
   color: var(--text);
+}
+
+.ok-notif--line,
+.ok-notif--summary {
+  padding: 10px 12px;
+  gap: 0;
+}
+
+.ok-notif-line {
+  display: block;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.ok-notif--summary .ok-notif-line {
+  white-space: normal;
 }
 
 .ok-notif:hover { background: var(--bg-secondary); }

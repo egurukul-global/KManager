@@ -111,21 +111,24 @@ export async function loadOkAccess(userId) {
 
 export async function loadOkMessages(userId) {
   if (!userId) return [];
+  try {
+    await supabaseClient.rpc('prune_stale_ok_approval_messages', { p_user_id: userId });
+  } catch (_) { /* older DB without prune */ }
+
   const { data, error } = await supabaseClient
     .from('ok_messages')
-    .select('id, title, body, team_id, read_at, created_at, action_page, action_id')
+    .select('id, title, body, team_id, read_at, created_at, action_page, action_id, category')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
-    .limit(50);
+    .limit(200);
   if (error) {
     console.warn('ok_messages load:', error.message);
-    // Older schema without action_* columns
     const fallback = await supabaseClient
       .from('ok_messages')
-      .select('id, title, body, team_id, read_at, created_at')
+      .select('id, title, body, team_id, read_at, created_at, action_page, action_id')
       .eq('user_id', userId)
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(200);
     return fallback.data || [];
   }
   return data || [];
@@ -137,6 +140,68 @@ export async function markOkMessageRead(messageId) {
     .update({ read_at: new Date().toISOString() })
     .eq('id', messageId)
     .is('read_at', null);
+}
+
+export async function markAllOkMessagesRead(userId) {
+  if (!userId) return;
+  await supabaseClient
+    .from('ok_messages')
+    .update({ read_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .is('read_at', null);
+}
+
+export async function saveNotificationMode(userId, mode) {
+  const value = mode === 'detail' ? 'detail' : 'summary';
+  const { error } = await supabaseClient
+    .from('users')
+    .update({ notification_mode: value })
+    .eq('id', userId);
+  if (error) throw error;
+  if (state.user) state.user.notification_mode = value;
+}
+
+export function getNotificationMode() {
+  return state.user?.notification_mode === 'detail' ? 'detail' : 'summary';
+}
+
+/** Aggregate unread messages into short summary lines. */
+export function summarizeOkMessages(messages) {
+  const unread = (messages || []).filter(m => !m.read_at);
+  if (!unread.length) return [];
+
+  const labels = {
+    budget: 'budget approval',
+    money_transfer: 'transfer approval',
+    reconciliation_adjustment: 'reconciliation approval',
+    other: 'other request'
+  };
+
+  const counts = {};
+  unread.forEach(m => {
+    let cat = String(m.category || '').toLowerCase();
+    if (!cat || cat === 'other') {
+      const t = `${m.title || ''} ${m.body || ''}`.toLowerCase();
+      if (t.includes('budget')) cat = 'budget';
+      else if (t.includes('transfer')) cat = 'money_transfer';
+      else if (t.includes('reconcil')) cat = 'reconciliation_adjustment';
+      else if (t.includes('gurukul')) cat = 'gurukul';
+      else if (t.includes('role')) cat = 'role_change';
+      else cat = 'other';
+    }
+    counts[cat] = (counts[cat] || 0) + 1;
+  });
+
+  const extra = {
+    gurukul: 'gurukul request',
+    role_change: 'role change approval'
+  };
+
+  return Object.entries(counts).map(([cat, n]) => {
+    const base = labels[cat] || extra[cat] || 'request';
+    const plural = n === 1 ? base : `${base}s`;
+    return { category: cat, count: n, text: `You have ${n} ${plural}` };
+  });
 }
 
 export async function saveOkHomePins(userId, appCodes) {

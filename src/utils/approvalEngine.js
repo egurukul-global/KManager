@@ -41,6 +41,19 @@ export async function resolveFlowSteps(requestType, teamId = null, userId = null
     .sort((a, b) => a.step_order - b.step_order);
 }
 
+const TYPE_NOTIFY_LABELS = {
+  budget: 'Budget',
+  money_transfer: 'Transfer',
+  reconciliation_adjustment: 'Reconciliation'
+};
+
+function approvalNotifyLine(request) {
+  const num = String(request?.request_number || '').trim();
+  const title = String(request?.title || '').trim();
+  const type = TYPE_NOTIFY_LABELS[request?.request_type] || 'Request';
+  return [num, title, type].filter(Boolean).join('  ');
+}
+
 async function insertMessage(requestId, body) {
   const text = String(body || '').trim();
   if (!text) return;
@@ -53,18 +66,31 @@ async function insertMessage(requestId, body) {
   if (error) throw error;
 }
 
+async function clearOkMessagesForRequest(requestId) {
+  if (!requestId) return;
+  try {
+    const { error } = await supabaseClient.rpc('clear_ok_messages_for_action', {
+      p_action_id: String(requestId)
+    });
+    if (error) console.warn('clear_ok_messages_for_action:', error.message);
+  } catch (err) {
+    console.warn('clear_ok_messages_for_action:', err?.message || err);
+  }
+}
+
 /** One Kailasa home notification for the role that must act next. */
-async function notifyRoleForRequest(request, roleCode, title, body) {
-  if (!roleCode) return;
+async function notifyRoleForRequest(request, roleCode) {
+  if (!roleCode || !request) return;
   try {
     const { error } = await supabaseClient.rpc('notify_approval_actors', {
       p_team_id: request.team_id || null,
       p_role_code: String(roleCode).toUpperCase(),
-      p_title: title,
-      p_body: body || '',
+      p_title: approvalNotifyLine(request),
+      p_body: '',
       p_exclude_user_id: state.user?.id || null,
       p_action_page: 'approval-portal',
-      p_action_id: request.id || null
+      p_action_id: request.id || null,
+      p_category: request.request_type || 'other'
     });
     if (error) console.warn('notify_approval_actors:', error.message);
   } catch (err) {
@@ -72,16 +98,17 @@ async function notifyRoleForRequest(request, roleCode, title, body) {
   }
 }
 
-async function notifyUserForRequest(userId, request, title, body) {
-  if (!userId) return;
+async function notifyUserForRequest(userId, request, titleOverride = null) {
+  if (!userId || !request) return;
   try {
     const { error } = await supabaseClient.rpc('notify_ok_user', {
       p_user_id: userId,
-      p_title: title,
-      p_body: body || '',
+      p_title: titleOverride || approvalNotifyLine(request),
+      p_body: '',
       p_team_id: request?.team_id || null,
       p_action_page: 'approval-portal',
-      p_action_id: request?.id || null
+      p_action_id: request?.id || null,
+      p_category: request?.request_type || 'other'
     });
     if (error) console.warn('notify_ok_user:', error.message);
   } catch (err) {
@@ -203,12 +230,8 @@ export async function submitBudgetForApproval(budget) {
       completed_at: null
     });
     await applyBudgetStatus(budget.id, 'SUBMITTED', prior.id);
-    await notifyRoleForRequest(
-      updated,
-      step.role_code,
-      `Budget approval needed: ${budget.name || 'Budget'}`,
-      `${updated.request_number || prior.request_number} is waiting for ${step.role_code} review.`
-    );
+    await clearOkMessagesForRequest(prior.id);
+    await notifyRoleForRequest(updated, step.role_code);
     return updated;
   }
 
@@ -236,12 +259,7 @@ export async function submitBudgetForApproval(budget) {
   if (error) throw error;
 
   await applyBudgetStatus(budget.id, 'SUBMITTED', data.id);
-  await notifyRoleForRequest(
-    data,
-    step.role_code,
-    `Budget approval needed: ${budget.name || 'Budget'}`,
-    `${data.request_number} is waiting for ${step.role_code} review.`
-  );
+  await notifyRoleForRequest(data, step.role_code);
   return data;
 }
 
@@ -399,6 +417,9 @@ async function advanceAfterSend(request, steps) {
   const role = String(current.role_code).toUpperCase();
   const following = nextStep(steps, request.current_step_order);
 
+  // Remove prior-step home alerts for this request
+  await clearOkMessagesForRequest(request.id);
+
   if (current.is_final || !following) {
     const finalStatus = `${role}-APPROVED`;
     const updated = await updateRequest(request.id, {
@@ -421,8 +442,7 @@ async function advanceAfterSend(request, steps) {
     await notifyUserForRequest(
       request.created_by,
       updated,
-      `Approved: ${request.title || request.request_number}`,
-      `${request.request_number} was fully approved.`
+      `${updated.request_number || request.request_number}  ${request.title || ''}  Approved`.replace(/\s+/g, ' ').trim()
     );
     return updated;
   }
@@ -439,12 +459,7 @@ async function advanceAfterSend(request, steps) {
     await applyBudgetStatus(request.budget_plan_id, reviewedStatus, request.id);
   }
 
-  await notifyRoleForRequest(
-    updated,
-    following.role_code,
-    `Approval needed: ${request.title || request.request_number}`,
-    `${request.request_number} is waiting for ${following.role_code} review.`
-  );
+  await notifyRoleForRequest(updated, following.role_code);
 
   return updated;
 }
@@ -516,6 +531,7 @@ export async function cancelRequest(requestId, message = '') {
     if (error) throw error;
   }
 
+  await clearOkMessagesForRequest(request.id);
   return updated;
 }
 
@@ -541,11 +557,11 @@ export async function rejectRequest(requestId, message = '') {
     await onReconciliationRequestRejected(request);
   }
 
+  await clearOkMessagesForRequest(request.id);
   await notifyUserForRequest(
     request.created_by,
     updated,
-    `Rejected: ${request.title || request.request_number}`,
-    `${request.request_number} was rejected.`
+    `${request.request_number || ''}  ${request.title || ''}  Rejected`.replace(/\s+/g, ' ').trim()
   );
 
   return updated;
@@ -573,12 +589,8 @@ export async function clarifyRequest(requestId, roleCode, message) {
     await applyBudgetStatus(request.budget_plan_id, status, request.id);
   }
 
-  await notifyRoleForRequest(
-    updated,
-    role,
-    `Clarification needed: ${request.title || request.request_number}`,
-    `${request.request_number}: ${body}`
-  );
+  await clearOkMessagesForRequest(request.id);
+  await notifyRoleForRequest(updated, role);
 
   return updated;
 }
@@ -606,12 +618,8 @@ export async function replyClarification(requestId, message) {
     step_approved: false
   });
 
-  await notifyRoleForRequest(
-    updated,
-    updated.current_role_code,
-    `Clarification replied: ${request.title || request.request_number}`,
-    `${request.request_number} is ready for ${updated.current_role_code} review.`
-  );
+  await clearOkMessagesForRequest(request.id);
+  await notifyRoleForRequest(updated, updated.current_role_code);
 
   return updated;
 }
