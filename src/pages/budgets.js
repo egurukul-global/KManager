@@ -187,7 +187,6 @@ export async function initCreateBudgetPage() {
   await loadCalendarEntriesCache();
   populateCalendarSelect();
   populateCreateBudgetCurrencySelect();
-  await seedCreateBudgetCategoryRows();
 
   window.onBudgetTypeChange = onBudgetTypeChange;
   window.onBudgetCalendarEntryChange = onBudgetCalendarEntryChange;
@@ -196,7 +195,7 @@ export async function initCreateBudgetPage() {
   window.onCreateBudgetLocalChange = onCreateBudgetLocalChange;
 
   budgetFormMode = 'create';
-  onBudgetTypeChange();
+  await onBudgetTypeChange();
   updateBudgetLineAmountHint();
 }
 
@@ -264,7 +263,7 @@ function onBudgetCalendarEntryChange() {
   nameInput.value = getMonthlyBudgetNameFromEntry(entry);
 }
 
-function onBudgetTypeChange() {
+async function onBudgetTypeChange() {
   const type = document.getElementById('newBudgetType')?.value || 'monthly';
   const config = getBudgetTypeConfig(type);
   const calSelect = document.getElementById('newBudgetCalendarEntry');
@@ -323,6 +322,8 @@ function onBudgetTypeChange() {
       }
     }
   }
+
+  await seedCreateBudgetCategoryRows();
 }
 
 function populateCreateBudgetCurrencySelect() {
@@ -464,8 +465,14 @@ async function seedCreateBudgetCategoryRows() {
   if (!container) return;
 
   container.innerHTML = '';
+  const type = document.getElementById('newBudgetType')?.value || 'monthly';
   const lines = await loadCategoryMasterLines();
-  lines.forEach(line => container.appendChild(buildCreateCategoryRow(line)));
+
+  if (isMonthlyBudgetType(type)) {
+    const mandatoryLines = lines.filter(line => line.is_mandatory);
+    mandatoryLines.forEach(line => container.appendChild(buildCreateCategoryRow(line)));
+  }
+
   recalculateAllBudgetUsdFromLocal('#budgetCategoriesContainer', getCreateBudgetHeaderCurrency);
 }
 
@@ -725,7 +732,7 @@ window.createBudget = async function(e) {
       await seedCreateBudgetCategoryRows();
       populateCreateBudgetCurrencySelect();
       populateCalendarSelect();
-      onBudgetTypeChange();
+      await onBudgetTypeChange();
       const all = await localGetAll('budget_plans');
       state.budgetPlans = all.filter(b => b.team_id === teamId);
       window.showPage('view-budgets');

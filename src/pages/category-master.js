@@ -119,9 +119,9 @@ async function loadMaster() {
             `).join('')
             : '<li><em>No subcategories</em></li>'}
         </ul>
-        <form style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;" onsubmit="window.addSubcategoryMaster(event, '${cat.id}')">
-          <input type="text" name="subName" placeholder="Add subcategory" required style="flex:1; min-width:160px;">
-          <button type="submit" class="secondary" style="padding:6px 12px;">+ Sub</button>
+        <form style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;" onsubmit="window.addSubcategoryMaster(event, '${cat.id}')">
+          <input type="text" name="subName" placeholder="Add subcategory" required style="flex:1; min-width:160px; padding:8px 10px; border:2px solid var(--border); border-radius:var(--radius-sm); font-size:15px; height:38px; box-sizing:border-box;">
+          <button type="submit" class="secondary" style="height:38px; padding:0 16px; display:inline-flex; align-items:center; box-sizing:border-box;">+ Sub</button>
         </form>
       </div>
     `).join('');
