@@ -1,4 +1,6 @@
 /* ========== EXPENSES MODULE ========== */
+import Cropper from 'cropperjs';
+import 'cropperjs/dist/cropper.css';
 import { state } from '../state.js';
 import {
   localGetAll,
@@ -585,16 +587,130 @@ function wireReceiptUpload({
     }
   };
 
+  const openCropModal = (file, onCropAndUpload) => {
+    const existing = document.getElementById('receipt-crop-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'receipt-crop-modal';
+    modal.className = 'modal active';
+    modal.innerHTML = `
+      <div class="modal-content receipt-crop-modal-content">
+        <h3>Crop Receipt</h3>
+        <div class="receipt-crop-container">
+          <img id="receipt-crop-image" src="" alt="Receipt to crop">
+        </div>
+        <div class="receipt-crop-actions">
+          <button type="button" class="btn btn-secondary" id="receipt-crop-cancel">Cancel</button>
+          <button type="button" class="btn btn-secondary" id="receipt-crop-rotate">Rotate</button>
+          <button type="button" class="btn btn-primary" id="receipt-crop-upload">
+            <span class="spinner-inline" id="receipt-crop-spinner" style="display: none;"></span>
+            <span id="receipt-crop-upload-text">Crop & Upload</span>
+          </button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const imageEl = modal.querySelector('#receipt-crop-image');
+    const cancelBtn = modal.querySelector('#receipt-crop-cancel');
+    const rotateBtn = modal.querySelector('#receipt-crop-rotate');
+    const uploadBtn = modal.querySelector('#receipt-crop-upload');
+    const spinner = modal.querySelector('#receipt-crop-spinner');
+    const uploadText = modal.querySelector('#receipt-crop-upload-text');
+
+    const fileUrl = URL.createObjectURL(file);
+    imageEl.src = fileUrl;
+
+    let cropper;
+    imageEl.onload = () => {
+      cropper = new Cropper(imageEl, {
+        aspectRatio: 3 / 4,
+        viewMode: 1,
+        autoCropArea: 1,
+        responsive: true,
+        restore: false,
+        checkCrossOrigin: false,
+      });
+    };
+
+    cancelBtn.onclick = () => {
+      if (cropper) cropper.destroy();
+      URL.revokeObjectURL(fileUrl);
+      modal.remove();
+      if (cameraInput) cameraInput.value = '';
+      fileInput.value = '';
+    };
+
+    rotateBtn.onclick = () => {
+      if (cropper) cropper.rotate(90);
+    };
+
+    uploadBtn.onclick = () => {
+      if (!cropper) return;
+
+      cancelBtn.disabled = true;
+      rotateBtn.disabled = true;
+      uploadBtn.disabled = true;
+      spinner.style.display = 'inline-block';
+      uploadText.textContent = 'Uploading...';
+
+      cropper.getCroppedCanvas({
+        maxWidth: 2048,
+        maxHeight: 2048,
+        imageSmoothingHigh: true
+      }).toBlob(async (blob) => {
+        if (!blob) {
+          showToast('Could not crop image', 'error');
+          cancelBtn.disabled = false;
+          rotateBtn.disabled = false;
+          uploadBtn.disabled = false;
+          spinner.style.display = 'none';
+          uploadText.textContent = 'Crop & Upload';
+          return;
+        }
+
+        const croppedFile = new File([blob], file.name || 'receipt.jpg', {
+          type: 'image/jpeg',
+          lastModified: Date.now()
+        });
+        croppedFile.isCropped = true;
+
+        try {
+          await onCropAndUpload(croppedFile);
+          if (cropper) cropper.destroy();
+          URL.revokeObjectURL(fileUrl);
+          modal.remove();
+        } catch (err) {
+          showToast(err.message || 'Upload failed', 'error');
+          cancelBtn.disabled = false;
+          rotateBtn.disabled = false;
+          uploadBtn.disabled = false;
+          spinner.style.display = 'none';
+          uploadText.textContent = 'Crop & Upload';
+        }
+      }, 'image/jpeg', 0.9);
+    };
+  };
+
   const runPipeline = async (file) => {
     if (!file) return;
+
+    const isImage = file.type?.startsWith('image/');
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+
+    if (isImage && !isPdf && !file.isCropped) {
+      openCropModal(file, async (croppedFile) => {
+        await runPipeline(croppedFile);
+      });
+      return;
+    }
+
     showLocalPreview(file);
     setBusy(true, 'Reading…');
     setOcrProgress(false);
 
     try {
-      const isImage = file.type?.startsWith('image/');
-      const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
-
       if (enableOcr && isImage && !isPdf) {
         setOcrProgress(true, 0, 'Starting OCR…');
         try {
@@ -628,6 +744,7 @@ function wireReceiptUpload({
       showToast('Receipt uploaded', 'success');
     } catch (err) {
       showToast(err.message || 'Upload failed', 'error');
+      throw err;
     } finally {
       setBusy(false);
       setOcrProgress(false);
@@ -635,6 +752,7 @@ function wireReceiptUpload({
       fileInput.value = '';
     }
   };
+
 
   if (cameraBtn) {
     cameraBtn.onclick = async () => {

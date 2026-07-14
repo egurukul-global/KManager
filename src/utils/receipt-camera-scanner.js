@@ -22,6 +22,18 @@ export function loadOpenCv() {
 
   return new Promise((resolve, reject) => {
     const started = Date.now();
+    let lastAnnounce = 0;
+
+    const announce = (msg) => {
+      const now = Date.now();
+      if (now - lastAnnounce < 900) return;
+      lastAnnounce = now;
+      try {
+        window.dispatchEvent(new CustomEvent('opencv-progress', {
+          detail: { message: msg, elapsedSec: Math.round((now - started) / 1000) }
+        }));
+      } catch (_) { /* ignore */ }
+    };
 
     const succeed = () => {
       window.__opencvReady = true;
@@ -49,7 +61,17 @@ export function loadOpenCv() {
         succeed();
         return;
       }
-      // Hook runtime init if script already created `cv`
+
+      const sec = Math.round((Date.now() - started) / 1000);
+      const status = window.__opencvStatus || 'loading';
+      if (status === 'downloading') {
+        announce(`Downloading scanner engine… ${sec}s`);
+      } else if (status === 'initializing') {
+        announce(`Preparing scanner engine… ${sec}s`);
+      } else {
+        announce(`Waiting for scanner engine… ${sec}s`);
+      }
+
       if (window.cv && typeof window.cv.onRuntimeInitialized !== 'undefined') {
         const prev = window.cv.onRuntimeInitialized;
         window.cv.onRuntimeInitialized = () => {
@@ -65,7 +87,7 @@ export function loadOpenCv() {
         fail('OpenCV is taking too long (over 2 minutes). Refresh the page and try again.');
         return;
       }
-      timer = setTimeout(poll, 200);
+      timer = setTimeout(poll, 250);
     };
 
     let timer = null;
@@ -75,12 +97,11 @@ export function loadOpenCv() {
     };
 
     window.addEventListener('opencv-ready', onReadyEvent);
-    // Prefer waiting until page scripts finished at least once
+    announce('Waiting for scanner engine…');
     if (document.readyState === 'complete') {
       poll();
     } else {
       window.addEventListener('load', () => poll(), { once: true });
-      // Also start a soft poll in case load already progressed
       timer = setTimeout(poll, 100);
     }
   });
@@ -158,8 +179,8 @@ async function openReceiptCameraScannerInner(resolve) {
       <h2>Scan receipt</h2>
       <div id="receiptScanLoader" class="receipt-scan-loader">
         <div class="receipt-scan-spinner" aria-hidden="true"></div>
-        <p class="form-hint" id="receiptScanStatus">Loading scanner engine (OpenCV)…</p>
-        <p class="form-hint">This can take a minute the first time. Please wait.</p>
+        <p class="receipt-scan-loader-title" id="receiptScanStatus">Loading scanner engine (OpenCV)…</p>
+        <p class="form-hint" id="receiptScanDetail">Please wait — this can take a minute the first time.</p>
       </div>
       <div class="receipt-scan-stage" style="display:none;">
         <video id="receiptScanVideo" playsinline muted autoplay style="display:none;"></video>
@@ -181,6 +202,7 @@ async function openReceiptCameraScannerInner(resolve) {
   document.body.appendChild(modal);
 
   const statusEl = modal.querySelector('#receiptScanStatus');
+  const detailEl = modal.querySelector('#receiptScanDetail');
   const loader = modal.querySelector('#receiptScanLoader');
   const video = modal.querySelector('#receiptScanVideo');
   const sourceCanvas = modal.querySelector('#receiptScanSource');
@@ -193,13 +215,42 @@ async function openReceiptCameraScannerInner(resolve) {
   const stage = modal.querySelector('.receipt-scan-stage');
 
   let capturedFile = null;
+  const onProgress = (e) => {
+    const msg = e?.detail?.message;
+    const sec = e?.detail?.elapsedSec;
+    if (msg) statusEl.textContent = msg;
+    if (detailEl) {
+      detailEl.textContent = sec != null
+        ? `Still working (${sec}s). Keep this window open.`
+        : 'Please wait — first load can take a while.';
+    }
+  };
+  window.addEventListener('opencv-progress', onProgress);
 
   modal.querySelectorAll('[data-scan-cancel]').forEach(btn => {
-    btn.onclick = () => finish(null);
+    btn.onclick = () => {
+      window.removeEventListener('opencv-progress', onProgress);
+      finish(null);
+    };
   });
   modal.addEventListener('click', (e) => {
-    if (e.target === modal) finish(null);
+    if (e.target === modal) {
+      window.removeEventListener('opencv-progress', onProgress);
+      finish(null);
+    }
   });
+
+  const finishWithCleanup = (file) => {
+    window.removeEventListener('opencv-progress', onProgress);
+    finish(file);
+  };
+
+  // redefine finish usage below — patch finish calls
+  const originalFinish = finish;
+  const finishSafe = (file) => {
+    window.removeEventListener('opencv-progress', onProgress);
+    originalFinish(file);
+  };
 
   try {
     statusEl.textContent = 'Waiting for OpenCV…';
