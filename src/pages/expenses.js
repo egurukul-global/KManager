@@ -550,6 +550,20 @@ function wireReceiptUpload({
     }
     fileBtn.disabled = busy;
     fileBtn.textContent = busy ? (phase || 'Working…') : 'Choose file';
+
+    const parentForm = urlInput.closest('form');
+    const submitBtn = parentForm?.querySelector('button[type="submit"]');
+    if (submitBtn) {
+      submitBtn.disabled = busy;
+      if (busy) {
+        if (!submitBtn.dataset.originalText) {
+          submitBtn.dataset.originalText = submitBtn.textContent;
+        }
+        submitBtn.textContent = 'Uploading Receipt…';
+      } else if (submitBtn.dataset.originalText) {
+        submitBtn.textContent = submitBtn.dataset.originalText;
+      }
+    }
   };
 
   const showLocalPreview = (file) => {
@@ -640,6 +654,8 @@ function wireReceiptUpload({
       modal.remove();
       if (cameraInput) cameraInput.value = '';
       fileInput.value = '';
+      const tempInput = document.getElementById('temp-native-camera-input');
+      if (tempInput) tempInput.value = '';
     };
 
     rotateBtn.onclick = () => {
@@ -670,7 +686,15 @@ function wireReceiptUpload({
           return;
         }
 
-        const croppedFile = new File([blob], file.name || 'receipt.jpg', {
+        let name = file.name || 'receipt.jpg';
+        const dotIdx = name.lastIndexOf('.');
+        if (dotIdx >= 0) {
+          name = name.substring(0, dotIdx) + '.jpg';
+        } else {
+          name = name + '.jpg';
+        }
+
+        const croppedFile = new File([blob], name, {
           type: 'image/jpeg',
           lastModified: Date.now()
         });
@@ -750,6 +774,8 @@ function wireReceiptUpload({
       setOcrProgress(false);
       if (cameraInput) cameraInput.value = '';
       fileInput.value = '';
+      const tempInput = document.getElementById('temp-native-camera-input');
+      if (tempInput) tempInput.value = '';
     }
   };
 
