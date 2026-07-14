@@ -419,7 +419,6 @@ async function portalOpenReviewModal(id) {
   } catch (err) {
     console.error(err);
     bodyEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message || 'Failed to load record')}</p>`;
-    showToast(err.message || 'Failed to open record', 'error');
   }
 }
 
@@ -435,26 +434,41 @@ async function buildBudgetReviewBody(budgetPlanId) {
   if (budget) budget = normalizeBudgetPlan(budget);
 
   if (!budget) {
-    const { data, error } = await supabaseClient
-      .from('budget_plans')
-      .select('*')
-      .eq('id', budgetPlanId)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) throw new Error('Budget not found');
-    budget = normalizeBudgetPlan(data);
+    // Prefer SECURITY DEFINER helper so FIN/FIH (role assignment only) can review
+    const { data: rpcData, error: rpcErr } = await supabaseClient
+      .rpc('get_budget_plan_for_review', { p_budget_plan_id: budgetPlanId });
+    if (!rpcErr && rpcData?.length) {
+      budget = normalizeBudgetPlan(rpcData[0]);
+    } else {
+      const { data, error } = await supabaseClient
+        .from('budget_plans')
+        .select('*')
+        .eq('id', budgetPlanId)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('Budget not found');
+      budget = normalizeBudgetPlan(data);
+    }
   }
 
   return renderBudgetReviewHtml(budget, { showActions: false });
 }
 
 async function buildTransferReviewBody(transferId) {
-  const { data: transfer, error } = await supabaseClient
-    .from('transfers')
-    .select('*')
-    .eq('id', transferId)
-    .maybeSingle();
-  if (error) throw error;
+  let transfer = null;
+  const { data: rpcData, error: rpcErr } = await supabaseClient
+    .rpc('get_transfer_for_review', { p_transfer_id: transferId });
+  if (!rpcErr && rpcData?.length) {
+    transfer = rpcData[0];
+  } else {
+    const { data, error } = await supabaseClient
+      .from('transfers')
+      .select('*')
+      .eq('id', transferId)
+      .maybeSingle();
+    if (error) throw error;
+    transfer = data;
+  }
   if (!transfer) throw new Error('Transfer not found');
 
   const bucketIds = [transfer.from_bucket_id, transfer.to_bucket_id].filter(Boolean);
