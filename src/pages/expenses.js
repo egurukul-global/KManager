@@ -28,6 +28,7 @@ import {
 } from '../utils/userTeamDefaults.js';
 import { formatUsdDisplay, normalizeUsdMultiplierRate, rateForInput } from '../utils/currency.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
+import { uploadReceipt } from '../utils/upload.js';
 
 let teamBucketsCache = [];
 let teamBudgetsCache = [];
@@ -387,7 +388,17 @@ export function getAddExpensePage() {
             <div class="form-group"><label>Manual</label><input type="number" class="input-rate" name="rate_manual" id="expRateManual" step="any" placeholder="Rate" oninput="window.onExpenseMathChange()"></div>
             <div class="form-group"><label>USD</label><input type="number" class="input-amount" id="expUSD" step="0.01" readonly></div>
           </div>
-          <div class="form-group form-span-full"><label for="expReceiptUrl">Receipt URL</label><input type="url" name="receipt_url" id="expReceiptUrl" placeholder="https://... (optional)"></div>
+          <div class="form-group form-span-full">
+            <label for="expReceiptUrl">Receipt</label>
+            <input type="url" name="receipt_url" id="expReceiptUrl" placeholder="Paste URL, or scan / upload">
+            <div class="btn-group" style="margin-top:8px;flex-wrap:wrap;">
+              <button type="button" class="secondary" id="expReceiptCameraBtn">Scan with camera</button>
+              <button type="button" class="secondary" id="expReceiptFileBtn">Choose file</button>
+              <input type="file" id="expReceiptCameraInput" accept="image/*" capture="environment" style="display:none">
+              <input type="file" id="expReceiptFileInput" accept="image/*,application/pdf" style="display:none">
+            </div>
+            <p class="form-hint" id="expReceiptHint" style="margin-top:6px;"></p>
+          </div>
           <div class="form-group form-span-full"><label for="expDescription">Notes</label><textarea name="description" id="expDescription" rows="2" placeholder="Optional notes"></textarea></div>
         </div>
         <div class="btn-group"><button type="submit">Add expense</button></div>
@@ -460,6 +471,64 @@ export async function initAddExpensePage() {
 
   const form = document.getElementById('expenseForm');
   form?.addEventListener('submit', handleAddExpenseSubmit);
+
+  wireReceiptUpload({
+    urlInputId: 'expReceiptUrl',
+    cameraBtnId: 'expReceiptCameraBtn',
+    fileBtnId: 'expReceiptFileBtn',
+    cameraInputId: 'expReceiptCameraInput',
+    fileInputId: 'expReceiptFileInput',
+    hintId: 'expReceiptHint'
+  });
+}
+
+/** Camera + file picker → R2 upload → fills receipt URL field */
+function wireReceiptUpload({
+  urlInputId,
+  cameraBtnId,
+  fileBtnId,
+  cameraInputId,
+  fileInputId,
+  hintId
+}) {
+  const urlInput = document.getElementById(urlInputId);
+  const cameraBtn = document.getElementById(cameraBtnId);
+  const fileBtn = document.getElementById(fileBtnId);
+  const cameraInput = document.getElementById(cameraInputId);
+  const fileInput = document.getElementById(fileInputId);
+  const hint = document.getElementById(hintId);
+  if (!urlInput || !cameraBtn || !fileBtn || !cameraInput || !fileInput) return;
+
+  const setBusy = (busy) => {
+    cameraBtn.disabled = busy;
+    fileBtn.disabled = busy;
+    cameraBtn.textContent = busy ? 'Uploading…' : 'Scan with camera';
+    fileBtn.textContent = busy ? 'Uploading…' : 'Choose file';
+    if (hint) hint.textContent = busy ? 'Uploading receipt…' : '';
+  };
+
+  const runUpload = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const publicUrl = await uploadReceipt(file);
+      urlInput.value = publicUrl;
+      if (hint) hint.textContent = 'Receipt uploaded.';
+      showToast('Receipt uploaded', 'success');
+    } catch (err) {
+      if (hint) hint.textContent = '';
+      showToast(err.message || 'Upload failed', 'error');
+    } finally {
+      setBusy(false);
+      cameraInput.value = '';
+      fileInput.value = '';
+    }
+  };
+
+  cameraBtn.onclick = () => cameraInput.click();
+  fileBtn.onclick = () => fileInput.click();
+  cameraInput.onchange = () => runUpload(cameraInput.files?.[0]);
+  fileInput.onchange = () => runUpload(fileInput.files?.[0]);
 }
 
 function updateExpenseDefaultsSummary() {
@@ -665,7 +734,17 @@ export function getExpenseManagerPage() {
               <div class="form-group"><label>Manual</label><input type="number" class="input-rate" id="editExpRateManual" name="rate_manual" step="any" oninput="window.onEditExpenseMathChange()"></div>
               <div class="form-group"><label>USD</label><input type="number" class="input-amount" id="editExpUSD" readonly></div>
             </div>
-            <div class="form-group form-span-full"><label>Receipt URL</label><input type="url" id="editExpReceiptUrl" name="receipt_url" placeholder="https://... (optional)"></div>
+            <div class="form-group form-span-full">
+              <label>Receipt</label>
+              <input type="url" id="editExpReceiptUrl" name="receipt_url" placeholder="Paste URL, or scan / upload">
+              <div class="btn-group" style="margin-top:8px;flex-wrap:wrap;">
+                <button type="button" class="secondary" id="editExpReceiptCameraBtn">Scan with camera</button>
+                <button type="button" class="secondary" id="editExpReceiptFileBtn">Choose file</button>
+                <input type="file" id="editExpReceiptCameraInput" accept="image/*" capture="environment" style="display:none">
+                <input type="file" id="editExpReceiptFileInput" accept="image/*,application/pdf" style="display:none">
+              </div>
+              <p class="form-hint" id="editExpReceiptHint" style="margin-top:6px;"></p>
+            </div>
             <div class="form-group form-span-full"><label>Notes</label><textarea id="editExpDescription" name="description" rows="2"></textarea></div>
           </div>
           <div class="btn-group">
@@ -699,6 +778,15 @@ export async function initExpenseManagerPage() {
   populateExpenseCategoryFilter();
 
   document.getElementById('editExpenseForm')?.addEventListener('submit', handleEditExpenseSubmit);
+
+  wireReceiptUpload({
+    urlInputId: 'editExpReceiptUrl',
+    cameraBtnId: 'editExpReceiptCameraBtn',
+    fileBtnId: 'editExpReceiptFileBtn',
+    cameraInputId: 'editExpReceiptCameraInput',
+    fileInputId: 'editExpReceiptFileInput',
+    hintId: 'editExpReceiptHint'
+  });
 
   window.onExpenseBudgetFilterChange = () => {
     populateExpenseCategoryFilter(document.getElementById('expFilterBudget')?.value || '');
