@@ -3,7 +3,8 @@ import {
   hasAppAccess,
   getAppMeta,
   loadOkMessages,
-  markOkMessageRead
+  markOkMessageRead,
+  navigateOk
 } from '../utils/okAccess.js';
 import { state } from '../state.js';
 import { renderOkShell, initOkShell } from './ok-shell.js';
@@ -93,7 +94,7 @@ async function loadNotifications() {
   el.innerHTML = messages.map(m => {
     const unread = !m.read_at;
     return `
-      <button type="button" class="ok-notif ${unread ? 'ok-notif--unread' : ''}" data-msg-id="${m.id}" data-action-page="${escapeHtml(m.action_page || '')}">
+      <button type="button" class="ok-notif ${unread ? 'ok-notif--unread' : ''}" data-msg-id="${m.id}" data-action-page="${escapeHtml(m.action_page || '')}" data-action-id="${escapeHtml(m.action_id || '')}" data-team-id="${escapeHtml(m.team_id || '')}">
         <strong>${escapeHtml(m.title)}</strong>
         <span>${escapeHtml(m.body)}</span>
         <time>${escapeHtml(new Date(m.created_at).toLocaleString())}</time>
@@ -104,12 +105,33 @@ async function loadNotifications() {
   el.querySelectorAll('[data-msg-id]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.getAttribute('data-msg-id');
-      const page = btn.getAttribute('data-action-page');
+      const page = btn.getAttribute('data-action-page') || 'approval-portal';
+      const actionId = btn.getAttribute('data-action-id') || '';
+      const teamId = btn.getAttribute('data-team-id') || '';
       await markOkMessageRead(id);
       btn.classList.remove('ok-notif--unread');
-      if (page && typeof window.showPage === 'function') {
+
+      sessionStorage.setItem('ok_open_page', page);
+      if (actionId) sessionStorage.setItem('ok_open_request_id', actionId);
+      else sessionStorage.removeItem('ok_open_request_id');
+      if (teamId) sessionStorage.setItem('ok_open_team_id', teamId);
+      else sessionStorage.removeItem('ok_open_team_id');
+
+      // From One Kailasa home, open Finance app then the target page
+      if (parseAppPathSafe() !== 'finance') {
+        navigateOk('/finance');
+        return;
+      }
+      if (typeof window.showPage === 'function') {
         window.showPage(page);
       }
     });
   });
+}
+
+function parseAppPathSafe() {
+  const raw = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+  const lower = raw.toLowerCase();
+  if (lower === '/finance' || lower.startsWith('/finance/')) return 'finance';
+  return 'other';
 }

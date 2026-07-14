@@ -138,9 +138,11 @@ export async function initApprovalPortalPage() {
 
   populateTeamFilter();
   await setupStepFilter();
+  applyDeepLinkFilters();
   try {
     await loadInboxFromServer();
     searchApprovalPortal();
+    await openDeepLinkedRequest();
   } catch (err) {
     showToast(err.message || 'Failed to load approvals', 'error');
   }
@@ -155,7 +157,8 @@ export async function initApprovalPortalPage() {
 }
 
 async function setupStepFilter() {
-  myStepCodes = (await getUserApprovalRoleCodes(state.user?.id, state.currentTeam?.team_id))
+  // All roles across teams — don't limit to the team switcher team
+  myStepCodes = (await getUserApprovalRoleCodes(state.user?.id, null))
     .map(c => String(c).toUpperCase());
 
   const select = document.getElementById('portalStepFilter');
@@ -170,6 +173,56 @@ async function setupStepFilter() {
   });
   select.innerHTML = html;
   select.value = primary || 'mine';
+}
+
+/** Filters from a One Kailasa notification tap. */
+function applyDeepLinkFilters() {
+  const requestId = sessionStorage.getItem('ok_open_request_id');
+  const teamId = sessionStorage.getItem('ok_open_team_id');
+  if (!requestId && !teamId) return;
+
+  const statusEl = document.getElementById('portalStatusFilter');
+  const stepEl = document.getElementById('portalStepFilter');
+  const teamEl = document.getElementById('portalTeamFilter');
+  if (statusEl) statusEl.value = 'active';
+  if (stepEl) stepEl.value = 'mine';
+  if (teamEl && teamId) {
+    const hasOption = [...teamEl.options].some(o => o.value === teamId);
+    if (hasOption) teamEl.value = teamId;
+    else teamEl.value = '';
+  } else if (teamEl) {
+    teamEl.value = '';
+  }
+}
+
+async function openDeepLinkedRequest() {
+  const requestId = sessionStorage.getItem('ok_open_request_id');
+  sessionStorage.removeItem('ok_open_request_id');
+  sessionStorage.removeItem('ok_open_team_id');
+  if (!requestId) return;
+
+  const row = inboxCache.find(r => r.id === requestId);
+  if (row) {
+    await portalOpenReviewModal(requestId);
+    return;
+  }
+
+  // Widen filters once so a still-visible request isn't hidden by step/status
+  const statusEl = document.getElementById('portalStatusFilter');
+  const stepEl = document.getElementById('portalStepFilter');
+  const teamEl = document.getElementById('portalTeamFilter');
+  if (statusEl) statusEl.value = 'all';
+  if (stepEl) stepEl.value = 'all';
+  if (teamEl) teamEl.value = '';
+  searchApprovalPortal();
+
+  const widened = inboxCache.find(r => r.id === requestId);
+  if (widened) {
+    await portalOpenReviewModal(requestId);
+    return;
+  }
+
+  showToast('This approval is not in your queue (it may already be done or assigned to another step).', 'warning');
 }
 
 function populateTeamFilter() {

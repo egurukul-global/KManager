@@ -2,7 +2,7 @@
 import './styles.css';
 import { state, computePermissions } from './state.js';
 import { supabaseClient, syncAll, pushPendingChanges, initLocalDB } from './db.js';
-import { showToast } from './components/toasts.js';
+import { showToast, showConfirm } from './components/toasts.js';
 import { getLoginPage, initLoginPage } from './pages/login.js';
 import { getDashboardPage, initDashboardPage } from './pages/dashboard.js';
 import { getBucketsPage, initBucketsPage } from './pages/buckets.js';
@@ -90,14 +90,18 @@ let isLoggingOut = false;
 
 export async function handleLogout() {
   if (isLoggingOut) return; // Prevent double execution
+
+  const ok = await showConfirm('Sign out of One Kailasa?');
+  if (!ok) return;
+
   isLoggingOut = true;
-  
+
   try {
     await supabaseClient.auth.signOut();
   } catch (err) {
     console.error('Logout error:', err);
   }
-  
+
   state.user = null;
   state.teams = [];
   state.currentTeam = null;
@@ -112,7 +116,7 @@ export async function handleLogout() {
     window.history.replaceState({}, '', '/');
   }
   renderLoginScreen();
-  
+
   // Reset flag after a delay
   setTimeout(() => { isLoggingOut = false; }, 500);
 }
@@ -241,7 +245,8 @@ async function routeAfterAuth() {
     return;
   }
 
-  syncCurrentTeamAfterReload();
+  const pendingTeamId = sessionStorage.getItem('ok_open_team_id');
+  syncCurrentTeamAfterReload(pendingTeamId || undefined);
   await loadUserTeamDefaultsForCurrentTeam();
   await initLocalDB();
 
