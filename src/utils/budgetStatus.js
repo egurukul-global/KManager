@@ -71,6 +71,12 @@ export function getBudgetStatus(budget) {
 }
 
 export function budgetStatusBadge(budgetOrStatus) {
+  if (budgetOrStatus && typeof budgetOrStatus === 'object') {
+    const approval = String(budgetOrStatus.approval_status || '').toUpperCase();
+    if (approval.startsWith('CLARIFY-')) {
+      return { label: 'Needs clarification', class: 'badge-warning', status: BUDGET_STATUS.SUBMITTED };
+    }
+  }
   const status = typeof budgetOrStatus === 'string'
     ? budgetOrStatus
     : getBudgetStatus(budgetOrStatus);

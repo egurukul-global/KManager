@@ -48,6 +48,11 @@ export function clarifyRoleFromStatus(status) {
   return s.slice('CLARIFY-'.length);
 }
 
+export function isClarifyForRequester(status) {
+  const role = clarifyRoleFromStatus(status);
+  return role === 'REQUESTER' || role === 'OPS' || role === 'OPL';
+}
+
 /** Resolve approval role codes for user on a team (sync, from state). */
 export function getLocalRoleCodesForTeam(teamId) {
   const codes = orgRoleToApprovalCodes(state.user?.role);
@@ -96,12 +101,18 @@ export async function userCanActOnRequest(request, userId = state.user?.id) {
 
   // Only system admin may act outside their step
   if (state.user?.role === 'admin' && userId === state.user?.id) {
-    if (request.created_by === userId && request.current_role_code) return false;
+    if (request.created_by === userId && request.current_role_code && !status.startsWith('CLARIFY-')) {
+      return false;
+    }
     return !!request.current_role_code || status.startsWith('CLARIFY-');
   }
 
   if (status.startsWith('CLARIFY-')) {
     const role = clarifyRoleFromStatus(status);
+    // Clarification from an approver is answered by the person who submitted
+    if (role === 'REQUESTER' || !role) {
+      return request.created_by === userId;
+    }
     const codes = await getUserApprovalRoleCodes(userId, request.team_id);
     return codes.includes(role) || request.created_by === userId;
   }

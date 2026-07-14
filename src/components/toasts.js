@@ -115,6 +115,7 @@ export function showConfirm(message, onConfirm, onCancel) {
 /**
  * In-app text prompt (replaces window.prompt).
  * Resolves to trimmed string, or null if cancelled / empty when required.
+ * Pass multiline: true for a response/textarea box.
  */
 export function showPrompt(message, options = {}) {
   const {
@@ -124,10 +125,21 @@ export function showPrompt(message, options = {}) {
     placeholder = '',
     inputType = 'text',
     required = true,
-    okLabel = 'OK'
+    okLabel = 'OK',
+    multiline = false,
+    rows = 4
   } = options;
 
   removeActiveAlert();
+
+  const field = multiline
+    ? `<textarea id="appPromptInput" rows="${Number(rows) || 4}"
+          placeholder="${escapeHtml(placeholder)}"
+          style="width:100%;resize:vertical;min-height:96px;">${escapeHtml(defaultValue)}</textarea>`
+    : `<input type="${escapeHtml(inputType)}" id="appPromptInput"
+          value="${escapeHtml(defaultValue)}"
+          placeholder="${escapeHtml(placeholder)}"
+          autocomplete="off">`;
 
   const modal = document.createElement('div');
   modal.className = 'modal active alert-modal';
@@ -137,10 +149,7 @@ export function showPrompt(message, options = {}) {
       <div class="alert-modal-body">${bodyHtml(message)}</div>
       <div class="form-group" style="margin-top:12px;text-align:left;">
         ${label ? `<label for="appPromptInput">${escapeHtml(label)}</label>` : ''}
-        <input type="${escapeHtml(inputType)}" id="appPromptInput"
-          value="${escapeHtml(defaultValue)}"
-          placeholder="${escapeHtml(placeholder)}"
-          autocomplete="off">
+        ${field}
       </div>
       <div class="btn-group alert-modal-actions">
         <button type="button" class="primary" id="promptOkBtn">${escapeHtml(okLabel)}</button>
@@ -179,14 +188,14 @@ export function showPrompt(message, options = {}) {
       if (e.target === modal) close(null);
     };
     input?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !multiline) {
         e.preventDefault();
         modal.querySelector('#promptOkBtn')?.click();
       }
     });
     setTimeout(() => {
       input?.focus();
-      input?.select();
+      if (!multiline && typeof input?.select === 'function') input.select();
     }, 0);
   });
 }

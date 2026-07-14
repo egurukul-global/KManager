@@ -1,7 +1,7 @@
 /* ========== APPROVAL PORTAL ========== */
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
-import { showToast, showConfirm } from '../components/toasts.js';
+import { showToast, showConfirm, showPrompt } from '../components/toasts.js';
 import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
 import { approvalStatusBadge } from '../utils/approvalConstants.js';
 import {
@@ -539,26 +539,40 @@ async function portalAction(event, action, id) {
       await approveAndSendRequest(id, '');
       showToast('1 request approved', 'success');
     } else if (action === 'reject') {
-      const note = window.prompt('Rejection note (optional):') || 'Rejected';
-      await rejectRequest(id, note);
+      const note = await showPrompt('Optional note for the requester.', {
+        title: 'Reject request',
+        label: 'Reason',
+        placeholder: 'Why is this rejected?',
+        multiline: true,
+        required: false,
+        okLabel: 'Reject'
+      });
+      if (note === null) return;
+      await rejectRequest(id, note || 'Rejected');
       showToast('1 request rejected', 'success');
     } else if (action === 'clarify') {
-      const note = window.prompt('Clarification message:');
-      if (!note?.trim()) {
-        showToast('Enter a clarification message', 'warning');
-        return;
-      }
-      const row = inboxCache.find(r => r.id === id);
-      const role = row?.current_role_code || 'OPL';
-      await clarifyRequest(id, role, note.trim());
+      const note = await showPrompt('What needs to be clarified?', {
+        title: 'Ask for clarification',
+        label: 'Message to requester',
+        placeholder: 'Describe what you need…',
+        multiline: true,
+        required: true,
+        okLabel: 'Send'
+      });
+      if (!note) return;
+      await clarifyRequest(id, 'REQUESTER', note);
       showToast('Clarification requested', 'success');
     } else if (action === 'reply') {
-      const note = window.prompt('Reply message:');
-      if (!note?.trim()) {
-        showToast('Enter a reply', 'warning');
-        return;
-      }
-      await replyClarification(id, note.trim());
+      const note = await showPrompt('Your reply to the clarification.', {
+        title: 'Reply',
+        label: 'Message',
+        placeholder: 'Type your reply…',
+        multiline: true,
+        required: true,
+        okLabel: 'Send reply'
+      });
+      if (!note) return;
+      await replyClarification(id, note);
       showToast('Reply sent', 'success');
     } else if (action === 'cancel') {
       const ok = await new Promise(resolve => {

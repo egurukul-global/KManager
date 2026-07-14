@@ -573,13 +573,13 @@ export async function clarifyRequest(requestId, roleCode, message) {
     throw new Error('You are not authorized to request clarification');
   }
 
-  const role = String(roleCode || request.current_role_code || 'OPL').toUpperCase();
+  // Clarification always goes back to the person who submitted the request
   const body = String(message || '').trim();
   if (!body) throw new Error('Clarification message is required');
 
-  await insertMessage(requestId, `[Clarify ${role}] ${body}`);
+  await insertMessage(requestId, `[Clarify] ${body}`);
 
-  const status = `CLARIFY-${role}`;
+  const status = 'CLARIFY-REQUESTER';
   const updated = await updateRequest(requestId, {
     status,
     step_approved: false
@@ -590,7 +590,11 @@ export async function clarifyRequest(requestId, roleCode, message) {
   }
 
   await clearOkMessagesForRequest(request.id);
-  await notifyRoleForRequest(updated, role);
+  await notifyUserForRequest(
+    request.created_by,
+    updated,
+    `${approvalNotifyLine(updated)}  Needs reply`
+  );
 
   return updated;
 }
@@ -599,8 +603,13 @@ export async function replyClarification(requestId, message) {
   const request = await loadRequest(requestId);
   const role = clarifyRoleFromStatus(request.status);
   const codes = await getUserApprovalRoleCodes(state.user.id, request.team_id);
+  const isRequester = request.created_by === state.user.id;
+  const canReply =
+    role === 'REQUESTER'
+      ? isRequester
+      : (role && codes.includes(role)) || isRequester;
 
-  if (!role || (!codes.includes(role) && request.created_by !== state.user.id)) {
+  if (!role || !canReply) {
     throw new Error('You cannot reply to this clarification');
   }
 
@@ -718,6 +727,18 @@ export async function fetchApprovalInboxRaw() {
   return data || [];
 }
 
+/** Open requests this user can act on (for home notifications). */
+export async function loadActionableApprovalNotifs() {
+  const rows = await fetchApprovalInboxRaw();
+  const out = [];
+  for (const row of rows) {
+    if (!(await userCanActOnRequest(row))) continue;
+    if (!isActiveStatus(row.status) || row.status === 'DRAFT') continue;
+    out.push(row);
+  }
+  return out;
+}
+
 /**
  * Client-side filter of a cached inbox.
  * stepFilter: 'mine' | 'all' | 'OPH' | 'FIN' | …
@@ -754,6 +775,10 @@ export function filterApprovalInboxLocal(rows, filters = {}, canActMap = null) {
     const codes = (myStepCodes || []).map(c => String(c).toUpperCase());
     list = list.filter(r => {
       if (canActMap && canActMap.get(r.id) === true) return true;
+      // Your own clarification requests always show under My step
+      if (String(r.status || '').toUpperCase().startsWith('CLARIFY-') && r.created_by === state.user?.id) {
+        return true;
+      }
       const role = String(r.current_role_code || '').toUpperCase();
       return role && codes.includes(role);
     });

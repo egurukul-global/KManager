@@ -2,13 +2,10 @@
 import {
   hasAppAccess,
   getAppMeta,
-  loadOkMessages,
-  markOkMessageRead,
-  markAllOkMessagesRead,
   getNotificationMode,
-  summarizeOkMessages,
   navigateOk
 } from '../utils/okAccess.js';
+import { loadActionableApprovalNotifs } from '../utils/approvalEngine.js';
 import { state } from '../state.js';
 import { renderOkShell, initOkShell } from './ok-shell.js';
 import kmofLogo from '../../KMOF.png';
@@ -58,8 +55,8 @@ function logosHtml() {
   `;
 }
 
-function openApprovals(page, actionId, teamId) {
-  sessionStorage.setItem('ok_open_page', page || 'approval-portal');
+function openApprovals(actionId, teamId) {
+  sessionStorage.setItem('ok_open_page', 'approval-portal');
   if (actionId) sessionStorage.setItem('ok_open_request_id', actionId);
   else sessionStorage.removeItem('ok_open_request_id');
   if (teamId) sessionStorage.setItem('ok_open_team_id', teamId);
@@ -70,7 +67,7 @@ function openApprovals(page, actionId, teamId) {
     return;
   }
   if (typeof window.showPage === 'function') {
-    window.showPage(page || 'approval-portal');
+    window.showPage('approval-portal');
   }
 }
 
@@ -79,6 +76,37 @@ function parseAppPathSafe() {
   const lower = raw.toLowerCase();
   if (lower === '/finance' || lower.startsWith('/finance/')) return 'finance';
   return 'other';
+}
+
+const TYPE_LABELS = {
+  budget: 'budget request',
+  money_transfer: 'transfer request',
+  reconciliation_adjustment: 'reconciliation request'
+};
+
+function summarizeActionable(rows) {
+  const counts = {};
+  rows.forEach(r => {
+    const cat = String(r.request_type || 'other').toLowerCase();
+    counts[cat] = (counts[cat] || 0) + 1;
+  });
+  return Object.entries(counts).map(([cat, n]) => {
+    const base = TYPE_LABELS[cat] || 'other request';
+    const plural = n === 1 ? base : `${base}s`;
+    return `You have ${n} ${plural}`;
+  });
+}
+
+function detailLine(row) {
+  const type = {
+    budget: 'Budget',
+    money_transfer: 'Transfer',
+    reconciliation_adjustment: 'Reconciliation'
+  }[row.request_type] || 'Request';
+  const clarify = String(row.status || '').toUpperCase().startsWith('CLARIFY-')
+    ? '  Needs reply'
+    : '';
+  return [row.request_number, row.title, type].filter(Boolean).join('  ') + clarify;
 }
 
 export function getOkHomePage() {
@@ -112,52 +140,49 @@ export function initOkHomePage() {
 async function loadNotifications() {
   const el = document.getElementById('okNotificationsList');
   if (!el) return;
-  const messages = await loadOkMessages(state.user?.id);
-  const mode = getNotificationMode();
 
-  if (!messages.length) {
+  let rows = [];
+  try {
+    rows = await loadActionableApprovalNotifs();
+  } catch (err) {
+    console.warn('approval notifs:', err);
+    el.innerHTML = `<p class="empty-state">Could not load notifications.</p>`;
+    return;
+  }
+
+  if (!rows.length) {
     el.innerHTML = `<p class="empty-state">No notifications yet.</p>`;
     return;
   }
 
+  const mode = getNotificationMode();
+
   if (mode === 'summary') {
-    const lines = summarizeOkMessages(messages);
-    if (!lines.length) {
-      el.innerHTML = `<p class="empty-state">No new notifications.</p>`;
-      return;
-    }
+    const lines = summarizeActionable(rows);
     el.innerHTML = `
       <button type="button" class="ok-notif ok-notif--summary ok-notif--unread" data-summary="1">
-        <span class="ok-notif-line">${escapeHtml(lines.map(l => l.text).join('. ') + '.')}</span>
+        <span class="ok-notif-line">${escapeHtml(lines.join('. ') + '.')}</span>
       </button>
     `;
-    el.querySelector('[data-summary]')?.addEventListener('click', async () => {
-      await markAllOkMessagesRead(state.user?.id);
-      openApprovals('approval-portal', '', '');
+    el.querySelector('[data-summary]')?.addEventListener('click', () => {
+      openApprovals('', '');
     });
     return;
   }
 
-  // Detail: one compact line per message
-  el.innerHTML = messages.map(m => {
-    const unread = !m.read_at;
-    const line = (m.title || m.body || 'Notification').trim();
-    return `
-      <button type="button" class="ok-notif ok-notif--line ${unread ? 'ok-notif--unread' : ''}" data-msg-id="${m.id}" data-action-page="${escapeHtml(m.action_page || '')}" data-action-id="${escapeHtml(m.action_id || '')}" data-team-id="${escapeHtml(m.team_id || '')}">
-        <span class="ok-notif-line">${escapeHtml(line)}</span>
-      </button>
-    `;
-  }).join('');
+  el.innerHTML = rows.map(r => `
+    <button type="button" class="ok-notif ok-notif--line ok-notif--unread"
+      data-action-id="${escapeHtml(r.id)}" data-team-id="${escapeHtml(r.team_id || '')}">
+      <span class="ok-notif-line">${escapeHtml(detailLine(r))}</span>
+    </button>
+  `).join('');
 
-  el.querySelectorAll('[data-msg-id]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = btn.getAttribute('data-msg-id');
-      const page = btn.getAttribute('data-action-page') || 'approval-portal';
-      const actionId = btn.getAttribute('data-action-id') || '';
-      const teamId = btn.getAttribute('data-team-id') || '';
-      await markOkMessageRead(id);
-      btn.classList.remove('ok-notif--unread');
-      openApprovals(page, actionId, teamId);
+  el.querySelectorAll('[data-action-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openApprovals(
+        btn.getAttribute('data-action-id') || '',
+        btn.getAttribute('data-team-id') || ''
+      );
     });
   });
 }
