@@ -93,7 +93,7 @@ async function loadNotifications() {
   el.innerHTML = messages.map(m => {
     const unread = !m.read_at;
     return `
-      <button type="button" class="ok-notif ${unread ? 'ok-notif--unread' : ''}" data-msg-id="${m.id}">
+      <button type="button" class="ok-notif ${unread ? 'ok-notif--unread' : ''}" data-msg-id="${m.id}" data-action-page="${escapeHtml(m.action_page || '')}">
         <strong>${escapeHtml(m.title)}</strong>
         <span>${escapeHtml(m.body)}</span>
         <time>${escapeHtml(new Date(m.created_at).toLocaleString())}</time>
@@ -104,8 +104,12 @@ async function loadNotifications() {
   el.querySelectorAll('[data-msg-id]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = btn.getAttribute('data-msg-id');
+      const page = btn.getAttribute('data-action-page');
       await markOkMessageRead(id);
       btn.classList.remove('ok-notif--unread');
+      if (page && typeof window.showPage === 'function') {
+        window.showPage(page);
+      }
     });
   });
 }

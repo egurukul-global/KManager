@@ -113,13 +113,20 @@ export async function loadOkMessages(userId) {
   if (!userId) return [];
   const { data, error } = await supabaseClient
     .from('ok_messages')
-    .select('id, title, body, team_id, read_at, created_at')
+    .select('id, title, body, team_id, read_at, created_at, action_page, action_id')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(50);
   if (error) {
     console.warn('ok_messages load:', error.message);
-    return [];
+    // Older schema without action_* columns
+    const fallback = await supabaseClient
+      .from('ok_messages')
+      .select('id, title, body, team_id, read_at, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    return fallback.data || [];
   }
   return data || [];
 }

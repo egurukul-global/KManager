@@ -53,6 +53,42 @@ async function insertMessage(requestId, body) {
   if (error) throw error;
 }
 
+/** One Kailasa home notification for the role that must act next. */
+async function notifyRoleForRequest(request, roleCode, title, body) {
+  if (!roleCode) return;
+  try {
+    const { error } = await supabaseClient.rpc('notify_approval_actors', {
+      p_team_id: request.team_id || null,
+      p_role_code: String(roleCode).toUpperCase(),
+      p_title: title,
+      p_body: body || '',
+      p_exclude_user_id: state.user?.id || null,
+      p_action_page: 'approval-portal',
+      p_action_id: request.id || null
+    });
+    if (error) console.warn('notify_approval_actors:', error.message);
+  } catch (err) {
+    console.warn('notify_approval_actors:', err?.message || err);
+  }
+}
+
+async function notifyUserForRequest(userId, request, title, body) {
+  if (!userId) return;
+  try {
+    const { error } = await supabaseClient.rpc('notify_ok_user', {
+      p_user_id: userId,
+      p_title: title,
+      p_body: body || '',
+      p_team_id: request?.team_id || null,
+      p_action_page: 'approval-portal',
+      p_action_id: request?.id || null
+    });
+    if (error) console.warn('notify_ok_user:', error.message);
+  } catch (err) {
+    console.warn('notify_ok_user:', err?.message || err);
+  }
+}
+
 async function updateRequest(requestId, patch) {
   const { data, error } = await supabaseClient
     .from('approval_requests')
@@ -167,6 +203,12 @@ export async function submitBudgetForApproval(budget) {
       completed_at: null
     });
     await applyBudgetStatus(budget.id, 'SUBMITTED', prior.id);
+    await notifyRoleForRequest(
+      updated,
+      step.role_code,
+      `Budget approval needed: ${budget.name || 'Budget'}`,
+      `${updated.request_number || prior.request_number} is waiting for ${step.role_code} review.`
+    );
     return updated;
   }
 
@@ -194,6 +236,12 @@ export async function submitBudgetForApproval(budget) {
   if (error) throw error;
 
   await applyBudgetStatus(budget.id, 'SUBMITTED', data.id);
+  await notifyRoleForRequest(
+    data,
+    step.role_code,
+    `Budget approval needed: ${budget.name || 'Budget'}`,
+    `${data.request_number} is waiting for ${step.role_code} review.`
+  );
   return data;
 }
 
@@ -370,6 +418,12 @@ async function advanceAfterSend(request, steps) {
     if (request.request_type === REQUEST_TYPES.RECONCILIATION_ADJUSTMENT) {
       await onReconciliationRequestCompleted(updated);
     }
+    await notifyUserForRequest(
+      request.created_by,
+      updated,
+      `Approved: ${request.title || request.request_number}`,
+      `${request.request_number} was fully approved.`
+    );
     return updated;
   }
 
@@ -384,6 +438,13 @@ async function advanceAfterSend(request, steps) {
   if (request.request_type === REQUEST_TYPES.BUDGET && request.budget_plan_id) {
     await applyBudgetStatus(request.budget_plan_id, reviewedStatus, request.id);
   }
+
+  await notifyRoleForRequest(
+    updated,
+    following.role_code,
+    `Approval needed: ${request.title || request.request_number}`,
+    `${request.request_number} is waiting for ${following.role_code} review.`
+  );
 
   return updated;
 }
@@ -480,6 +541,13 @@ export async function rejectRequest(requestId, message = '') {
     await onReconciliationRequestRejected(request);
   }
 
+  await notifyUserForRequest(
+    request.created_by,
+    updated,
+    `Rejected: ${request.title || request.request_number}`,
+    `${request.request_number} was rejected.`
+  );
+
   return updated;
 }
 
@@ -505,6 +573,13 @@ export async function clarifyRequest(requestId, roleCode, message) {
     await applyBudgetStatus(request.budget_plan_id, status, request.id);
   }
 
+  await notifyRoleForRequest(
+    updated,
+    role,
+    `Clarification needed: ${request.title || request.request_number}`,
+    `${request.request_number}: ${body}`
+  );
+
   return updated;
 }
 
@@ -525,11 +600,20 @@ export async function replyClarification(requestId, message) {
   const steps = await resolveFlowSteps(request.request_type, request.team_id);
   const step = stepByOrder(steps, request.current_step_order) || firstStep(steps);
 
-  return updateRequest(requestId, {
+  const updated = await updateRequest(requestId, {
     status: 'SUBMITTED',
     current_role_code: step?.role_code || request.current_role_code,
     step_approved: false
   });
+
+  await notifyRoleForRequest(
+    updated,
+    updated.current_role_code,
+    `Clarification replied: ${request.title || request.request_number}`,
+    `${request.request_number} is ready for ${updated.current_role_code} review.`
+  );
+
+  return updated;
 }
 
 /** Send multiple approved requests; optional group number. Returns { sent, failed, groupNumber }. */
@@ -585,12 +669,26 @@ export async function loadRequest(requestId) {
 export async function loadRequestMessages(requestId) {
   const { data, error } = await supabaseClient
     .from('approval_messages')
-    .select('id, body, author_id, created_at, users:author_id ( name, email )')
+    .select('id, body, author_id, created_at')
     .eq('request_id', requestId)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
-  return data || [];
+  const rows = data || [];
+  const authorIds = [...new Set(rows.map(r => r.author_id).filter(Boolean))];
+  const usersById = {};
+  if (authorIds.length) {
+    const { data: users, error: usersErr } = await supabaseClient
+      .from('users')
+      .select('id, name, email')
+      .in('id', authorIds);
+    if (usersErr) console.warn('approval message authors:', usersErr.message);
+    (users || []).forEach(u => { usersById[u.id] = u; });
+  }
+  return rows.map(r => ({
+    ...r,
+    users: usersById[r.author_id] || null
+  }));
 }
 
 /** Portal inbox with filters. */
