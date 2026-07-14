@@ -76,7 +76,7 @@ function parseBudgetCategories(raw) {
   return Array.isArray(cats) ? cats : [];
 }
 
-function normalizeBudgetPlan(budget) {
+export function normalizeBudgetPlan(budget) {
   return budget ? { ...budget, categories: parseBudgetCategories(budget.categories) } : budget;
 }
 
@@ -1038,112 +1038,116 @@ function renderBudgetSummaryTable(container, budgets) {
   `;
 }
 
-function renderBudgetDetailCards(container, budgets) {
-  let html = '';
+/**
+ * Shared budget detail markup (View Budgets + Approval review modal).
+ * @param {object} budget
+ * @param {{ showActions?: boolean }} [options]
+ */
+export function renderBudgetReviewHtml(budget, options = {}) {
+  const showActions = options.showActions !== false;
+  let totalBudgetedUSD = 0;
+  let totalSpentUSD = 0;
+  let tableRows = '';
+  let mobileCards = '';
+  const statusBadge = budgetStatusBadgeHtml(budget);
 
-  budgets.forEach(budget => {
-    let totalBudgetedUSD = 0;
-    let totalSpentUSD = 0;
-    let tableRows = '';
-    let mobileCards = '';
-    const statusBadge = budgetStatusBadgeHtml(budget);
+  const canSubmitApproval = showActions && canSubmitBudgetApproval() && canSubmitBudgetByStatus(budget);
+  const submitBtn = canSubmitApproval
+    ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
+    : '';
 
-    const canSubmitApproval = canSubmitBudgetApproval() && canSubmitBudgetByStatus(budget);
-    const submitBtn = canSubmitApproval
-      ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
-      : '';
+  (budget.categories || []).forEach(cat => {
+    const budgetedUSD = cat.usdAmount || cat.usd_amount || 0;
+    totalBudgetedUSD += budgetedUSD;
+    const spentUSD = 0;
+    totalSpentUSD += spentUSD;
+    const remainingUSD = budgetedUSD - spentUSD;
+    const percent = budgetedUSD > 0 ? (spentUSD / budgetedUSD * 100) : 0;
+    const localAmtVal = cat.localAmount || cat.local_amount || 0;
+    const localDisplay = localAmtVal
+      ? `${Number(localAmtVal).toLocaleString()} ${cat.currency || ''}`
+      : '—';
 
-    (budget.categories || []).forEach(cat => {
-      const budgetedUSD = cat.usdAmount || cat.usd_amount || 0;
-      totalBudgetedUSD += budgetedUSD;
-      const spentUSD = 0;
-      totalSpentUSD += spentUSD;
-      const remainingUSD = budgetedUSD - spentUSD;
-      const percent = budgetedUSD > 0 ? (spentUSD / budgetedUSD * 100) : 0;
-      const localAmtVal = cat.localAmount || cat.local_amount || 0;
-      const localDisplay = localAmtVal
-        ? `${Number(localAmtVal).toLocaleString()} ${cat.currency || ''}`
-        : '—';
+    tableRows += `
+      <tr>
+        <td data-label="Category"><strong>${cat.name || ''}</strong></td>
+        <td data-label="Local">${localDisplay}</td>
+        <td data-label="Budgeted">$${budgetedUSD.toFixed(2)}</td>
+        <td data-label="Spent">$${spentUSD.toFixed(2)}</td>
+        <td data-label="Remaining">$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)</td>
+      </tr>
+    `;
 
-      tableRows += `
-        <tr>
-          <td data-label="Category"><strong>${cat.name || ''}</strong></td>
-          <td data-label="Local">${localDisplay}</td>
-          <td data-label="Budgeted">$${budgetedUSD.toFixed(2)}</td>
-          <td data-label="Spent">$${spentUSD.toFixed(2)}</td>
-          <td data-label="Remaining">$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)</td>
-        </tr>
-      `;
-
-      mobileCards += `
-        <article class="data-card data-card--compact">
-          <div class="data-card-top">
-            <span class="data-card-title">${cat.name || ''}</span>
-          </div>
-          ${cardRow('Local', localDisplay)}
-          ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)}`)}
-          ${cardRow('Spent', `$${spentUSD.toFixed(2)}`)}
-          ${cardRow('Remaining', `$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)`)}
-        </article>
-      `;
-    });
-
-    const totalRemaining = totalBudgetedUSD - totalSpentUSD;
-    const totalPercent = totalBudgetedUSD > 0 ? (totalSpentUSD / totalBudgetedUSD * 100) : 0;
-    const isOverBudget = totalRemaining < 0;
-    const canEdit = canOpenBudgetEditor(budget);
-    const canDelete = state.canDeleteBudgets;
-    const typeLabel = getBudgetTypeLabel(budget.budget_type);
-
-    html += `
-      <div class="budget-plan-card">
-        <h3>
-          <span>${budget.name} ${statusBadge} <span class="badge badge-secondary">${typeLabel}</span></span>
-          <span class="action-icon-group">
-            ${submitBtn ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit</button>` : ''}
-            ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
-            ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
-          </span>
-        </h3>
-        <div class="budget-plan-stats">
-          <div class="budget-plan-stat">
-            <div class="value">$${totalBudgetedUSD.toFixed(2)}</div>
-            <div class="label">Total Budgeted</div>
-          </div>
-          <div class="budget-plan-stat">
-            <div class="value">$${totalSpentUSD.toFixed(2)}</div>
-            <div class="label">Total Spent</div>
-          </div>
-          <div class="budget-plan-stat">
-            <div class="value" style="color: ${isOverBudget ? '#dc3545' : '#28a745'}">$${totalRemaining.toFixed(2)}</div>
-            <div class="label">Remaining</div>
-          </div>
-          <div class="budget-plan-stat">
-            <div class="value">${totalPercent.toFixed(1)}%</div>
-            <div class="label">Used</div>
-          </div>
+    mobileCards += `
+      <article class="data-card data-card--compact">
+        <div class="data-card-top">
+          <span class="data-card-title">${cat.name || ''}</span>
         </div>
-        <h4 style="margin: 20px 0 15px;">Category Breakdown</h4>
-        <div class="table-container show-desktop">
-          <table class="table-stack-mobile">
-            <thead>
-              <tr>
-                <th>Category</th>
-                <th>Local</th>
-                <th>Budgeted (USD)</th>
-                <th>Spent (USD)</th>
-                <th>Remaining</th>
-              </tr>
-            </thead>
-            <tbody>${tableRows || '<tr><td colspan="5">No categories</td></tr>'}</tbody>
-          </table>
-        </div>
-        <div class="show-mobile data-card-list">${mobileCards || '<p class="empty-state">No categories</p>'}</div>
-      </div>
+        ${cardRow('Local', localDisplay)}
+        ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)}`)}
+        ${cardRow('Spent', `$${spentUSD.toFixed(2)}`)}
+        ${cardRow('Remaining', `$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)`)}
+      </article>
     `;
   });
 
-  container.innerHTML = html;
+  const totalRemaining = totalBudgetedUSD - totalSpentUSD;
+  const totalPercent = totalBudgetedUSD > 0 ? (totalSpentUSD / totalBudgetedUSD * 100) : 0;
+  const isOverBudget = totalRemaining < 0;
+  const canEdit = showActions && canOpenBudgetEditor(budget);
+  const canDelete = showActions && state.canDeleteBudgets;
+  const typeLabel = getBudgetTypeLabel(budget.budget_type);
+
+  return `
+    <div class="budget-plan-card">
+      <h3>
+        <span>${budget.name} ${statusBadge} <span class="badge badge-secondary">${typeLabel}</span></span>
+        ${showActions ? `<span class="action-icon-group">
+          ${submitBtn ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit</button>` : ''}
+          ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
+          ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
+        </span>` : ''}
+      </h3>
+      <div class="budget-plan-stats">
+        <div class="budget-plan-stat">
+          <div class="value">$${totalBudgetedUSD.toFixed(2)}</div>
+          <div class="label">Total Budgeted</div>
+        </div>
+        <div class="budget-plan-stat">
+          <div class="value">$${totalSpentUSD.toFixed(2)}</div>
+          <div class="label">Total Spent</div>
+        </div>
+        <div class="budget-plan-stat">
+          <div class="value" style="color: ${isOverBudget ? '#dc3545' : '#28a745'}">$${totalRemaining.toFixed(2)}</div>
+          <div class="label">Remaining</div>
+        </div>
+        <div class="budget-plan-stat">
+          <div class="value">${totalPercent.toFixed(1)}%</div>
+          <div class="label">Used</div>
+        </div>
+      </div>
+      <h4 style="margin: 20px 0 15px;">Category Breakdown</h4>
+      <div class="table-container show-desktop">
+        <table class="table-stack-mobile">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Local</th>
+              <th>Budgeted (USD)</th>
+              <th>Spent (USD)</th>
+              <th>Remaining</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows || '<tr><td colspan="5">No categories</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="show-mobile data-card-list">${mobileCards || '<p class="empty-state">No categories</p>'}</div>
+    </div>
+  `;
+}
+
+function renderBudgetDetailCards(container, budgets) {
+  container.innerHTML = (budgets || []).map(b => renderBudgetReviewHtml(b, { showActions: true })).join('');
 }
 
 async function submitBudgetApprovalHandler(budgetId) {

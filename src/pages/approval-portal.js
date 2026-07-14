@@ -1,5 +1,6 @@
 /* ========== APPROVAL PORTAL ========== */
 import { state } from '../state.js';
+import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
 import { approvalStatusBadge } from '../utils/approvalConstants.js';
@@ -12,7 +13,6 @@ import {
 import {
   fetchApprovalInboxRaw,
   filterApprovalInboxLocal,
-  loadRequestMessages,
   loadReconciliationRequestLines,
   approveAndSendRequest,
   rejectRequest,
@@ -21,14 +21,13 @@ import {
   replyClarification,
   approveAndSendBatch
 } from '../utils/approvalEngine.js';
+import { renderBudgetReviewHtml, normalizeBudgetPlan } from './budgets.js';
 
 /** Full list loaded once; filters/search work on this cache. */
 let inboxCache = [];
 let inboxRows = [];
 let selectedIds = new Set();
 let rowCanActMap = new Map();
-let detailRequestId = null;
-let detailMessages = [];
 let myStepCodes = [];
 
 const TYPE_LABELS = {
@@ -103,7 +102,7 @@ export function getApprovalPortalPage() {
               <th>Amount</th>
               <th>Status</th>
               <th>Step</th>
-              <th></th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="portalInboxTableBody">
@@ -113,7 +112,17 @@ export function getApprovalPortalPage() {
       </div>
       <div id="portalInboxMobile" class="show-mobile data-card-list"></div>
     </div>
-    <div id="portalDetail" style="display:none; margin-top:16px;"></div>
+
+    <div id="approvalReviewModal" class="modal">
+      <div class="modal-content" style="max-width:960px;">
+        <button type="button" class="close-modal" onclick="window.portalCloseReviewModal()">&times;</button>
+        <h2 id="approvalReviewModalTitle">Review</h2>
+        <div id="approvalReviewModalBody"><p class="empty-state">Loading…</p></div>
+        <div class="btn-group" style="margin-top:16px;">
+          <button type="button" class="secondary" onclick="window.portalCloseReviewModal()">Close</button>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -122,8 +131,8 @@ export async function initApprovalPortalPage() {
   window.refreshApprovalPortal = searchApprovalPortal;
   window.portalToggleSelect = portalToggleSelect;
   window.portalToggleSelectAll = portalToggleSelectAll;
-  window.portalOpenDetail = portalOpenDetail;
-  window.portalCloseDetail = portalCloseDetail;
+  window.portalOpenDetail = portalOpenReviewModal;
+  window.portalCloseReviewModal = portalCloseReviewModal;
   window.portalAction = portalAction;
   window.portalBatchApprove = portalBatchApprove;
 
@@ -134,6 +143,14 @@ export async function initApprovalPortalPage() {
     searchApprovalPortal();
   } catch (err) {
     showToast(err.message || 'Failed to load approvals', 'error');
+  }
+
+  const modal = document.getElementById('approvalReviewModal');
+  if (modal && !modal.dataset.bound) {
+    modal.dataset.bound = '1';
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) portalCloseReviewModal();
+    });
   }
 }
 
@@ -152,8 +169,6 @@ async function setupStepFilter() {
     html += `<option value="${s}">${s}</option>`;
   });
   select.innerHTML = html;
-
-  // Default to their concrete step (FIN/FIH/CAO…) when known; else My step
   select.value = primary || 'mine';
 }
 
@@ -218,7 +233,6 @@ function searchApprovalPortal() {
   if (!inboxRows.length) {
     if (tableBody) tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">No requests match these filters.</td></tr>';
     if (mobileEl) mobileEl.innerHTML = '<p class="empty-state">No requests match these filters.</p>';
-    portalCloseDetail();
     return;
   }
 
@@ -230,6 +244,28 @@ function searchApprovalPortal() {
   if (selectAll) selectAll.checked = false;
 }
 
+function rowActionButtons(row) {
+  const canAct = rowIsActionable(row);
+  const isMine = row.created_by === state.user?.id;
+  const clarifyRole = clarifyRoleFromStatus(row.status);
+  const canCancel = canCancelRequest(row);
+  const buttons = [
+    `<button type="button" class="small secondary" onclick="event.stopPropagation(); window.portalOpenDetail('${row.id}')">Open</button>`
+  ];
+  if (canAct) {
+    buttons.push(`<button type="button" class="small success" onclick="event.stopPropagation(); window.portalAction(event,'approve','${row.id}')">Approve</button>`);
+    buttons.push(`<button type="button" class="small secondary danger" onclick="event.stopPropagation(); window.portalAction(event,'reject','${row.id}')">Reject</button>`);
+    buttons.push(`<button type="button" class="small secondary" onclick="event.stopPropagation(); window.portalAction(event,'clarify','${row.id}')">Clarify</button>`);
+  }
+  if (clarifyRole && (canAct || isMine)) {
+    buttons.push(`<button type="button" class="small secondary" onclick="event.stopPropagation(); window.portalAction(event,'reply','${row.id}')">Reply</button>`);
+  }
+  if (canCancel) {
+    buttons.push(`<button type="button" class="small secondary danger" onclick="event.stopPropagation(); window.portalAction(event,'cancel','${row.id}')">Cancel</button>`);
+  }
+  return buttons.join(' ');
+}
+
 function renderInboxRow(row) {
   const badge = approvalStatusBadge(row.status);
   const isMine = row.created_by === state.user?.id;
@@ -239,6 +275,7 @@ function renderInboxRow(row) {
   const stepHint = row.current_role_code ? `Awaiting ${row.current_role_code}` : '—';
   const mineBadge = isMine ? ' <span class="badge badge-info">Yours</span>' : '';
   const yourTurn = rowIsActionable(row);
+  const actions = rowActionButtons(row);
 
   const table = `
     <tr class="row-clickable" onclick="window.portalOpenDetail('${row.id}')">
@@ -252,9 +289,7 @@ function renderInboxRow(row) {
       <td data-label="Amount">${amount}</td>
       <td data-label="Status"><span class="badge ${badge.class}">${badge.label}</span></td>
       <td data-label="Step">${escapeHtml(stepHint)}${yourTurn ? ' <span class="badge badge-success">Your turn</span>' : ''}</td>
-      <td data-label="Actions" onclick="event.stopPropagation()">
-        <button type="button" class="small secondary" onclick="window.portalOpenDetail('${row.id}')">Open</button>
-      </td>
+      <td data-label="Actions" class="action-buttons" onclick="event.stopPropagation()">${actions}</td>
     </tr>
   `;
 
@@ -272,6 +307,7 @@ function renderInboxRow(row) {
       ${cardRow('Team', teamName)}
       ${cardRow('Amount', amount)}
       ${cardRow('Step', `${escapeHtml(stepHint)}${yourTurn ? ' (Your turn)' : ''}`)}
+      <div class="action-icon-group" style="margin-top:8px;" onclick="event.stopPropagation()">${actions}</div>
     </article>
   `;
 
@@ -303,163 +339,171 @@ function updateBatchBar() {
   if (btn) btn.disabled = actionable === 0;
 }
 
-async function portalOpenDetail(id) {
-  detailRequestId = id;
+async function portalOpenReviewModal(id) {
   const row = inboxCache.find(r => r.id === id) || inboxRows.find(r => r.id === id);
-  const detail = document.getElementById('portalDetail');
-  if (!detail || !row) return;
+  const modal = document.getElementById('approvalReviewModal');
+  const titleEl = document.getElementById('approvalReviewModalTitle');
+  const bodyEl = document.getElementById('approvalReviewModalBody');
+  if (!row || !modal || !bodyEl) return;
 
-  detail.style.display = '';
-  detail.innerHTML = '<div class="card"><p class="empty-state">Loading…</p></div>';
+  if (titleEl) titleEl.textContent = `${row.request_number} — ${row.title || 'Review'}`;
+  bodyEl.innerHTML = '<p class="empty-state">Loading…</p>';
+  modal.classList.add('active');
 
   try {
-    detailMessages = await loadRequestMessages(id);
-  } catch (err) {
-    detailMessages = [];
-    console.warn(err);
-  }
-
-  let reconHtml = '';
-  if (row.request_type === 'reconciliation_adjustment') {
-    try {
-      const reconLines = await loadReconciliationRequestLines(id);
-      if (reconLines?.length) {
-        reconHtml = `
-          <h3 style="margin-top:16px;">Reconciliation lines</h3>
-          <div class="table-container show-desktop">
-            <table class="table-stack-mobile">
-              <thead><tr><th>Bucket</th><th>Balance</th><th>Actual</th><th>Difference</th><th>Reason</th></tr></thead>
-              <tbody>
-                ${reconLines.map(line => `
-                  <tr>
-                    <td data-label="Bucket">${escapeHtml(line.bucket_name)}</td>
-                    <td data-label="Balance">${fmtPortal(line.closing_balance)} ${line.currency || ''}</td>
-                    <td data-label="Actual">${fmtPortal(line.actual_balance)}</td>
-                    <td data-label="Difference">${fmtPortal(line.difference)}</td>
-                    <td data-label="Reason">${escapeHtml(line.comments || '—')}</td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          </div>
-        `;
-      }
-    } catch (err) {
-      console.warn(err);
+    if (row.request_type === 'budget' && row.budget_plan_id) {
+      bodyEl.innerHTML = await buildBudgetReviewBody(row.budget_plan_id);
+    } else if (row.request_type === 'money_transfer' && row.transfer_id) {
+      bodyEl.innerHTML = await buildTransferReviewBody(row.transfer_id);
+    } else if (row.request_type === 'reconciliation_adjustment') {
+      bodyEl.innerHTML = await buildReconReviewBody(row.id, row);
+    } else {
+      bodyEl.innerHTML = `<p class="empty-state">No linked record to display for this request.</p>
+        ${cardRow('Type', TYPE_LABELS[row.request_type] || row.request_type)}
+        ${cardRow('Team', escapeHtml(row.teams?.name || '—'))}
+        ${row.amount_usd != null ? cardRow('Amount', `$${parseFloat(row.amount_usd).toFixed(2)}`) : ''}`;
     }
+  } catch (err) {
+    console.error(err);
+    bodyEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message || 'Failed to load record')}</p>`;
+    showToast(err.message || 'Failed to open record', 'error');
   }
-
-  const canAct = await userCanActOnRequest(row);
-  const isMine = row.created_by === state.user?.id;
-  const canCancel = canCancelRequest(row);
-  const badge = approvalStatusBadge(row.status);
-  const clarifyRole = clarifyRoleFromStatus(row.status);
-
-  const messagesHtml = detailMessages.length
-    ? detailMessages.map(m => {
-        const author = m.users?.name || m.users?.email || m.author_id?.slice(0, 8) || 'User';
-        const when = new Date(m.created_at).toLocaleString();
-        return `
-          <article class="data-card data-card--compact">
-            <div class="data-card-top">
-              <span class="data-card-title">${escapeHtml(author)}</span>
-              <span class="data-card-meta">${when}</span>
-            </div>
-            <p style="margin:0; white-space:pre-wrap;">${escapeHtml(m.body)}</p>
-          </article>
-        `;
-      }).join('')
-    : '<p class="empty-state">No messages yet.</p>';
-
-  const actionButtons = [];
-  let waitingHtml = '';
-  if (canAct) {
-    actionButtons.push(`<button type="button" class="success" data-portal-action="approve" onclick="window.portalAction(event,'approve','${row.id}')">Approve</button>`);
-    actionButtons.push(`<button type="button" class="secondary danger" data-portal-action="reject" onclick="window.portalAction(event,'reject','${row.id}')">Reject</button>`);
-    actionButtons.push(`<button type="button" class="secondary" data-portal-action="clarify" onclick="window.portalAction(event,'clarify','${row.id}')">Clarify</button>`);
-  } else if (isMine && row.current_role_code) {
-    waitingHtml = `<p class="page-intro" style="margin-top:16px; font-size:0.9em;">Waiting for <strong>${row.current_role_code}</strong> — you submitted this and cannot approve your own.</p>`;
-  }
-
-  if (clarifyRole && (canAct || isMine)) {
-    actionButtons.push(`<button type="button" class="secondary" data-portal-action="reply" onclick="window.portalAction(event,'reply','${row.id}')">Reply to clarify</button>`);
-  }
-  if (canCancel) {
-    actionButtons.push(`<button type="button" class="secondary danger" data-portal-action="cancel" onclick="window.portalAction(event,'cancel','${row.id}')">Cancel request</button>`);
-  }
-
-  detail.innerHTML = `
-    <div class="card">
-      <div class="data-card-top">
-        <h2 style="margin:0;">${escapeHtml(row.request_number)} — ${escapeHtml(row.title || '')}</h2>
-        <button type="button" class="small secondary" onclick="window.portalCloseDetail()">Close</button>
-      </div>
-      ${cardRow('Status', `<span class="badge ${badge.class}">${badge.label}</span>`)}
-      ${cardRow('Type', TYPE_LABELS[row.request_type] || row.request_type)}
-      ${cardRow('Team', escapeHtml(row.teams?.name || '—'))}
-      ${row.current_role_code ? cardRow('Current step', `Awaiting ${row.current_role_code}`) : ''}
-      ${row.amount_usd != null ? cardRow('Amount', `$${parseFloat(row.amount_usd).toFixed(2)}`) : ''}
-      ${waitingHtml}
-      ${reconHtml}
-      <h3 style="margin-top:16px;">Messages</h3>
-      <div class="data-card-list">${messagesHtml}</div>
-      ${actionButtons.length ? `<div class="btn-group" style="margin-top:16px;">${actionButtons.join('')}</div>` : ''}
-      <div class="form-group" style="margin-top:12px;">
-        <label>Note (optional)</label>
-        <textarea id="portalActionNote" rows="2" placeholder="Message for the next step"></textarea>
-      </div>
-    </div>
-  `;
-  detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function portalCloseDetail() {
-  detailRequestId = null;
-  const detail = document.getElementById('portalDetail');
-  if (detail) {
-    detail.style.display = 'none';
-    detail.innerHTML = '';
+function portalCloseReviewModal() {
+  const modal = document.getElementById('approvalReviewModal');
+  modal?.classList.remove('active');
+  const bodyEl = document.getElementById('approvalReviewModalBody');
+  if (bodyEl) bodyEl.innerHTML = '';
+}
+
+async function buildBudgetReviewBody(budgetPlanId) {
+  let budget = (state.budgetPlans || []).find(b => b.id === budgetPlanId);
+  if (budget) budget = normalizeBudgetPlan(budget);
+
+  if (!budget) {
+    const { data, error } = await supabaseClient
+      .from('budget_plans')
+      .select('*')
+      .eq('id', budgetPlanId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Budget not found');
+    budget = normalizeBudgetPlan(data);
   }
+
+  return renderBudgetReviewHtml(budget, { showActions: false });
+}
+
+async function buildTransferReviewBody(transferId) {
+  const { data: transfer, error } = await supabaseClient
+    .from('transfers')
+    .select('*')
+    .eq('id', transferId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!transfer) throw new Error('Transfer not found');
+
+  const bucketIds = [transfer.from_bucket_id, transfer.to_bucket_id].filter(Boolean);
+  let bucketNames = {};
+  if (bucketIds.length) {
+    const { data: buckets } = await supabaseClient
+      .from('buckets')
+      .select('id, name')
+      .in('id', bucketIds);
+    (buckets || []).forEach(b => { bucketNames[b.id] = b.name; });
+  }
+
+  return `
+    <div class="card" style="margin:0; box-shadow:none; border:none; padding:0;">
+      ${cardRow('From bucket', escapeHtml(bucketNames[transfer.from_bucket_id] || transfer.from_bucket_id || '—'))}
+      ${cardRow('To bucket', escapeHtml(bucketNames[transfer.to_bucket_id] || transfer.to_bucket_id || '—'))}
+      ${cardRow('Amount', `${fmtPortal(transfer.amount)} ${escapeHtml(transfer.currency || '')}`)}
+      ${transfer.amount_usd != null ? cardRow('USD', `$${fmtPortal(transfer.amount_usd)}`) : ''}
+      ${cardRow('Status', escapeHtml(transfer.status || '—'))}
+      ${transfer.description ? cardRow('Memo', escapeHtml(transfer.description)) : ''}
+      ${cardRow('Created', escapeHtml(transfer.created_at ? new Date(transfer.created_at).toLocaleString() : '—'))}
+    </div>
+  `;
+}
+
+async function buildReconReviewBody(requestId, row) {
+  const lines = await loadReconciliationRequestLines(requestId);
+  const tableRows = (lines || []).map(line => `
+    <tr>
+      <td data-label="Bucket">${escapeHtml(line.bucket_name)}</td>
+      <td data-label="Balance">${fmtPortal(line.closing_balance)} ${escapeHtml(line.currency || '')}</td>
+      <td data-label="Actual">${fmtPortal(line.actual_balance)}</td>
+      <td data-label="Difference">${fmtPortal(line.difference)}</td>
+      <td data-label="Reason">${escapeHtml(line.comments || '—')}</td>
+    </tr>
+  `).join('');
+
+  const mobileCards = (lines || []).map(line => `
+    <article class="data-card data-card--compact">
+      <div class="data-card-top"><span class="data-card-title">${escapeHtml(line.bucket_name)}</span></div>
+      ${cardRow('Balance', `${fmtPortal(line.closing_balance)} ${escapeHtml(line.currency || '')}`)}
+      ${cardRow('Actual', fmtPortal(line.actual_balance))}
+      ${cardRow('Difference', fmtPortal(line.difference))}
+      ${cardRow('Reason', escapeHtml(line.comments || '—'))}
+    </article>
+  `).join('');
+
+  return `
+    <p class="page-intro" style="margin-bottom:12px;">Team: <strong>${escapeHtml(row.teams?.name || '—')}</strong></p>
+    <h4 style="margin:0 0 12px;">Reconciliation lines</h4>
+    <div class="table-container show-desktop">
+      <table class="table-stack-mobile">
+        <thead>
+          <tr><th>Bucket</th><th>Balance</th><th>Actual</th><th>Difference</th><th>Reason</th></tr>
+        </thead>
+        <tbody>${tableRows || '<tr><td colspan="5">No lines</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div class="show-mobile data-card-list">${mobileCards || '<p class="empty-state">No lines</p>'}</div>
+  `;
 }
 
 async function portalAction(event, action, id) {
   const btn = event?.currentTarget;
-  const note = document.getElementById('portalActionNote')?.value || '';
   setButtonLoading(btn, true);
   try {
     if (action === 'approve') {
-      await approveAndSendRequest(id, note);
-      showToast('Approved and sent forward', 'success');
+      await approveAndSendRequest(id, '');
+      showToast('1 request approved', 'success');
     } else if (action === 'reject') {
-      await rejectRequest(id, note || 'Rejected');
-      showToast('Rejected', 'success');
+      const note = window.prompt('Rejection note (optional):') || 'Rejected';
+      await rejectRequest(id, note);
+      showToast('1 request rejected', 'success');
     } else if (action === 'clarify') {
-      const row = inboxCache.find(r => r.id === id);
-      const role = row?.current_role_code || 'OPL';
-      if (!note.trim()) {
+      const note = window.prompt('Clarification message:');
+      if (!note?.trim()) {
         showToast('Enter a clarification message', 'warning');
         return;
       }
-      await clarifyRequest(id, role, note);
+      const row = inboxCache.find(r => r.id === id);
+      const role = row?.current_role_code || 'OPL';
+      await clarifyRequest(id, role, note.trim());
       showToast('Clarification requested', 'success');
     } else if (action === 'reply') {
-      if (!note.trim()) {
+      const note = window.prompt('Reply message:');
+      if (!note?.trim()) {
         showToast('Enter a reply', 'warning');
         return;
       }
-      await replyClarification(id, note);
+      await replyClarification(id, note.trim());
       showToast('Reply sent', 'success');
     } else if (action === 'cancel') {
       const ok = await new Promise(resolve => {
         showConfirm('Cancel this request back to Draft?', () => resolve(true), () => resolve(false));
       });
       if (!ok) return;
-      await cancelRequest(id, note || 'Cancelled by requester');
+      await cancelRequest(id, 'Cancelled by requester');
       showToast('Cancelled', 'success');
     }
+    portalCloseReviewModal();
     await loadInboxFromServer();
     searchApprovalPortal();
-    portalCloseDetail();
   } catch (err) {
     showToast(err.message || 'Action failed', 'error');
   } finally {
@@ -477,8 +521,12 @@ async function portalBatchApprove(event) {
   setButtonLoading(btn, true);
   try {
     const result = await approveAndSendBatch(ids, '');
-    showToast(`Approved ${result.sent?.length || 0}`, 'success');
-    if (result.failed?.length) showToast(`${result.failed.length} failed`, 'warning');
+    const n = result.sent?.length || 0;
+    showToast(n === 1 ? '1 request approved' : `${n} requests approved`, 'success');
+    if (result.failed?.length) {
+      const f = result.failed.length;
+      showToast(f === 1 ? '1 request failed' : `${f} requests failed`, 'warning');
+    }
     await loadInboxFromServer();
     searchApprovalPortal();
   } catch (err) {
