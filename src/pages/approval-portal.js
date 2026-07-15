@@ -137,6 +137,7 @@ export async function initApprovalPortalPage() {
   window.portalCloseReviewModal = portalCloseReviewModal;
   window.portalAction = portalAction;
   window.portalBatchApprove = portalBatchApprove;
+  window.portalRunAction = portalRunAction;
 
   populateTeamFilter();
   await setupStepFilter();
@@ -299,6 +300,28 @@ function searchApprovalPortal() {
   if (selectAll) selectAll.checked = false;
 }
 
+function rowActionDropdown(row) {
+  const canAct = rowIsActionable(row);
+  const isMine = row.created_by === state.user?.id;
+  const clarifyRole = clarifyRoleFromStatus(row.status);
+  const canCancel = canCancelRequest(row);
+
+  return `
+    <div class="approval-action-select-wrapper" style="display:flex; align-items:center; gap:5px;">
+      <select class="approval-action-select" style="padding:4px 6px; font-size:13px; height:28px; border:1px solid var(--border); border-radius:4px; max-width:130px; background:var(--card-bg); color:var(--text);">
+        <option value="">Action</option>
+        <option value="open">Open</option>
+        ${canAct ? '<option value="approve">Approve</option>' : ''}
+        ${canAct ? '<option value="reject">Reject</option>' : ''}
+        ${canAct ? '<option value="clarify">Clarify</option>' : ''}
+        ${clarifyRole && (canAct || isMine) ? '<option value="reply">Reply</option>' : ''}
+        ${canCancel ? '<option value="cancel">Cancel</option>' : ''}
+      </select>
+      <button type="button" class="small secondary" onclick="event.stopPropagation(); window.portalRunAction(this, '${row.id}')" style="height:28px; padding:0 8px; line-height:1; display:inline-flex; align-items:center; justify-content:center;">OK</button>
+    </div>
+  `;
+}
+
 function rowActionButtons(row) {
   const canAct = rowIsActionable(row);
   const isMine = row.created_by === state.user?.id;
@@ -330,7 +353,8 @@ function renderInboxRow(row) {
   const stepHint = row.current_role_code ? `Awaiting ${row.current_role_code}` : '—';
   const mineBadge = isMine ? ' <span class="badge badge-info">Yours</span>' : '';
   const yourTurn = rowIsActionable(row);
-  const actions = rowActionButtons(row);
+  const actionsTable = rowActionDropdown(row);
+  const actionsMobile = rowActionButtons(row);
 
   const table = `
     <tr class="row-clickable" onclick="window.portalOpenDetail('${row.id}')">
@@ -344,7 +368,7 @@ function renderInboxRow(row) {
       <td data-label="Amount">${amount}</td>
       <td data-label="Status"><span class="badge ${badge.class}">${badge.label}</span></td>
       <td data-label="Step">${escapeHtml(stepHint)}${yourTurn ? ' <span class="badge badge-success">Your turn</span>' : ''}</td>
-      <td data-label="Actions" class="action-buttons" onclick="event.stopPropagation()">${actions}</td>
+      <td data-label="Actions" class="action-buttons" onclick="event.stopPropagation()">${actionsTable}</td>
     </tr>
   `;
 
@@ -362,7 +386,7 @@ function renderInboxRow(row) {
       ${cardRow('Team', teamName)}
       ${cardRow('Amount', amount)}
       ${cardRow('Step', `${escapeHtml(stepHint)}${yourTurn ? ' (Your turn)' : ''}`)}
-      <div class="action-icon-group" style="margin-top:8px;" onclick="event.stopPropagation()">${actions}</div>
+      <div class="action-icon-group" style="margin-top:8px;" onclick="event.stopPropagation()">${actionsMobile}</div>
     </article>
   `;
 
@@ -618,10 +642,28 @@ async function portalAction(event, action, id) {
     await loadInboxFromServer();
     searchApprovalPortal();
   } catch (err) {
+    console.error(err);
     showToast(err.message || 'Action failed', 'error');
   } finally {
     setButtonLoading(btn, false);
   }
+}
+
+async function portalRunAction(btn, rowId) {
+  const container = btn.closest('.approval-action-select-wrapper');
+  const select = container?.querySelector('.approval-action-select');
+  const action = select?.value;
+  if (!action) {
+    showToast('Select an action first', 'warning');
+    return;
+  }
+  if (action === 'open') {
+    window.portalOpenDetail(rowId);
+  } else {
+    const fakeEvent = { currentTarget: btn };
+    await portalAction(fakeEvent, action, rowId);
+  }
+  if (select) select.value = '';
 }
 
 async function portalBatchApprove(event) {
