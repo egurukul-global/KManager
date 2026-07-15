@@ -121,7 +121,7 @@ export function getTeamMgmtPage() {
     <h1 class="page-title">Teams</h1>
     <p class="page-intro">Select a team to manage members. Create teams if your role allows.</p>
 
-    <div class="card">
+    <div class="card" style="margin-bottom: 24px;">
       <div class="form-grid-row form-grid-row--team-picker">
         <div class="form-group" style="flex:1;">
           <label>Team</label>
@@ -137,10 +137,10 @@ export function getTeamMgmtPage() {
         </div>
       </div>
       ${isOrgAdmin() ? `
-        <form id="teamRenameForm" class="team-rename-row" style="display:none;" onsubmit="window.saveTeamRename(event)">
+        <form id="teamRenameForm" class="team-rename-row" style="display:none; margin-top:20px; border-top:1px solid var(--border); padding-top:20px;" onsubmit="window.saveTeamRename(event)">
           <div class="form-grid-row form-grid-row--team-rename">
             <div class="form-group">
-              <label for="teamRenameName">Team name</label>
+              <label for="teamRenameName">Rename Team</label>
               <input type="text" id="teamRenameName" required maxlength="120" placeholder="Edit team name">
             </div>
             <div class="form-group team-rename-actions">
@@ -157,6 +157,10 @@ export function getTeamMgmtPage() {
     <div class="card team-members-panel" id="teamMembersPanel">
       <h2 id="teamMembersTitle">Members</h2>
       <p id="teamsMembersHint" class="page-intro">Select a team above. Team access (OPS/OPL/OPH) is set here. Approval roles FIN, FIH, CAO are assigned separately under Admin → Role Assignments or on the user account.</p>
+
+      <div id="memberSearchGroup" style="display:none; margin-bottom:15px; max-width:320px;">
+        <input type="text" id="memberSearchInput" placeholder="🔍 Search members..." oninput="window.filterTeamMembers()" style="height:38px; box-sizing:border-box; width:100%; padding:8px 10px; border:2px solid var(--border); border-radius:var(--radius-sm); font-size:15px;">
+      </div>
 
       <form id="addMemberForm" class="team-add-member-form" onsubmit="window.addTeamMember(event)" style="display:none;">
         <input type="hidden" id="memberTeamId">
@@ -213,6 +217,7 @@ export async function initTeamMgmtPage() {
   window.onTeamsPageSelectChange = onTeamsPageSelectChange;
   window.toggleTeamsCreateCard = toggleTeamsCreateCard;
   window.createOhtTeam = createOhtTeam;
+  window.filterTeamMembers = filterTeamMembers;
 
   await loadUsersCache();
   await loadManageableTeams();
@@ -264,11 +269,13 @@ async function onTeamsPageSelectChange() {
   const title = document.getElementById('teamMembersTitle');
   const renameRow = document.getElementById('teamRenameForm');
   const renameInput = document.getElementById('teamRenameName');
+  const searchGroup = document.getElementById('memberSearchGroup');
 
   if (!teamId) {
     activeTeamId = null;
     membersCache = [];
     if (form) form.style.display = 'none';
+    if (searchGroup) searchGroup.style.display = 'none';
     if (hint) hint.style.display = '';
     if (title) title.textContent = 'Members';
     if (renameRow) renameRow.style.display = 'none';
@@ -287,11 +294,33 @@ async function onTeamsPageSelectChange() {
   if (title) title.textContent = `Members — ${team?.name || 'Team'}`;
   if (hint) hint.style.display = 'none';
   if (form) form.style.display = '';
+  if (searchGroup) searchGroup.style.display = '';
   if (renameRow && renameInput && isOrgAdmin()) {
     renameRow.style.display = '';
     renameInput.value = team?.name || '';
   }
   document.getElementById('memberTeamId').value = teamId;
+
+  const teamMatch = state.teams.find(t => t.team_id === teamId);
+  if (teamMatch) {
+    state.currentTeam = teamMatch;
+    state.userTeamAccess = {
+      access_level: String(teamMatch.access_level || 'member').toLowerCase().trim(),
+      granted_by: teamMatch.granted_by,
+      granted_at: teamMatch.granted_at
+    };
+    const { computePermissions } = await import('../state.js');
+    computePermissions();
+    
+    const topSelect = document.getElementById('teamSelect');
+    if (topSelect) topSelect.value = teamId;
+    
+    const accessBadge = document.getElementById('userAccessLevel');
+    if (accessBadge) {
+      const { teamAccessLabel } = await import('../utils/roleLabels.js');
+      accessBadge.textContent = teamAccessLabel(state.userTeamAccess.access_level);
+    }
+  }
 
   await loadTeamMembers(teamId);
   populateAddMemberUserSelect(teamId);
@@ -535,10 +564,32 @@ async function loadTeamMembers(teamId) {
       `;
     }).join('');
     if (mobile) mobile.innerHTML = mobileHtml;
+    window.filterTeamMembers();
   } catch (err) {
     console.error('Load members error:', err);
     tbody.innerHTML = `<tr><td colspan="${colCount}" class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</td></tr>`;
     if (mobile) mobile.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function filterTeamMembers() {
+  const query = document.getElementById('memberSearchInput')?.value?.toLowerCase().trim() || '';
+  
+  const tbody = document.getElementById('teamMembersBody');
+  if (tbody) {
+    tbody.querySelectorAll('tr').forEach(row => {
+      if (row.querySelector('.empty-state')) return;
+      const text = row.textContent.toLowerCase();
+      row.style.display = text.includes(query) ? '' : 'none';
+    });
+  }
+
+  const mobile = document.getElementById('teamMembersMobile');
+  if (mobile) {
+    mobile.querySelectorAll('.data-card').forEach(card => {
+      const text = card.textContent.toLowerCase();
+      card.style.display = text.includes(query) ? '' : 'none';
+    });
   }
 }
 
