@@ -121,7 +121,26 @@ export async function userCanActOnRequest(request, userId = state.user?.id) {
     if (request.created_by === userId) return false;
 
     const codes = await getUserApprovalRoleCodes(userId, request.team_id);
-    return codes.includes(String(request.current_role_code).toUpperCase());
+    const upperCodes = codes.map(c => String(c).toUpperCase());
+    if (upperCodes.includes(String(request.current_role_code).toUpperCase())) {
+      return true;
+    }
+
+    // Skip level approvals: check if user has a role code defined at a HIGHER step in this flow
+    try {
+      const { resolveFlowSteps } = await import('./approvalEngine.js');
+      const steps = await resolveFlowSteps(request.request_type, request.team_id);
+      const currentStep = steps.find(s => s.step_order === request.current_step_order);
+      if (currentStep) {
+        const higherSteps = steps.filter(s => s.step_order > currentStep.step_order);
+        const hasHigherRole = higherSteps.some(s => upperCodes.includes(String(s.role_code).toUpperCase()));
+        if (hasHigherRole) {
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to resolve flow steps for skip-level check:', e);
+    }
   }
 
   return request.created_by === userId;

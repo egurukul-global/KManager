@@ -543,9 +543,32 @@ export async function approveRequest(requestId, message = '') {
     throw new Error('You are not authorized to approve this request');
   }
 
+  const steps = await resolveFlowSteps(request.request_type, request.team_id);
+  const codes = await getUserApprovalRoleCodes(state.user.id, request.team_id);
+  const upperCodes = codes.map(c => String(c).toUpperCase());
+
+  let targetStepOrder = request.current_step_order;
+  const currentStep = steps.find(s => s.step_order === request.current_step_order);
+
+  if (currentStep && !upperCodes.includes(String(request.current_role_code).toUpperCase())) {
+    const higherStep = steps.find(s => s.step_order > currentStep.step_order && upperCodes.includes(String(s.role_code).toUpperCase()));
+    if (higherStep) {
+      targetStepOrder = higherStep.step_order;
+    }
+  }
+
   await insertMessage(requestId, message);
 
-  return updateRequest(requestId, { step_approved: true });
+  const patch = { step_approved: true };
+  if (targetStepOrder !== request.current_step_order) {
+    patch.current_step_order = targetStepOrder;
+    const targetStep = steps.find(s => s.step_order === targetStepOrder);
+    if (targetStep) {
+      patch.current_role_code = targetStep.role_code;
+    }
+  }
+
+  return updateRequest(requestId, patch);
 }
 
 export async function approveAndSendRequest(requestId, message = '') {
@@ -555,9 +578,31 @@ export async function approveAndSendRequest(requestId, message = '') {
   }
 
   const steps = await resolveFlowSteps(request.request_type, request.team_id);
+  const codes = await getUserApprovalRoleCodes(state.user.id, request.team_id);
+  const upperCodes = codes.map(c => String(c).toUpperCase());
+
+  let targetStepOrder = request.current_step_order;
+  const currentStep = steps.find(s => s.step_order === request.current_step_order);
+
+  if (currentStep && !upperCodes.includes(String(request.current_role_code).toUpperCase())) {
+    const higherStep = steps.find(s => s.step_order > currentStep.step_order && upperCodes.includes(String(s.role_code).toUpperCase()));
+    if (higherStep) {
+      targetStepOrder = higherStep.step_order;
+    }
+  }
+
   await insertMessage(requestId, message || 'Approved and sent forward');
 
-  await updateRequest(requestId, { step_approved: true });
+  const patch = { step_approved: true };
+  if (targetStepOrder !== request.current_step_order) {
+    patch.current_step_order = targetStepOrder;
+    const targetStep = steps.find(s => s.step_order === targetStepOrder);
+    if (targetStep) {
+      patch.current_role_code = targetStep.role_code;
+    }
+  }
+
+  await updateRequest(requestId, patch);
   const refreshed = await loadRequest(requestId);
   return advanceAfterSend(refreshed, steps);
 }
