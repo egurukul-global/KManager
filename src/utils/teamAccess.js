@@ -79,19 +79,26 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
 
 /** Teams granted only through request_role_assignments (approvers without membership). */
 async function loadTeamsFromRoleAssignments(userId) {
+  const userRole = state.user?.role;
+  const isGlobalFromUserRole = ['caoh', 'oh', 'ceo'].includes(userRole);
+
   const { data: assignments, error } = await supabaseClient
     .from('request_role_assignments')
     .select('team_id, role_code')
     .eq('user_id', userId)
     .eq('is_active', true);
 
-  if (error || !assignments?.length) {
-    if (error) console.warn('role-assignment teams:', error.message);
+  const safeAssignments = assignments || [];
+  if (error) {
+    console.warn('role-assignment teams:', error.message);
+  }
+
+  if (!isGlobalFromUserRole && !safeAssignments.length) {
     return [];
   }
 
-  const specificIds = [...new Set(assignments.map(a => a.team_id).filter(Boolean))];
-  const hasGlobal = assignments.some(a => !a.team_id);
+  const specificIds = [...new Set(safeAssignments.map(a => a.team_id).filter(Boolean))];
+  const hasGlobal = isGlobalFromUserRole || safeAssignments.some(a => !a.team_id);
 
   let teamsQuery = supabaseClient
     .from('teams')
