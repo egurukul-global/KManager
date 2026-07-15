@@ -76,6 +76,16 @@ export function getGenerateReceiptPage() {
 
         <h3 class="receipt-section-heading">Items</h3>
         <p class="receipt-section-note">Add at least one item. Qty and Rate are required.</p>
+        <div class="receipt-line-table-wrap show-desktop">
+          <div class="receipt-line-table-head">
+            <span>Qty</span>
+            <span>Unit</span>
+            <span>Item</span>
+            <span>Rate</span>
+            <span>Total</span>
+            <span></span>
+          </div>
+        </div>
         <div id="receiptItemsContainer" class="alloc-line-cards">${receiptItemRowHtml(false)}</div>
         <div class="btn-group">
           <button type="button" class="secondary" onclick="window.addReceiptItemRow()">+ Add Item</button>
