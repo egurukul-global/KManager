@@ -42,8 +42,11 @@ export const state = {
 
 // ==================== PERMISSIONS ====================
 export function computePermissions() {
-  const level = String(state.userTeamAccess?.access_level || 'member').toLowerCase().trim();
   const role = state.user?.role || 'user';
+  let level = String(state.userTeamAccess?.access_level || 'member').toLowerCase().trim();
+  if (state.currentTeam?.from_role_assignment) {
+    level = 'view';
+  }
   state.isReadOnlyTeamAccess = level === 'oht' || level === 'view';
 
   // System admin can do everything on any team

@@ -77,6 +77,7 @@ const OHT_HIDDEN_PAGES = new Set([
 ]);
 
 export function teamAccessLevel() {
+  if (state.currentTeam?.from_role_assignment) return 'view';
   return String(state.userTeamAccess?.access_level || 'member').toLowerCase().trim();
 }
 
