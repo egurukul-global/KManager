@@ -311,7 +311,14 @@ async function onBudgetTypeChange() {
       calSelect.required = false;
       calSelect.value = '';
     }
-    if (periodInput) periodInput.required = true;
+    if (periodInput) {
+      periodInput.required = true;
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      const d = String(today.getDate()).padStart(2, '0');
+      periodInput.value = `${y}-${m}-${d}`;
+    }
     if (monthlyNameInput) monthlyNameInput.value = '';
     if (namedNameInput) {
       namedNameInput.readOnly = false;
@@ -719,33 +726,35 @@ window.createBudget = async function(e) {
     is_deleted: false
   };
 
-  const btn = e.target.querySelector('button[type="submit"]');
-  const originalText = btn.textContent;
-  btn.textContent = 'Creating...';
-  btn.disabled = true;
+  showConfirm(`Are you sure you want to create the budget "${resolvedName}"?`, async () => {
+    const btn = e.target.querySelector('button[type="submit"]');
+    const originalText = btn.textContent;
+    btn.textContent = 'Creating...';
+    btn.disabled = true;
 
-  try {
-    const result = await sbInsert('budget_plans', budget);
-    if (result && !result.error) {
-      showToast(`Budget "${resolvedName}" created successfully!`, 'success');
-      document.getElementById('createBudgetForm').reset();
-      await seedCreateBudgetCategoryRows();
-      populateCreateBudgetCurrencySelect();
-      populateCalendarSelect();
-      await onBudgetTypeChange();
-      const all = await localGetAll('budget_plans');
-      state.budgetPlans = all.filter(b => b.team_id === teamId);
-      window.showPage('view-budgets');
-    } else {
-      showToast(result?.error?.message || 'Failed to create budget', 'error');
+    try {
+      const result = await sbInsert('budget_plans', budget);
+      if (result && !result.error) {
+        showToast(`Budget "${resolvedName}" created successfully!`, 'success');
+        document.getElementById('createBudgetForm').reset();
+        await seedCreateBudgetCategoryRows();
+        populateCreateBudgetCurrencySelect();
+        populateCalendarSelect();
+        await onBudgetTypeChange();
+        const all = await localGetAll('budget_plans');
+        state.budgetPlans = all.filter(b => b.team_id === teamId);
+        window.showPage('view-budgets');
+      } else {
+        showToast(result?.error?.message || 'Failed to create budget', 'error');
+      }
+    } catch (err) {
+      console.error('Create budget error:', err);
+      showToast('Failed to create budget', 'error');
+    } finally {
+      btn.textContent = originalText;
+      btn.disabled = false;
     }
-  } catch (err) {
-    console.error('Create budget error:', err);
-    showToast('Failed to create budget', 'error');
-  } finally {
-    btn.textContent = originalText;
-    btn.disabled = false;
-  }
+  });
 };
 
 // ========== VIEW BUDGETS ==========
@@ -759,7 +768,7 @@ export function getViewBudgetsPage() {
         <div class="form-grid-row form-grid-row--filter-simple">
           <div class="form-group">
             <label>Status</label>
-            <select id="budgetFilterStatus" onchange="window.initViewBudgetsPage()">
+            <select id="budgetFilterStatus" onchange="window.onBudgetStatusFilterChange()">
               <option value="approved" selected>Approved</option>
               <option value="all">All</option>
               <option value="draft">Draft</option>
@@ -844,6 +853,8 @@ export function getViewBudgetsPage() {
 
 export async function initViewBudgetsPage() {
   window.submitBudgetApproval = submitBudgetApprovalHandler;
+  window.onBudgetStatusFilterChange = onBudgetStatusFilterChange;
+  window.backToBudgetList = backToBudgetList;
 
   const container = document.getElementById('budgetsContainer');
   if (!container) {
@@ -918,6 +929,18 @@ export async function initViewBudgetsPage() {
 
 // Map the initialization explicitly to window for full routing access
 window.initViewBudgetsPage = initViewBudgetsPage;
+
+function onBudgetStatusFilterChange() {
+  const nameFilter = document.getElementById('budgetFilterName');
+  if (nameFilter) nameFilter.value = '';
+  initViewBudgetsPage();
+}
+
+function backToBudgetList() {
+  const nameFilter = document.getElementById('budgetFilterName');
+  if (nameFilter) nameFilter.value = '';
+  initViewBudgetsPage();
+}
 
 function renderBudgetSummaryTable(container, budgets) {
   let tableRows = '';
@@ -1210,7 +1233,8 @@ export function renderBudgetReviewHtml(budget, options = {}) {
 }
 
 function renderBudgetDetailCards(container, budgets) {
-  container.innerHTML = (budgets || []).map(b => renderBudgetReviewHtml(b, { showActions: true })).join('');
+  const backBtn = `<div style="margin-bottom: 20px;"><button type="button" class="secondary" onclick="window.backToBudgetList()">← Back to List</button></div>`;
+  container.innerHTML = backBtn + (budgets || []).map(b => renderBudgetReviewHtml(b, { showActions: true })).join('');
 }
 
 async function submitBudgetApprovalHandler(budgetId) {
