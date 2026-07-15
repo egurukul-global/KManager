@@ -153,7 +153,9 @@ export function populateTeamSwitcher() {
   state.teams.forEach(team => {
     const option = document.createElement('option');
     option.value = team.team_id;
-    option.textContent = team.team_name + (team.is_primary ? ' ★' : '');
+    const rawName = team.team_name || '';
+    const displayName = rawName.length > 15 ? rawName.slice(0, 15) + '...' : rawName;
+    option.textContent = displayName + (team.is_primary ? ' ★' : '');
     if (team.team_id === state.currentTeam.team_id) {
       option.selected = true;
     }

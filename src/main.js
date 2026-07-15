@@ -320,24 +320,28 @@ function updateSyncStatus(status) {
     error: '🔴'
   };
   const labels = {
-    online: 'Online',
-    offline: 'Offline',
-    syncing: 'Syncing',
+    online: 'On<br>line',
+    offline: 'Off<br>line',
+    syncing: 'Sync<br>ing',
     error: 'Error'
   };
 
   document.querySelectorAll('.sync-status').forEach(indicator => {
     if (indicator.classList.contains('bottom-nav-status') || indicator.id === 'syncIndicator') {
       indicator.className = `bottom-nav-item bottom-nav-status sync-status ${status}`;
-    } else if (indicator.classList.contains('sidebar-sync')) {
-      indicator.className = `sidebar-sync sync-status show-desktop ${status}`;
     } else {
       indicator.className = `sync-status ${status}`;
     }
     const iconEl = indicator.querySelector('.sync-status-icon');
     const labelEl = indicator.querySelector('.sync-status-label');
     if (iconEl) iconEl.textContent = icons[status] || '⚪';
-    if (labelEl) labelEl.textContent = labels[status] || status;
+    if (labelEl) {
+      if (indicator.id === 'syncIndicatorSidebar') {
+        labelEl.innerHTML = labels[status] || status;
+      } else {
+        labelEl.textContent = (labels[status] || status).replace('<br>', ' ');
+      }
+    }
   });
 }
 
@@ -441,11 +445,18 @@ function renderAppShell() {
           <span id="userAccessLevel" class="sidebar-access-badge"></span>
         </div>
 
-        <button type="button" class="sidebar-home-link" onclick="window.goOkHome()">← One Kailasa</button>
+        <div class="sidebar-top-row">
+          <button type="button" class="sidebar-top-btn" onclick="window.goOkHome()">One<br>Kailasa</button>
+          <button type="button" class="sidebar-top-btn" onclick="window.handleLogout()">Sign<br>Out</button>
+          <div class="sidebar-top-btn sync-status online show-desktop" id="syncIndicatorSidebar" aria-live="polite">
+            <span class="sync-status-icon" style="margin-right:2px;">🟢</span>
+            <span class="sync-status-label">On<br>line</span>
+          </div>
+        </div>
 
-        <div class="team-switcher">
-          <label>Current Team</label>
-          <select id="teamSelect" onchange="window.switchTeam(this.value)">
+        <div class="team-switcher" style="display:flex; align-items:center; gap:8px; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0;">
+          <label style="margin:0; white-space:nowrap; font-size:0.7em; text-transform:uppercase; letter-spacing:0.5px; opacity:0.7;">Team</label>
+          <select id="teamSelect" onchange="window.switchTeam(this.value)" style="flex:1; padding:6px 8px; font-size:0.85em; height:32px; border:1px solid rgba(255,255,255,0.2); border-radius:6px; background:rgba(0,0,0,0.2); color:white; cursor:pointer;">
             <option value="">Loading teams...</option>
           </select>
         </div>
@@ -559,13 +570,7 @@ function renderAppShell() {
           </div>
         </nav>
 
-        <div class="sidebar-footer">
-          <div class="sidebar-sync sync-status online show-desktop" id="syncIndicatorSidebar" aria-live="polite">
-            <span class="sync-status-icon">🟢</span>
-            <span class="sync-status-label">Online</span>
-          </div>
-          <button type="button" class="sidebar-signout" onclick="window.handleLogout()">Sign Out</button>
-        </div>
+
       </aside>
 
       <div class="main-area">

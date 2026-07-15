@@ -165,6 +165,66 @@ body {
   flex-direction: column;
 }
 
+.sidebar-top-row {
+  display: flex;
+  padding: 8px 16px;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  flex-shrink: 0;
+}
+
+.sidebar-top-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  font-size: 0.72em;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  transition: background 0.2s, border-color 0.2s;
+  box-sizing: border-box;
+  height: 48px;
+}
+
+.sidebar-top-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+button.sidebar-top-btn[onclick*="handleLogout"] {
+  background: rgba(220, 53, 69, 0.15);
+  border-color: rgba(220, 53, 69, 0.25);
+  color: #ff8a8a;
+}
+button.sidebar-top-btn[onclick*="handleLogout"]:hover {
+  background: rgba(220, 53, 69, 0.28);
+  border-color: rgba(220, 53, 69, 0.40);
+}
+
+.sidebar-top-btn.sync-status {
+  cursor: default;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+}
+.sidebar-top-btn.sync-status .sync-status-icon {
+  font-size: 0.9em;
+}
+.sidebar-top-btn.sync-status .sync-status-label {
+  font-size: 1em;
+  line-height: 1.1;
+  text-align: center;
+}
+
 .sidebar-user {
   display: flex;
   align-items: center;
@@ -288,10 +348,10 @@ body {
 .nav-item-header {
   display: flex;
   align-items: center;
-  padding: 10px 16px;
+  padding: 6px 16px;
   cursor: pointer;
   transition: background 0.2s;
-  font-size: 0.9em;
+  font-size: 0.82em;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -304,17 +364,17 @@ body {
 .nav-subitems { display: none; background: rgba(0,0,0,0.2); }
 .nav-item.expanded .nav-subitems { display: block; }
 .nav-subitem {
-  padding: 9px 16px 9px 48px;
+  padding: 6px 16px 6px 48px;
   cursor: pointer;
-  font-size: 0.85em;
+  font-size: 0.8em;
   transition: all 0.2s;
   border-left: 3px solid transparent;
 }
 .nav-subitem:hover { background: rgba(255,255,255,0.05); border-left-color: rgba(255,255,255,0.3); }
 .nav-subitem.active { background: rgba(212, 175, 55, 0.18); border-left-color: var(--accent-gold); color: #fff; }
 .nav-subitem-label {
-  padding: 6px 16px 4px 48px;
-  font-size: 0.72em;
+  padding: 4px 16px 2px 48px;
+  font-size: 0.7em;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
