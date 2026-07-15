@@ -188,6 +188,28 @@ function stepByOrder(steps, order) {
   return (steps || []).find(s => s.step_order === order) || null;
 }
 
+async function resolveNextActiveStep(steps, currentOrder, creatorId, teamId) {
+  const creatorCodes = await getUserApprovalRoleCodes(creatorId, teamId);
+  const normalizedCreatorCodes = (creatorCodes || []).map(c => String(c).toUpperCase());
+
+  let idx = -1;
+  if (currentOrder !== null && currentOrder !== undefined) {
+    idx = (steps || []).findIndex(s => s.step_order === currentOrder);
+  }
+
+  let nextIdx = idx + 1;
+  while (nextIdx < steps.length) {
+    const step = steps[nextIdx];
+    const role = String(step.role_code).toUpperCase();
+    if (!normalizedCreatorCodes.includes(role)) {
+      return { step, isApproved: false };
+    }
+    nextIdx++;
+  }
+
+  return { step: steps[steps.length - 1] || null, isApproved: true };
+}
+
 /** Create and submit a budget approval request. */
 export async function submitBudgetForApproval(budget) {
   if (!budget?.id || !state.user?.id) throw new Error('Invalid budget');
@@ -216,22 +238,33 @@ export async function submitBudgetForApproval(budget) {
     0
   );
 
-  const step = firstStep(steps);
+  const { step, isApproved } = await resolveNextActiveStep(steps, null, state.user.id, teamId);
+  const status = isApproved ? `${String(step.role_code).toUpperCase()}-APPROVED` : 'SUBMITTED';
+  const roleCode = isApproved ? null : step.role_code;
+  const completedAt = isApproved ? new Date().toISOString() : null;
 
   if (prior?.status === 'DRAFT') {
     const updated = await updateRequest(prior.id, {
-      status: 'SUBMITTED',
+      status,
       title: budget.name || 'Budget',
       amount_usd: totalUsd,
       current_step_order: step.step_order,
-      current_role_code: step.role_code,
+      current_role_code: roleCode,
       step_approved: false,
       rejected_at: null,
-      completed_at: null
+      completed_at: completedAt
     });
-    await applyBudgetStatus(budget.id, 'SUBMITTED', prior.id);
+    await applyBudgetStatus(budget.id, status, prior.id);
     await clearOkMessagesForRequest(prior.id);
-    await notifyRoleForRequest(updated, step.role_code);
+    if (!isApproved) {
+      await notifyRoleForRequest(updated, roleCode);
+    } else {
+      await notifyUserForRequest(
+        state.user.id,
+        updated,
+        `${updated.request_number || requestNumber}  ${budget.name || 'Budget'}  Approved`.replace(/\s+/g, ' ').trim()
+      );
+    }
     return updated;
   }
 
@@ -239,14 +272,15 @@ export async function submitBudgetForApproval(budget) {
     request_number: requestNumber,
     request_type: REQUEST_TYPES.BUDGET,
     team_id: teamId,
-    status: 'SUBMITTED',
+    status,
     title: budget.name || 'Budget',
     amount_usd: totalUsd,
     created_by: state.user.id,
     budget_plan_id: budget.id,
     current_step_order: step.step_order,
-    current_role_code: step.role_code,
+    current_role_code: roleCode,
     step_approved: false,
+    completed_at: completedAt,
     is_deleted: false
   };
 
@@ -258,8 +292,16 @@ export async function submitBudgetForApproval(budget) {
 
   if (error) throw error;
 
-  await applyBudgetStatus(budget.id, 'SUBMITTED', data.id);
-  await notifyRoleForRequest(data, step.role_code);
+  await applyBudgetStatus(budget.id, status, data.id);
+  if (!isApproved) {
+    await notifyRoleForRequest(data, roleCode);
+  } else {
+    await notifyUserForRequest(
+      state.user.id,
+      data,
+      `${data.request_number}  ${budget.name || 'Budget'}  Approved`.replace(/\s+/g, ' ').trim()
+    );
+  }
   return data;
 }
 
@@ -307,20 +349,24 @@ export async function submitReconciliationAdjustment(lineIds, teamId) {
 
   const dates = [...new Set(valid.map(l => l.reconciliation_submissions.reconciliation_date))].sort();
   const dateLabel = dates.length === 1 ? dates[0] : `${dates[0]} – ${dates[dates.length - 1]}`;
-  const step = firstStep(steps);
+  const { step, isApproved } = await resolveNextActiveStep(steps, null, state.user.id, teamId);
+  const status = isApproved ? `${String(step.role_code).toUpperCase()}-APPROVED` : 'SUBMITTED';
+  const roleCode = isApproved ? null : step.role_code;
+  const completedAt = isApproved ? new Date().toISOString() : null;
 
   const payload = {
     request_number: requestNumber,
     request_type: REQUEST_TYPES.RECONCILIATION_ADJUSTMENT,
     team_id: teamId,
-    status: 'SUBMITTED',
+    status,
     title: `Recon adjustment — ${valid.length} bucket${valid.length === 1 ? '' : 's'} (${dateLabel})`,
     amount_usd: amountUsd,
     created_by: state.user.id,
     reconciliation_submission_id: valid.length === 1 ? valid[0].submission_id : null,
     current_step_order: step.step_order,
-    current_role_code: step.role_code,
+    current_role_code: roleCode,
     step_approved: false,
+    completed_at: completedAt,
     is_deleted: false
   };
 
@@ -331,6 +377,17 @@ export async function submitReconciliationAdjustment(lineIds, teamId) {
     .single();
 
   if (reqErr) throw reqErr;
+
+  if (isApproved) {
+    await onReconciliationRequestCompleted(request);
+    await notifyUserForRequest(
+      state.user.id,
+      request,
+      `${request.request_number}  Recon adjustment  Approved`.replace(/\s+/g, ' ').trim()
+    );
+  } else {
+    await notifyRoleForRequest(request, roleCode);
+  }
 
   const linkRows = valid.map(line => ({
     request_id: request.id,
@@ -379,21 +436,25 @@ export async function createTransferApprovalRequest(transfer) {
   if (!steps.length) return null;
 
   const requestNumber = await allocateRequestNumber(transfer.created_by || state.user.id);
-  const step = firstStep(steps);
+  const { step, isApproved } = await resolveNextActiveStep(steps, null, transfer.created_by || state.user.id, transfer.team_id);
+  const status = isApproved ? `${String(step.role_code).toUpperCase()}-APPROVED` : 'SUBMITTED';
+  const roleCode = isApproved ? null : step.role_code;
+  const completedAt = isApproved ? new Date().toISOString() : null;
   const amount = parseFloat(transfer.amount) || 0;
 
   const payload = {
     request_number: requestNumber,
     request_type: REQUEST_TYPES.MONEY_TRANSFER,
     team_id: transfer.team_id,
-    status: 'SUBMITTED',
+    status,
     title: `Transfer ${amount.toFixed(2)} ${transfer.currency || 'USD'}`,
     amount_usd: amount,
     created_by: transfer.created_by || state.user.id,
     transfer_id: transfer.id,
     current_step_order: step.step_order,
-    current_role_code: step.role_code,
+    current_role_code: roleCode,
     step_approved: false,
+    completed_at: completedAt,
     is_deleted: false
   };
 
@@ -407,6 +468,17 @@ export async function createTransferApprovalRequest(transfer) {
     console.warn('createTransferApprovalRequest:', error);
     return null;
   }
+
+  if (isApproved) {
+    await onTransferRequestCompleted(data);
+    await notifyUserForRequest(
+      transfer.created_by || state.user.id,
+      data,
+      `${data.request_number}  Transfer  Approved`.replace(/\s+/g, ' ').trim()
+    );
+  } else {
+    await notifyRoleForRequest(data, roleCode);
+  }
   return data;
 }
 
@@ -414,17 +486,17 @@ async function advanceAfterSend(request, steps) {
   const current = stepByOrder(steps, request.current_step_order);
   if (!current) throw new Error('Invalid flow step');
 
-  const role = String(current.role_code).toUpperCase();
-  const following = nextStep(steps, request.current_step_order);
+  const { step: following, isApproved } = await resolveNextActiveStep(steps, request.current_step_order, request.created_by, request.team_id);
 
   // Remove prior-step home alerts for this request
   await clearOkMessagesForRequest(request.id);
 
-  if (current.is_final || !following) {
-    const finalStatus = `${role}-APPROVED`;
+  if (current.is_final || isApproved || !following) {
+    const finalRole = following ? following.role_code : current.role_code;
+    const finalStatus = `${String(finalRole).toUpperCase()}-APPROVED`;
     const updated = await updateRequest(request.id, {
       status: finalStatus,
-      current_step_order: current.step_order,
+      current_step_order: following ? following.step_order : current.step_order,
       current_role_code: null,
       step_approved: false,
       completed_at: new Date().toISOString()
@@ -447,7 +519,8 @@ async function advanceAfterSend(request, steps) {
     return updated;
   }
 
-  const reviewedStatus = `${role}-REVIEWED`;
+  const currentRole = String(current.role_code).toUpperCase();
+  const reviewedStatus = `${currentRole}-REVIEWED`;
   const updated = await updateRequest(request.id, {
     status: reviewedStatus,
     current_step_order: following.step_order,

@@ -23,17 +23,19 @@ import {
   rejectTransferFromDashboard
 } from './transfer.js';
 
+import { teamAccessLabel } from '../utils/roleLabels.js';
+
 function formatUsd(amount) {
   return '$' + formatUsdDisplay(amount);
 }
 
 export function getDashboardPage() {
   const teamName = state.currentTeam?.team_name || 'your team';
-  const userName = state.user?.name || 'User';
+  const roleLabel = teamAccessLabel(state.userTeamAccess?.access_level) || 'Member';
 
   return `
     <h1 class="page-title">Dashboard</h1>
-    <p class="dash-welcome">Welcome, ${userName} — ${teamName}</p>
+    <p class="dash-welcome">Welcome ${roleLabel} to Team ${teamName}</p>
 
     <div class="stats-grid dash-stats">
       <div class="stat-card stat-card--info">
