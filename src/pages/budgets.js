@@ -1052,6 +1052,7 @@ function renderBudgetSummaryTable(container, budgets) {
  */
 export function renderBudgetReviewHtml(budget, options = {}) {
   const showActions = options.showActions !== false;
+  const isApprovalMode = options.isApprovalMode === true;
   let totalBudgetedUSD = 0;
   let totalSpentUSD = 0;
   let tableRows = '';
@@ -1075,27 +1076,47 @@ export function renderBudgetReviewHtml(budget, options = {}) {
       ? `${Number(localAmtVal).toLocaleString()} ${cat.currency || ''}`
       : '—';
 
-    tableRows += `
-      <tr>
-        <td data-label="Category"><strong>${cat.name || ''}</strong></td>
-        <td data-label="Local">${localDisplay}</td>
-        <td data-label="Budgeted">$${budgetedUSD.toFixed(2)}</td>
-        <td data-label="Spent">$${spentUSD.toFixed(2)}</td>
-        <td data-label="Remaining">$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)</td>
-      </tr>
-    `;
+    if (isApprovalMode) {
+      tableRows += `
+        <tr>
+          <td data-label="Category"><strong>${cat.name || ''}</strong></td>
+          <td data-label="Local">${localDisplay}</td>
+          <td data-label="Budgeted">$${budgetedUSD.toFixed(2)}</td>
+        </tr>
+      `;
 
-    mobileCards += `
-      <article class="data-card data-card--compact">
-        <div class="data-card-top">
-          <span class="data-card-title">${cat.name || ''}</span>
-        </div>
-        ${cardRow('Local', localDisplay)}
-        ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)}`)}
-        ${cardRow('Spent', `$${spentUSD.toFixed(2)}`)}
-        ${cardRow('Remaining', `$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)`)}
-      </article>
-    `;
+      mobileCards += `
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${cat.name || ''}</span>
+          </div>
+          ${cardRow('Local', localDisplay)}
+          ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)}`)}
+        </article>
+      `;
+    } else {
+      tableRows += `
+        <tr>
+          <td data-label="Category"><strong>${cat.name || ''}</strong></td>
+          <td data-label="Local">${localDisplay}</td>
+          <td data-label="Budgeted">$${budgetedUSD.toFixed(2)}</td>
+          <td data-label="Spent">$${spentUSD.toFixed(2)}</td>
+          <td data-label="Remaining">$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)</td>
+        </tr>
+      `;
+
+      mobileCards += `
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${cat.name || ''}</span>
+          </div>
+          ${cardRow('Local', localDisplay)}
+          ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)}`)}
+          ${cardRow('Spent', `$${spentUSD.toFixed(2)}`)}
+          ${cardRow('Remaining', `$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)`)}
+        </article>
+      `;
+    }
   });
 
   const totalRemaining = totalBudgetedUSD - totalSpentUSD;
@@ -1104,6 +1125,41 @@ export function renderBudgetReviewHtml(budget, options = {}) {
   const canEdit = showActions && canOpenBudgetEditor(budget);
   const canDelete = showActions && state.canDeleteBudgets;
   const typeLabel = getBudgetTypeLabel(budget.budget_type);
+
+  if (isApprovalMode) {
+    return `
+      <div class="budget-plan-card">
+        <h4 style="margin: 0 0 15px;">Category Breakdown</h4>
+        <div class="table-container show-desktop">
+          <table class="table-stack-mobile">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Local</th>
+                <th>Budgeted (USD)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows || '<tr><td colspan="3">No categories</td></tr>'}
+            </tbody>
+            <tfoot>
+              <tr style="font-weight: bold; border-top: 2px solid var(--border);">
+                <td>Total Budgeted</td>
+                <td>—</td>
+                <td>$${totalBudgetedUSD.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="show-mobile data-card-list">
+          ${mobileCards || '<p class="empty-state">No categories</p>'}
+          <div style="margin-top: 15px; font-weight: bold; font-size: 1.1em; text-align: right; padding-right: 10px;">
+            Total Budgeted: $${totalBudgetedUSD.toFixed(2)}
+          </div>
+        </div>
+      </div>
+    `;
+  }
 
   return `
     <div class="budget-plan-card">

@@ -76,10 +76,10 @@ export function showConfirm(message, onConfirm, onCancel) {
   const modal = document.createElement('div');
   modal.className = 'modal active';
   modal.innerHTML = `
-    <div class="modal-content small">
+    <div class="modal-content alert-modal-content">
       <h3 class="alert-modal-title">⚠️ Confirm</h3>
-      <div class="alert-modal-body">${message}</div>
-      <div class="btn-group">
+      <div class="alert-modal-body" style="text-align: center; margin-bottom: 20px;">${message}</div>
+      <div class="btn-group" style="justify-content: center; gap: 10px;">
         <button type="button" class="danger" id="confirmBtn">Yes, Proceed</button>
         <button type="button" class="secondary" id="cancelBtn">Cancel</button>
       </div>

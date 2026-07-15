@@ -22,6 +22,8 @@ import {
   approveAndSendBatch
 } from '../utils/approvalEngine.js';
 import { renderBudgetReviewHtml, normalizeBudgetPlan } from './budgets.js';
+import { budgetStatusBadgeHtml } from '../utils/budgetStatus.js';
+import { getBudgetTypeLabel } from '../utils/budgetTypes.js';
 
 /** Full list loaded once; filters/search work on this cache. */
 let inboxCache = [];
@@ -399,18 +401,47 @@ async function portalOpenReviewModal(id) {
   const bodyEl = document.getElementById('approvalReviewModalBody');
   if (!row || !modal || !bodyEl) return;
 
-  if (titleEl) titleEl.textContent = `${row.request_number} — ${row.title || 'Review'}`;
   bodyEl.innerHTML = '<p class="empty-state">Loading…</p>';
   modal.classList.add('active');
 
   try {
     if (row.request_type === 'budget' && row.budget_plan_id) {
-      bodyEl.innerHTML = await buildBudgetReviewBody(row.budget_plan_id);
+      let budget = (state.budgetPlans || []).find(b => b.id === row.budget_plan_id);
+      if (budget) budget = normalizeBudgetPlan(budget);
+      if (!budget) {
+        const { data: rpcData, error: rpcErr } = await supabaseClient
+          .rpc('get_budget_plan_for_review', { p_budget_plan_id: row.budget_plan_id });
+        if (!rpcErr && rpcData?.length) {
+          budget = normalizeBudgetPlan(rpcData[0]);
+        } else {
+          const { data, error } = await supabaseClient
+            .from('budget_plans')
+            .select('*')
+            .eq('id', row.budget_plan_id)
+            .maybeSingle();
+          if (error) throw error;
+          if (data) budget = normalizeBudgetPlan(data);
+        }
+      }
+
+      if (budget) {
+        if (titleEl) {
+          const statusBadge = budgetStatusBadgeHtml(budget);
+          const typeLabel = getBudgetTypeLabel(budget.budget_type);
+          titleEl.innerHTML = `${row.request_number} — ${escapeHtml(row.title || 'Review')} ${statusBadge} <span class="badge badge-secondary">${typeLabel}</span>`;
+        }
+        bodyEl.innerHTML = renderBudgetReviewHtml(budget, { showActions: false, isApprovalMode: true });
+      } else {
+        throw new Error('Budget plan not found');
+      }
     } else if (row.request_type === 'money_transfer' && row.transfer_id) {
+      if (titleEl) titleEl.textContent = `${row.request_number} — ${row.title || 'Review'}`;
       bodyEl.innerHTML = await buildTransferReviewBody(row.transfer_id);
     } else if (row.request_type === 'reconciliation_adjustment') {
+      if (titleEl) titleEl.textContent = `${row.request_number} — ${row.title || 'Review'}`;
       bodyEl.innerHTML = await buildReconReviewBody(row.id, row);
     } else {
+      if (titleEl) titleEl.textContent = `${row.request_number} — ${row.title || 'Review'}`;
       bodyEl.innerHTML = `<p class="empty-state">No linked record to display for this request.</p>
         ${cardRow('Type', TYPE_LABELS[row.request_type] || row.request_type)}
         ${cardRow('Team', escapeHtml(row.teams?.name || '—'))}
@@ -418,6 +449,7 @@ async function portalOpenReviewModal(id) {
     }
   } catch (err) {
     console.error(err);
+    if (titleEl) titleEl.textContent = `${row.request_number} — ${row.title || 'Review'}`;
     bodyEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message || 'Failed to load record')}</p>`;
   }
 }
