@@ -35,16 +35,19 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
   const roleTeams = await loadTeamsFromRoleAssignments(userId);
   rawTeams = [...rawTeams, ...roleTeams];
 
-  // Fetch is_primary values from user_teams table for this user
+  // Fetch membership details from user_teams table for this user
   const { data: userTeamsList } = await supabaseClient
     .from('user_teams')
-    .select('team_id, is_primary')
+    .select('team_id, is_primary, access_level')
     .eq('user_id', userId);
 
-  const primaryMap = {};
+  const membershipMap = {};
   if (userTeamsList) {
     userTeamsList.forEach(ut => {
-      primaryMap[ut.team_id] = !!ut.is_primary;
+      membershipMap[ut.team_id] = {
+        is_primary: !!ut.is_primary,
+        access_level: ut.access_level
+      };
     });
   }
 
@@ -53,7 +56,17 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
   for (const team of rawTeams) {
     if (team && team.team_id && !seenTeamIds.has(team.team_id)) {
       seenTeamIds.add(team.team_id);
-      team.is_primary = !!primaryMap[team.team_id];
+      
+      const explicit = membershipMap[team.team_id];
+      if (explicit) {
+        team.is_primary = explicit.is_primary;
+        team.access_level = explicit.access_level || 'member';
+      } else {
+        team.is_primary = false;
+        team.access_level = 'view';
+        team.from_role_assignment = true;
+      }
+      
       state.teams.push(team);
     }
   }
