@@ -47,6 +47,7 @@ function canViewAllExpenses() {
 }
 
 function canEditExpense(expense) {
+  if (state.isReadOnlyTeamAccess) return false;
   if (!state.canManageExpenses) return false;
   if (canViewAllExpenses()) return true;
   return expense.created_by === state.user?.id;
@@ -1483,7 +1484,8 @@ function deleteExpense(id) {
 
   showConfirm(`Delete expense <strong>${exp.item}</strong> ($${(exp.usd_amount || 0).toFixed(2)})?`, async () => {
     try {
-      await sbSoftDelete('expenses', id);
+      const result = await sbSoftDelete('expenses', id);
+      if (result && result.error) throw result.error;
       teamExpensesCache = teamExpensesCache.filter(e => e.id !== id);
       selectedExpenseIds.delete(id);
       showToast('Expense deleted', 'success');
@@ -1503,12 +1505,25 @@ function deleteSelectedExpenses() {
   if (!ids.length) return;
 
   showConfirm(`Delete ${ids.length} expense(s)?`, async () => {
+    let successCount = 0;
+    let errors = [];
     for (const id of ids) {
-      await sbSoftDelete('expenses', id);
-      selectedExpenseIds.delete(id);
+      try {
+        const result = await sbSoftDelete('expenses', id);
+        if (result && result.error) throw result.error;
+        selectedExpenseIds.delete(id);
+        successCount++;
+      } catch (err) {
+        errors.push(err.message || 'Delete failed');
+      }
     }
     await loadTeamExpenses();
-    showToast(`${ids.length} expense(s) deleted`, 'success');
+    if (successCount > 0) {
+      showToast(`${successCount} expense(s) deleted`, 'success');
+    }
+    if (errors.length > 0) {
+      showToast(`Failed to delete some expenses: ${errors[0]}`, 'error');
+    }
     refreshExpenseList();
   });
 }
