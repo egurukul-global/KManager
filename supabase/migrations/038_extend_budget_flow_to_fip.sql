@@ -1,18 +1,33 @@
--- Extend budget approval flow to FIP (Finance Payments) and support FIP checks for FIH/CAO.
+-- Extend budget approval flow: OPH (1) -> FIN (2) -> FIH (3) -> CAO (4) -> FIH (5) -> FIP (6)
 
--- 1. Update budget approval flow steps
+-- 1. Recreate the budget approval flow steps cleanly
+DELETE FROM public.approval_flow_steps
+WHERE flow_id IN (SELECT id FROM public.approval_flow_definitions WHERE request_type = 'budget')
+  AND step_order >= 5;
+
 UPDATE public.approval_flow_steps
 SET is_final = false
 WHERE flow_id IN (SELECT id FROM public.approval_flow_definitions WHERE request_type = 'budget')
   AND role_code = 'CAO';
 
+-- Insert step 5: FIH
 INSERT INTO public.approval_flow_steps (flow_id, step_order, role_code, is_final)
-SELECT f.id, 5, 'FIP', true
+SELECT f.id, 5, 'FIH', false
 FROM public.approval_flow_definitions f
 WHERE f.request_type = 'budget'
   AND NOT EXISTS (
     SELECT 1 FROM public.approval_flow_steps 
-    WHERE flow_id = f.id AND role_code = 'FIP'
+    WHERE flow_id = f.id AND step_order = 5
+  );
+
+-- Insert step 6: FIP
+INSERT INTO public.approval_flow_steps (flow_id, step_order, role_code, is_final)
+SELECT f.id, 6, 'FIP', true
+FROM public.approval_flow_definitions f
+WHERE f.request_type = 'budget'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.approval_flow_steps 
+    WHERE flow_id = f.id AND step_order = 6
   );
 
 -- 2. Drop and recreate user_has_approval_role to avoid parameter default discrepancies
@@ -102,3 +117,25 @@ BEGIN
   RETURN false;
 END;
 $$;
+
+-- 3. Grant global roles (FIN, FIP, FIH, CAO) read access to all approval requests at all times
+DROP POLICY IF EXISTS approval_requests_select_global_roles ON public.approval_requests;
+
+CREATE POLICY approval_requests_select_global_roles ON public.approval_requests
+  FOR SELECT TO authenticated
+  USING (
+    is_deleted = false
+    AND (
+      EXISTS (
+        SELECT 1 FROM public.request_role_assignments rra
+        WHERE rra.user_id = auth.uid()
+          AND rra.is_active = true
+          AND (rra.team_id IS NULL OR rra.team_id = approval_requests.team_id)
+      )
+      OR EXISTS (
+        SELECT 1 FROM public.users u
+        WHERE u.id = auth.uid()
+          AND u.role IN ('caoh', 'oh', 'admin')
+      )
+    )
+  );

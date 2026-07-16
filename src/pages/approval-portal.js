@@ -917,23 +917,16 @@ function escapeHtml(text) {
 }
 
 async function openCommentsTimeline(requestId) {
-  console.log('openCommentsTimeline called for:', requestId);
   const modal = document.getElementById('approvalCommentsModal');
   if (modal && modal.parentElement !== document.body) {
     document.body.appendChild(modal);
   }
   const timeline = document.getElementById('approvalCommentsTimeline');
-  if (!modal || !timeline) {
-    console.warn('Comments modal or timeline element not found in DOM!', { modal, timeline });
-    return;
-  }
+  if (!modal || !timeline) return;
 
   timeline.innerHTML = '<p class="empty-state">Loading comments…</p>';
   modal.classList.add('active');
   modal.style.display = 'flex';
-  console.log('modal element:', modal);
-  console.log('modal offsetParent:', modal.offsetParent);
-  console.log('modal styles display:', window.getComputedStyle(modal).display);
 
   try {
     const { data: comments, error } = await supabaseClient
@@ -988,7 +981,7 @@ async function openCommentsTimeline(requestId) {
           attachmentHtml = `
             <div style="margin-top: 8px;">
               <a href="${c.resolvedUrl}" target="_blank">
-                <img src="${c.resolvedUrl}" alt="Attachment" style="max-width: 100%; max-height: 150px; border-radius: 4px; border: 1px solid var(--border);">
+                <img src="${c.resolvedUrl}" alt="Attachment" style="max-width: 120px; max-height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: zoom-in;">
               </a>
             </div>`;
         } else {
