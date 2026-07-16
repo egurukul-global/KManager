@@ -855,6 +855,7 @@ export async function initViewBudgetsPage() {
   window.submitBudgetApproval = submitBudgetApprovalHandler;
   window.onBudgetStatusFilterChange = onBudgetStatusFilterChange;
   window.backToBudgetList = backToBudgetList;
+  window.markBudgetReceived = markBudgetReceived;
 
   const container = document.getElementById('budgetsContainer');
   if (!container) {
@@ -968,6 +969,13 @@ function renderBudgetSummaryTable(container, budgets) {
       ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
       : '';
 
+    const isTeamLead = state.userTeamAccess?.access_level === 'lead' || state.userTeamAccess?.access_level === 'admin' || state.user?.role === 'admin';
+    const status = getBudgetStatus(budget);
+    const showMarkReceived = isTeamLead && status === BUDGET_STATUS.PAID;
+    const receivedBtn = showMarkReceived
+      ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.markBudgetReceived('${budget.id}')">Received</button>`
+      : '';
+
     let healthBadge = '';
     if (isOver) healthBadge = '<span class="badge badge-danger">Over Budget</span>';
     else if (totalBudgetedUSD > 0 && totalSpentUSD / totalBudgetedUSD > 0.9) healthBadge = '<span class="badge badge-warning">Near Limit</span>';
@@ -991,6 +999,7 @@ function renderBudgetSummaryTable(container, budgets) {
         <td data-label="Health">${healthBadge}</td>
         <td data-label="Actions" class="action-buttons">
           ${submitBtn}
+          ${receivedBtn}
           ${canEdit ? btnIconEdit(`event.stopPropagation(); window.editBudgetPlan('${budget.id}')`) : ''}
           ${canDelete ? btnIconDelete(`event.stopPropagation(); window.deleteBudgetPlan('${budget.id}')`) : ''}
         </td>
@@ -1003,6 +1012,7 @@ function renderBudgetSummaryTable(container, budgets) {
           <span class="data-card-title">${budget.name}</span>
           <span class="action-icon-group" onclick="event.stopPropagation()">
             ${submitBtn}
+            ${receivedBtn}
             ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
             ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
           </span>
@@ -1085,6 +1095,13 @@ export function renderBudgetReviewHtml(budget, options = {}) {
   const canSubmitApproval = showActions && canSubmitBudgetApproval() && canSubmitBudgetByStatus(budget);
   const submitBtn = canSubmitApproval
     ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
+    : '';
+
+  const isTeamLead = state.userTeamAccess?.access_level === 'lead' || state.userTeamAccess?.access_level === 'admin' || state.user?.role === 'admin';
+  const status = getBudgetStatus(budget);
+  const showMarkReceived = isTeamLead && status === BUDGET_STATUS.PAID;
+  const receivedBtn = showMarkReceived
+    ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.markBudgetReceived('${budget.id}')">Received</button>`
     : '';
 
   (budget.categories || []).forEach(cat => {
@@ -1190,6 +1207,7 @@ export function renderBudgetReviewHtml(budget, options = {}) {
         <span>${budget.name} ${statusBadge} <span class="badge badge-secondary">${typeLabel}</span></span>
         ${showActions ? `<span class="action-icon-group">
           ${submitBtn ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit</button>` : ''}
+          ${receivedBtn ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.markBudgetReceived('${budget.id}')">Received</button>` : ''}
           ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
           ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
         </span>` : ''}
@@ -1264,6 +1282,37 @@ async function submitBudgetApprovalHandler(budgetId) {
     await initViewBudgetsPage();
   } catch (err) {
     showToast(err.message || 'Submit failed', 'error');
+  }
+}
+
+async function markBudgetReceived(budgetId) {
+  const budget = (state.budgetPlans || []).find(b => b.id === budgetId);
+  if (!budget) {
+    showToast('Budget not found', 'error');
+    return;
+  }
+  const isTeamLead = state.userTeamAccess?.access_level === 'lead' || state.userTeamAccess?.access_level === 'admin' || state.user?.role === 'admin';
+  if (!isTeamLead) {
+    showToast('Only team lead can receive budgets', 'warning');
+    return;
+  }
+
+  const ok = await new Promise(resolve => {
+    showConfirm('Mark funds as received in your buckets?', () => resolve(true), () => resolve(false));
+  });
+  if (!ok) return;
+
+  try {
+    const { error } = await supabaseClient
+      .from('budget_plans')
+      .update({ status: 'received' })
+      .eq('id', budgetId);
+
+    if (error) throw error;
+    showToast('Budget marked as RECEIVED. Team can now record expenses!', 'success');
+    await initViewBudgetsPage();
+  } catch (err) {
+    showToast(err.message || 'Action failed', 'error');
   }
 }
 

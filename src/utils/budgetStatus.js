@@ -7,6 +7,8 @@ export const BUDGET_STATUS = {
   SUBMITTED: 'submitted',
   REJECTED: 'rejected',
   APPROVED: 'approved',
+  PAID: 'paid',
+  RECEIVED: 'received',
   ARCHIVED: 'archived'
 };
 
@@ -15,14 +17,17 @@ export const BUDGET_STATUS_LABELS = {
   submitted: 'Submitted',
   rejected: 'Rejected',
   approved: 'Approved',
+  paid: 'Paid',
+  received: 'Received',
   archived: 'Archived'
 };
 
-/** Map approval-engine values to the five budget statuses. */
+/** Map approval-engine values to the budget statuses. */
 export function mapApprovalToBudgetStatus(approvalStatus) {
   const s = String(approvalStatus || '').toUpperCase();
   if (s === 'DRAFT') return BUDGET_STATUS.DRAFT;
   if (s === 'REJECTED') return BUDGET_STATUS.REJECTED;
+  if (s === 'FIP-APPROVED' || s === 'PAID') return BUDGET_STATUS.PAID;
   if (s.endsWith('-APPROVED')) return BUDGET_STATUS.APPROVED;
   if (s === 'SUBMITTED' || s.endsWith('-REVIEWED') || s.startsWith('CLARIFY-')) {
     return BUDGET_STATUS.SUBMITTED;
@@ -85,6 +90,8 @@ export function budgetStatusBadge(budgetOrStatus) {
   if (status === BUDGET_STATUS.SUBMITTED) return { label, class: 'badge-info', status };
   if (status === BUDGET_STATUS.REJECTED) return { label, class: 'badge-danger', status };
   if (status === BUDGET_STATUS.APPROVED) return { label, class: 'badge-success', status };
+  if (status === BUDGET_STATUS.PAID) return { label, class: 'badge-info', status };
+  if (status === BUDGET_STATUS.RECEIVED) return { label, class: 'badge-success', status };
   if (status === BUDGET_STATUS.ARCHIVED) return { label, class: 'badge-secondary', status };
   return { label, class: 'badge-secondary', status };
 }

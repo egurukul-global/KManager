@@ -12,6 +12,7 @@ import {
   supabaseClient
 } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
+import { getBudgetStatus, BUDGET_STATUS } from '../utils/budgetStatus.js';
 import {
   buildExpenseRateOptions,
   buildExpensePayload,
@@ -144,7 +145,10 @@ function populateBudgetSelect(selectEl, currentOnly = true) {
   const current = selectEl.value;
   selectEl.innerHTML = '<option value="">Select budget</option>';
   teamBudgetsCache.forEach(b => {
-    if (currentOnly && (b.status || 'current') !== 'current') return;
+    if (currentOnly) {
+      const status = getBudgetStatus(b);
+      if (status !== BUDGET_STATUS.APPROVED && status !== BUDGET_STATUS.RECEIVED) return;
+    }
     selectEl.innerHTML += `<option value="${b.id}">${b.name}</option>`;
   });
   if (current) selectEl.value = current;

@@ -236,6 +236,27 @@ export async function initDashboardPage() {
       console.warn('Pending transfers load:', pendingErr);
     }
 
+    // Pending approval requests awaiting this user's turn
+    try {
+      const { fetchApprovalInboxRaw } = await import('../utils/approvalEngine.js');
+      const { userCanActOnRequest } = await import('../utils/approvalAccess.js');
+      const approvals = await fetchApprovalInboxRaw();
+      
+      for (const req of approvals) {
+        if (await userCanActOnRequest(req)) {
+          alerts.unshift({
+            level: 'warning',
+            icon: '📝',
+            title: 'Approval request pending',
+            message: `${req.request_number}: ${req.title || 'Untitled'} — Awaiting ${req.current_role_code}`,
+            action: { page: 'approval-portal', label: 'Go to Inbox' }
+          });
+        }
+      }
+    } catch (appErr) {
+      console.warn('Dashboard approvals load:', appErr);
+    }
+
     if (currentEntry && !hasMonthlyForCurrent) {
       alerts.push({
         level: 'danger',

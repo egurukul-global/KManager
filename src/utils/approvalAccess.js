@@ -8,7 +8,7 @@ export const REQUEST_TYPES = {
   RECONCILIATION_ADJUSTMENT: 'reconciliation_adjustment'
 };
 
-export const ROLE_CODES = ['OPS', 'OPL', 'OPH', 'FIN', 'FIH', 'CAO', 'CEO', 'SYS', 'LEG', 'LEH', 'GUT', 'GUH'];
+export const ROLE_CODES = ['OPS', 'OPL', 'OPH', 'FIN', 'FIP', 'FIH', 'CAO', 'CEO', 'SYS', 'LEG', 'LEH', 'GUT', 'GUH'];
 
 /** Org role → built-in approval role codes */
 export function orgRoleToApprovalCodes(orgRole) {
@@ -124,6 +124,12 @@ export async function userCanActOnRequest(request, userId = state.user?.id) {
     const upperCodes = codes.map(c => String(c).toUpperCase());
     if (upperCodes.includes(String(request.current_role_code).toUpperCase())) {
       return true;
+    }
+
+    if (String(request.current_role_code).toUpperCase() === 'FIP') {
+      if (upperCodes.includes('FIH') || upperCodes.includes('CAO')) {
+        return true;
+      }
     }
 
     // Skip level approvals: check if user has a role code defined at a HIGHER step in this flow

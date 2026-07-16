@@ -30,6 +30,7 @@ let inboxCache = [];
 let inboxRows = [];
 let selectedIds = new Set();
 let rowCanActMap = new Map();
+let rowCommentCountMap = new Map();
 let myStepCodes = [];
 
 const TYPE_LABELS = {
@@ -125,6 +126,64 @@ export function getApprovalPortalPage() {
         </div>
       </div>
     </div>
+
+    <div id="approvalActionModal" class="modal">
+      <div class="modal-content" style="max-width: 580px; padding: 18px;">
+        <div class="modal-header-row" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 14px;">
+          <h2 id="approvalActionModalTitle">Approve Request</h2>
+          <div class="modal-header-actions" style="display: flex; gap: 8px;">
+            <button type="button" class="secondary" onclick="window.closeApprovalActionModal()">Cancel</button>
+            <button type="button" class="success" id="approvalActionConfirmBtn" onclick="window.submitApprovalAction()">Confirm</button>
+          </div>
+        </div>
+        
+        <form id="approvalActionForm" onsubmit="event.preventDefault();">
+          <input type="hidden" id="approvalActionRequestId">
+          <input type="hidden" id="approvalActionType">
+          <div class="form-stack" style="display: flex; flex-direction: column; gap: 12px;">
+            <div class="form-group">
+              <textarea id="approvalActionComment" rows="2" placeholder="Write comment / message (optional)..."></textarea>
+            </div>
+
+            <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+              <label style="font-weight: 600; font-size: 0.85rem; color: var(--text-secondary);">Message Visibility</label>
+              <div class="visibility-checkbox-row" style="display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 10px; background: #f9fafb; border: 1px solid var(--border); border-radius: 4px;">
+                <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="vis-role" value="OPL" checked> OPL</label>
+                <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="vis-role" value="OPH" checked> OPH</label>
+                <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="vis-role" value="FIN" checked> FIN</label>
+                <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="vis-role" value="FIP" checked> FIP</label>
+                <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="vis-role" value="FIH" checked> FIH</label>
+                <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="vis-role" value="CAO" checked> CAO</label>
+                <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" id="approvalActionSelectAll" checked> ALL</label>
+              </div>
+              <div class="note-text" style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px;">
+                * Higher steps (FIH, CAO) always view messages shared with lower steps.
+              </div>
+            </div>
+
+            <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+              <label style="font-weight: 600; font-size: 0.85rem; color: var(--text-secondary);">Attachments (Optional)</label>
+              <div class="attachment-upload-zone" onclick="document.getElementById('approvalActionAttachmentFile').click()" style="border: 1px dashed var(--border); border-radius: 4px; padding: 14px; text-align: center; cursor: pointer; color: var(--text-secondary); background: #fafafa; font-size: 0.85rem;">
+                <span id="approvalActionAttachmentLabel">📎 Click to upload receipt or screen print</span>
+                <input type="file" id="approvalActionAttachmentFile" onchange="window.onApprovalAttachmentChange(this)" style="display: none;" accept="image/*,application/pdf">
+              </div>
+              <input type="url" id="approvalActionAttachmentUrl" placeholder="Or paste reference URL (https://...)">
+            </div>
+          </div>
+        </form>
+    </div>
+
+    <div id="approvalCommentsModal" class="modal">
+      <div class="modal-content" style="max-width: 600px;">
+        <button type="button" class="close-modal" onclick="window.closeCommentsTimeline()">&times;</button>
+        <h2>Discussions & Files</h2>
+        <div id="approvalCommentsTimeline" style="max-height: 400px; overflow-y: auto; margin: 16px 0; display: flex; flex-direction: column; gap: 12px; padding-right: 6px;">
+        </div>
+        <div class="btn-group">
+          <button type="button" class="secondary" onclick="window.closeCommentsTimeline()">Close</button>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -138,6 +197,36 @@ export async function initApprovalPortalPage() {
   window.portalAction = portalAction;
   window.portalBatchApprove = portalBatchApprove;
   window.portalRunAction = portalRunAction;
+  window.closeApprovalActionModal = closeApprovalActionModal;
+  window.onApprovalAttachmentChange = onApprovalAttachmentChange;
+  window.submitApprovalAction = submitApprovalAction;
+  window.openCommentsTimeline = openCommentsTimeline;
+  window.closeCommentsTimeline = closeCommentsTimeline;
+
+  // Bind Select All checkbox logic
+  const selectAll = document.getElementById('approvalActionSelectAll');
+  if (selectAll) {
+    selectAll.checked = true;
+    selectAll.addEventListener('change', () => {
+      document.querySelectorAll('#approvalActionModal .vis-role').forEach(cb => {
+        cb.checked = selectAll.checked;
+      });
+    });
+  }
+  document.querySelectorAll('#approvalActionModal .vis-role').forEach(cb => {
+    cb.checked = true;
+    cb.addEventListener('change', () => {
+      const selectAll = document.getElementById('approvalActionSelectAll');
+      if (selectAll) {
+        if (!cb.checked) {
+          selectAll.checked = false;
+        } else {
+          const allChecked = Array.from(document.querySelectorAll('#approvalActionModal .vis-role')).every(r => r.checked);
+          if (allChecked) selectAll.checked = true;
+        }
+      }
+    });
+  });
 
   populateTeamFilter();
   await setupStepFilter();
@@ -271,9 +360,30 @@ async function loadInboxFromServer() {
 
   inboxCache = await fetchApprovalInboxRaw();
   rowCanActMap = new Map();
+  rowCommentCountMap = new Map();
   await Promise.all(inboxCache.map(async row => {
     rowCanActMap.set(row.id, await userCanActOnRequest(row));
   }));
+
+  try {
+    const requestIds = inboxCache.map(r => r.id);
+    if (requestIds.length) {
+      const { data: commentCounts, error: commentError } = await supabaseClient
+        .from('approval_comments')
+        .select('request_id');
+      if (!commentError && commentCounts) {
+        const counts = {};
+        commentCounts.forEach(c => {
+          counts[c.request_id] = (counts[c.request_id] || 0) + 1;
+        });
+        Object.entries(counts).forEach(([reqId, count]) => {
+          rowCommentCountMap.set(reqId, count);
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to load comment counts:', err);
+  }
 }
 
 function searchApprovalPortal() {
@@ -356,13 +466,18 @@ function renderInboxRow(row) {
   const actionsTable = rowActionDropdown(row);
   const actionsMobile = rowActionButtons(row);
 
+  const commentCount = rowCommentCountMap.get(row.id) || 0;
+  const commentIcon = commentCount > 0
+    ? ` <span class="comment-clip-badge" onclick="event.stopPropagation(); window.openCommentsTimeline('${row.id}')" style="cursor:pointer; display:inline-flex; align-items:center; gap:2px; font-size:0.8em; background:#f3f4f6; padding:2px 6px; border-radius:10px; color:#4b5563; font-weight:normal;" title="Click to view discussions">📎 ${commentCount}</span>`
+    : ` <span class="comment-clip-badge" onclick="event.stopPropagation(); window.openCommentsTimeline('${row.id}')" style="cursor:pointer; display:inline-flex; align-items:center; gap:2px; font-size:0.8em; color:#9ca3af; font-weight:normal;" title="Click to view discussions">📎</span>`;
+
   const table = `
     <tr class="row-clickable" onclick="window.portalOpenDetail('${row.id}')">
       <td data-label="Select" onclick="event.stopPropagation()">
         <input type="checkbox" data-portal-id="${row.id}" onchange="window.portalToggleSelect('${row.id}', this.checked)">
       </td>
       <td data-label="Request"><strong>${row.request_number}</strong>${mineBadge}</td>
-      <td data-label="Title">${escapeHtml(row.title || '—')}</td>
+      <td data-label="Title">${escapeHtml(row.title || '—')}${commentIcon}</td>
       <td data-label="Type">${typeLabel}</td>
       <td data-label="Team">${teamName}</td>
       <td data-label="Amount">${amount}</td>
@@ -381,7 +496,7 @@ function renderInboxRow(row) {
         </label>
         <span class="badge ${badge.class}">${badge.label}</span>
       </div>
-      ${cardRow('Title', escapeHtml(row.title || '—'))}
+      ${cardRow('Title', `${escapeHtml(row.title || '—')}${commentIcon}`)}
       ${cardRow('Type', typeLabel)}
       ${cardRow('Team', teamName)}
       ${cardRow('Amount', amount)}
@@ -589,55 +704,154 @@ async function buildReconReviewBody(requestId, row) {
 
 async function portalAction(event, action, id) {
   const btn = event?.currentTarget;
-  setButtonLoading(btn, true);
-  try {
-    if (action === 'approve') {
-      await approveAndSendRequest(id, '');
-      showToast('1 request approved', 'success');
-    } else if (action === 'reject') {
-      const note = await showPrompt('Optional note for the requester.', {
-        title: 'Reject request',
-        label: 'Reason',
-        placeholder: 'Why is this rejected?',
-        multiline: true,
-        required: false,
-        okLabel: 'Reject'
-      });
-      if (note === null) return;
-      await rejectRequest(id, note || 'Rejected');
-      showToast('1 request rejected', 'success');
-    } else if (action === 'clarify') {
-      const note = await showPrompt('What needs to be clarified?', {
-        title: 'Ask for clarification',
-        label: 'Message to requester',
-        placeholder: 'Describe what you need…',
-        multiline: true,
-        required: true,
-        okLabel: 'Send'
-      });
-      if (!note) return;
-      await clarifyRequest(id, 'REQUESTER', note);
-      showToast('Clarification requested', 'success');
-    } else if (action === 'reply') {
-      const note = await showPrompt('Your reply to the clarification.', {
-        title: 'Reply',
-        label: 'Message',
-        placeholder: 'Type your reply…',
-        multiline: true,
-        required: true,
-        okLabel: 'Send reply'
-      });
-      if (!note) return;
-      await replyClarification(id, note);
-      showToast('Reply sent', 'success');
-    } else if (action === 'cancel') {
-      const ok = await new Promise(resolve => {
-        showConfirm('Cancel this request back to Draft?', () => resolve(true), () => resolve(false));
-      });
-      if (!ok) return;
+  if (action === 'approve' || action === 'reject' || action === 'clarify' || action === 'reply') {
+    openApprovalActionModal(id, action);
+    return;
+  }
+  if (action === 'cancel') {
+    const ok = await new Promise(resolve => {
+      showConfirm('Cancel this request back to Draft?', () => resolve(true), () => resolve(false));
+    });
+    if (!ok) return;
+    setButtonLoading(btn, true);
+    try {
+      const { cancelRequest } = await import('../utils/approvalEngine.js');
       await cancelRequest(id, 'Cancelled by requester');
       showToast('Cancelled', 'success');
+      portalCloseReviewModal();
+      await loadInboxFromServer();
+      searchApprovalPortal();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Action failed', 'error');
+    } finally {
+      setButtonLoading(btn, false);
     }
+  }
+}
+
+function openApprovalActionModal(requestId, actionType) {
+  const modal = document.getElementById('approvalActionModal');
+  if (!modal) return;
+
+  document.getElementById('approvalActionRequestId').value = requestId;
+  document.getElementById('approvalActionType').value = actionType;
+  document.getElementById('approvalActionComment').value = '';
+  document.getElementById('approvalActionAttachmentUrl').value = '';
+  document.getElementById('approvalActionAttachmentFile').value = '';
+  document.getElementById('approvalActionAttachmentLabel').textContent = '📎 Click to upload receipt or screen print';
+  
+  document.querySelectorAll('#approvalActionModal .vis-role').forEach(cb => cb.checked = true);
+  const selectAll = document.getElementById('approvalActionSelectAll');
+  if (selectAll) selectAll.checked = true;
+
+  const titleEl = document.getElementById('approvalActionModalTitle');
+  const confirmBtn = document.getElementById('approvalActionConfirmBtn');
+  if (titleEl && confirmBtn) {
+    if (actionType === 'approve') {
+      titleEl.textContent = 'Approve Request';
+      confirmBtn.textContent = 'Approve';
+      confirmBtn.className = 'success';
+    } else if (actionType === 'reject') {
+      titleEl.textContent = 'Reject Request';
+      confirmBtn.textContent = 'Reject';
+      confirmBtn.className = 'danger';
+    } else if (actionType === 'clarify') {
+      titleEl.textContent = 'Ask Clarification';
+      confirmBtn.textContent = 'Ask';
+      confirmBtn.className = 'warning';
+    } else if (actionType === 'reply') {
+      titleEl.textContent = 'Reply Clarification';
+      confirmBtn.textContent = 'Reply';
+      confirmBtn.className = 'success';
+    }
+  }
+
+  modal.classList.add('active');
+}
+
+function closeApprovalActionModal() {
+  const modal = document.getElementById('approvalActionModal');
+  modal?.classList.remove('active');
+}
+
+function onApprovalAttachmentChange(input) {
+  const label = document.getElementById('approvalActionAttachmentLabel');
+  if (label) {
+    if (input.files && input.files[0]) {
+      label.textContent = `📎 Selected: ${input.files[0].name}`;
+    } else {
+      label.textContent = '📎 Click to upload receipt or screen print';
+    }
+  }
+}
+
+async function submitApprovalAction() {
+  const confirmBtn = document.getElementById('approvalActionConfirmBtn');
+  const id = document.getElementById('approvalActionRequestId').value;
+  const action = document.getElementById('approvalActionType').value;
+  const comment = document.getElementById('approvalActionComment').value.trim();
+  const attachmentUrl = document.getElementById('approvalActionAttachmentUrl').value.trim();
+  const fileInput = document.getElementById('approvalActionAttachmentFile');
+  
+  const visibleTo = [];
+  document.querySelectorAll('#approvalActionModal .vis-role').forEach(cb => {
+    if (cb.checked) visibleTo.push(cb.value);
+  });
+  if (document.getElementById('approvalActionSelectAll')?.checked) {
+    visibleTo.push('ALL');
+  }
+
+  setButtonLoading(confirmBtn, true);
+  try {
+    let finalAttachmentUrl = attachmentUrl;
+    let finalAttachmentName = '';
+    
+    if (fileInput.files && fileInput.files[0]) {
+      const file = fileInput.files[0];
+      finalAttachmentName = file.name;
+      const path = `approval_attachments/${id}/${Date.now()}_${file.name}`;
+      const { data: uploadData, error: uploadErr } = await supabaseClient.storage
+        .from('receipts')
+        .upload(path, file);
+      if (uploadErr) throw uploadErr;
+      
+      const { data: urlData } = supabaseClient.storage
+        .from('receipts')
+        .getPublicUrl(path);
+      finalAttachmentUrl = urlData?.publicUrl || '';
+    }
+
+    if (comment || finalAttachmentUrl) {
+      const { error: commentErr } = await supabaseClient
+        .from('approval_comments')
+        .insert({
+          request_id: id,
+          user_id: state.user.id,
+          comment: comment || null,
+          visible_to: visibleTo,
+          attachment_url: finalAttachmentUrl || null,
+          attachment_name: finalAttachmentName || null
+        });
+      if (commentErr) throw commentErr;
+    }
+
+    const { approveAndSendRequest, rejectRequest, clarifyRequest, replyClarification } = await import('../utils/approvalEngine.js');
+    if (action === 'approve') {
+      await approveAndSendRequest(id, comment);
+      showToast('1 request approved', 'success');
+    } else if (action === 'reject') {
+      await rejectRequest(id, comment || 'Rejected');
+      showToast('1 request rejected', 'success');
+    } else if (action === 'clarify') {
+      await clarifyRequest(id, 'REQUESTER', comment);
+      showToast('Clarification requested', 'success');
+    } else if (action === 'reply') {
+      await replyClarification(id, comment);
+      showToast('Reply sent', 'success');
+    }
+    
+    closeApprovalActionModal();
     portalCloseReviewModal();
     await loadInboxFromServer();
     searchApprovalPortal();
@@ -645,7 +859,7 @@ async function portalAction(event, action, id) {
     console.error(err);
     showToast(err.message || 'Action failed', 'error');
   } finally {
-    setButtonLoading(btn, false);
+    setButtonLoading(confirmBtn, false);
   }
 }
 
@@ -701,4 +915,73 @@ function escapeHtml(text) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/"/g, '&quot;');
+}
+
+async function openCommentsTimeline(requestId) {
+  const modal = document.getElementById('approvalCommentsModal');
+  const timeline = document.getElementById('approvalCommentsTimeline');
+  if (!modal || !timeline) return;
+
+  timeline.innerHTML = '<p class="empty-state">Loading comments…</p>';
+  modal.classList.add('active');
+
+  try {
+    const { data: comments, error } = await supabaseClient
+      .from('approval_comments')
+      .select('*, users(role, name, email)')
+      .eq('request_id', requestId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    if (!comments || !comments.length) {
+      timeline.innerHTML = '<p class="empty-state">No comments or files shared with your role.</p>';
+      return;
+    }
+
+    timeline.innerHTML = comments.map(c => {
+      const date = new Date(c.created_at).toLocaleString();
+      const senderName = c.users?.name || c.users?.email || 'System';
+      const senderRole = c.users?.role ? ` (${c.users.role.toUpperCase()})` : '';
+      
+      let attachmentHtml = '';
+      if (c.attachment_url) {
+        const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(c.attachment_url);
+        if (isImage) {
+          attachmentHtml = `
+            <div style="margin-top: 8px;">
+              <a href="${c.attachment_url}" target="_blank">
+                <img src="${c.attachment_url}" alt="Attachment" style="max-width: 100%; max-height: 150px; border-radius: 4px; border: 1px solid var(--border);">
+              </a>
+            </div>`;
+        } else {
+          const name = c.attachment_name || 'View Attachment';
+          attachmentHtml = `
+            <div style="margin-top: 8px; font-size: 0.9em;">
+              📎 <a href="${c.attachment_url}" target="_blank" style="color: var(--primary); text-decoration: underline;">${escapeHtml(name)}</a>
+            </div>`;
+        }
+      }
+
+      return `
+        <div style="background: #f9fafb; border: 1px solid var(--border); border-radius: 6px; padding: 12px; position: relative;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.8em; color: var(--text-secondary); margin-bottom: 6px;">
+            <strong>${escapeHtml(senderName)}${escapeHtml(senderRole)}</strong>
+            <span>${date}</span>
+          </div>
+          <div style="font-size: 0.95em; white-space: pre-wrap; word-break: break-word;">${escapeHtml(c.comment || 'Attachment shared')}</div>
+          ${attachmentHtml}
+        </div>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error('Failed to load comments:', err);
+    timeline.innerHTML = `<p class="empty-state" style="color: var(--danger);">Failed to load comments: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function closeCommentsTimeline() {
+  const modal = document.getElementById('approvalCommentsModal');
+  modal?.classList.remove('active');
 }
