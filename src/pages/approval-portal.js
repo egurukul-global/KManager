@@ -976,21 +976,11 @@ async function openCommentsTimeline(requestId) {
       
       let attachmentHtml = '';
       if (c.attachment_url) {
-        const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(c.attachment_url);
-        if (isImage) {
-          attachmentHtml = `
-            <div style="margin-top: 8px;">
-              <a href="${c.resolvedUrl}" target="_blank">
-                <img src="${c.resolvedUrl}" alt="Attachment" style="max-width: 120px; max-height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: zoom-in;">
-              </a>
-            </div>`;
-        } else {
-          const name = c.attachment_name || 'View Attachment';
-          attachmentHtml = `
-            <div style="margin-top: 8px; font-size: 0.9em;">
-              📎 <a href="${c.resolvedUrl}" target="_blank" style="color: var(--primary); text-decoration: underline;">${escapeHtml(name)}</a>
-            </div>`;
-        }
+        const name = c.attachment_name || 'View Attachment';
+        attachmentHtml = `
+          <div style="margin-top: 8px; font-size: 0.9em;">
+            📎 <a href="${c.resolvedUrl}" target="_blank" style="color: var(--primary); text-decoration: underline;">${escapeHtml(name)}</a>
+          </div>`;
       }
 
       return `
