@@ -924,6 +924,9 @@ async function openCommentsTimeline(requestId) {
   timeline.innerHTML = '<p class="empty-state">Loading comments…</p>';
   modal.classList.add('active');
   modal.style.display = 'flex';
+  console.log('modal element:', modal);
+  console.log('modal offsetParent:', modal.offsetParent);
+  console.log('modal styles display:', window.getComputedStyle(modal).display);
 
   try {
     const { data: comments, error } = await supabaseClient
