@@ -769,11 +769,13 @@ function openApprovalActionModal(requestId, actionType) {
   }
 
   modal.classList.add('active');
+  modal.style.display = 'flex';
 }
 
 function closeApprovalActionModal() {
   const modal = document.getElementById('approvalActionModal');
   modal?.classList.remove('active');
+  if (modal) modal.style.display = 'none';
 }
 
 function onApprovalAttachmentChange(input) {
@@ -921,6 +923,7 @@ async function openCommentsTimeline(requestId) {
 
   timeline.innerHTML = '<p class="empty-state">Loading comments…</p>';
   modal.classList.add('active');
+  modal.style.display = 'flex';
 
   try {
     const { data: comments, error } = await supabaseClient
@@ -1008,4 +1011,5 @@ async function openCommentsTimeline(requestId) {
 function closeCommentsTimeline() {
   const modal = document.getElementById('approvalCommentsModal');
   modal?.classList.remove('active');
+  if (modal) modal.style.display = 'none';
 }
