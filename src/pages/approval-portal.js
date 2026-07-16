@@ -911,9 +911,13 @@ function escapeHtml(text) {
 }
 
 async function openCommentsTimeline(requestId) {
+  console.log('openCommentsTimeline called for:', requestId);
   const modal = document.getElementById('approvalCommentsModal');
   const timeline = document.getElementById('approvalCommentsTimeline');
-  if (!modal || !timeline) return;
+  if (!modal || !timeline) {
+    console.warn('Comments modal or timeline element not found in DOM!', { modal, timeline });
+    return;
+  }
 
   timeline.innerHTML = '<p class="empty-state">Loading comments…</p>';
   modal.classList.add('active');
