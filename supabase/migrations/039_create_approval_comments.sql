@@ -14,28 +14,18 @@ CREATE TABLE IF NOT EXISTS public.approval_comments (
 -- Enable RLS
 ALTER TABLE public.approval_comments ENABLE ROW LEVEL SECURITY;
 
--- Drop policies if they exist to prevent conflicts
+-- Drop policies explicitly first to prevent duplication errors
 DROP POLICY IF EXISTS select_approval_comments ON public.approval_comments;
 DROP POLICY IF EXISTS insert_approval_comments ON public.approval_comments;
 
--- Select policy: User is creator OR 'ALL' in visible_to OR user has one of the roles in visible_to
+-- Simplified Select policy: If you can see the request, you can see its comments
 CREATE POLICY select_approval_comments ON public.approval_comments
 FOR SELECT
 TO authenticated
 USING (
-  user_id = auth.uid()
-  OR 'ALL' = ANY(visible_to)
-  OR EXISTS (
-    SELECT 1
-    FROM public.approval_requests r
+  EXISTS (
+    SELECT 1 FROM public.approval_requests r
     WHERE r.id = request_id
-      AND (
-        EXISTS (
-          SELECT 1
-          FROM unnest(visible_to) AS role_code
-          WHERE public.user_has_approval_role(auth.uid(), role_code, r.team_id)
-        )
-      )
   )
 );
 
