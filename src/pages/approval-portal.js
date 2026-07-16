@@ -735,6 +735,10 @@ function openApprovalActionModal(requestId, actionType) {
   const modal = document.getElementById('approvalActionModal');
   if (!modal) return;
 
+  if (modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
+
   document.getElementById('approvalActionRequestId').value = requestId;
   document.getElementById('approvalActionType').value = actionType;
   document.getElementById('approvalActionComment').value = '';
@@ -915,6 +919,9 @@ function escapeHtml(text) {
 async function openCommentsTimeline(requestId) {
   console.log('openCommentsTimeline called for:', requestId);
   const modal = document.getElementById('approvalCommentsModal');
+  if (modal && modal.parentElement !== document.body) {
+    document.body.appendChild(modal);
+  }
   const timeline = document.getElementById('approvalCommentsTimeline');
   if (!modal || !timeline) {
     console.warn('Comments modal or timeline element not found in DOM!', { modal, timeline });
