@@ -921,7 +921,7 @@ async function openCommentsTimeline(requestId) {
   try {
     const { data: comments, error } = await supabaseClient
       .from('approval_comments')
-      .select('*, users(role, name, email)')
+      .select('*')
       .eq('request_id', requestId)
       .order('created_at', { ascending: true });
 
@@ -930,6 +930,20 @@ async function openCommentsTimeline(requestId) {
     if (!comments || !comments.length) {
       timeline.innerHTML = '<p class="empty-state">No comments or files shared with your role.</p>';
       return;
+    }
+
+    const userIds = [...new Set(comments.map(c => c.user_id))];
+    const usersMap = {};
+    if (userIds.length) {
+      const { data: usersData, error: userError } = await supabaseClient
+        .from('users')
+        .select('id, name, email, role')
+        .in('id', userIds);
+      if (!userError && usersData) {
+        usersData.forEach(u => {
+          usersMap[u.id] = u;
+        });
+      }
     }
 
     const commentsWithUrls = await Promise.all(comments.map(async c => {
@@ -945,9 +959,10 @@ async function openCommentsTimeline(requestId) {
     }));
 
     timeline.innerHTML = commentsWithUrls.map(c => {
+      const u = usersMap[c.user_id] || {};
       const date = new Date(c.created_at).toLocaleString();
-      const senderName = c.users?.name || c.users?.email || 'System';
-      const senderRole = c.users?.role ? ` (${c.users.role.toUpperCase()})` : '';
+      const senderName = u.name || u.email || 'System';
+      const senderRole = u.role ? ` (${u.role.toUpperCase()})` : '';
       
       let attachmentHtml = '';
       if (c.attachment_url) {
