@@ -4,6 +4,7 @@ import { supabaseClient } from '../db.js';
 import { showToast, showConfirm, showPrompt } from '../components/toasts.js';
 import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
 import { approvalStatusBadge } from '../utils/approvalConstants.js';
+import { uploadReceipt, resolveReceiptViewUrl } from '../utils/upload.js';
 import {
   userCanActOnRequest,
   canCancelRequest,
@@ -810,16 +811,8 @@ async function submitApprovalAction() {
     if (fileInput.files && fileInput.files[0]) {
       const file = fileInput.files[0];
       finalAttachmentName = file.name;
-      const path = `approval_attachments/${id}/${Date.now()}_${file.name}`;
-      const { data: uploadData, error: uploadErr } = await supabaseClient.storage
-        .from('receipts')
-        .upload(path, file);
-      if (uploadErr) throw uploadErr;
-      
-      const { data: urlData } = supabaseClient.storage
-        .from('receipts')
-        .getPublicUrl(path);
-      finalAttachmentUrl = urlData?.publicUrl || '';
+      const { objectKey } = await uploadReceipt(file);
+      finalAttachmentUrl = objectKey;
     }
 
     if (comment || finalAttachmentUrl) {
@@ -939,7 +932,19 @@ async function openCommentsTimeline(requestId) {
       return;
     }
 
-    timeline.innerHTML = comments.map(c => {
+    const commentsWithUrls = await Promise.all(comments.map(async c => {
+      let resolvedUrl = c.attachment_url || '';
+      if (c.attachment_url) {
+        try {
+          resolvedUrl = await resolveReceiptViewUrl(c.attachment_url);
+        } catch (e) {
+          console.warn('Failed to resolve attachment URL:', e);
+        }
+      }
+      return { ...c, resolvedUrl };
+    }));
+
+    timeline.innerHTML = commentsWithUrls.map(c => {
       const date = new Date(c.created_at).toLocaleString();
       const senderName = c.users?.name || c.users?.email || 'System';
       const senderRole = c.users?.role ? ` (${c.users.role.toUpperCase()})` : '';
@@ -950,15 +955,15 @@ async function openCommentsTimeline(requestId) {
         if (isImage) {
           attachmentHtml = `
             <div style="margin-top: 8px;">
-              <a href="${c.attachment_url}" target="_blank">
-                <img src="${c.attachment_url}" alt="Attachment" style="max-width: 100%; max-height: 150px; border-radius: 4px; border: 1px solid var(--border);">
+              <a href="${c.resolvedUrl}" target="_blank">
+                <img src="${c.resolvedUrl}" alt="Attachment" style="max-width: 100%; max-height: 150px; border-radius: 4px; border: 1px solid var(--border);">
               </a>
             </div>`;
         } else {
           const name = c.attachment_name || 'View Attachment';
           attachmentHtml = `
             <div style="margin-top: 8px; font-size: 0.9em;">
-              📎 <a href="${c.attachment_url}" target="_blank" style="color: var(--primary); text-decoration: underline;">${escapeHtml(name)}</a>
+              📎 <a href="${c.resolvedUrl}" target="_blank" style="color: var(--primary); text-decoration: underline;">${escapeHtml(name)}</a>
             </div>`;
         }
       }
