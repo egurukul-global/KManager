@@ -1,11 +1,11 @@
 // ==================== ROLE ASSIGNMENTS — FIN etc. (Phase 4B) ====================
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
-import { showToast } from '../components/toasts.js';
+import { showToast, showConfirm } from '../components/toasts.js';
 import { cardRow } from '../utils/uiHelpers.js';
 import { canManageRoleAssignments } from '../utils/approvalAccess.js';
 
-const EXTENDED_ROLES = ['FIN', 'LEG', 'LEH', 'GUT', 'GUH'];
+const EXTENDED_ROLES = ['FIN', 'FIP', 'LEG', 'LEH', 'GUT', 'GUH'];
 const ORG_ASSIGNABLE_ROLES = ['FIH', 'CAO'];
 
 let usersCache = [];
@@ -290,17 +290,19 @@ async function saveRoleAssignment(e) {
   }
 }
 
-async function deactivateRoleAssignment(id) {
-  try {
-    const { error } = await supabaseClient
-      .from('request_role_assignments')
-      .update({ is_active: false })
-      .eq('id', id);
+function deactivateRoleAssignment(id) {
+  showConfirm('Are you sure you want to remove this role assignment?', async () => {
+    try {
+      const { error } = await supabaseClient
+        .from('request_role_assignments')
+        .update({ is_active: false })
+        .eq('id', id);
 
-    if (error) throw error;
-    showToast('Assignment removed', 'success');
-    await loadAssignments();
-  } catch (err) {
-    showToast(err.message || 'Failed to remove', 'error');
-  }
+      if (error) throw error;
+      showToast('Assignment removed', 'success');
+      await loadAssignments();
+    } catch (err) {
+      showToast(err.message || 'Failed to remove', 'error');
+    }
+  });
 }

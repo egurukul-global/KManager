@@ -843,7 +843,7 @@ async function submitApprovalAction() {
       await rejectRequest(id, comment || 'Rejected');
       showToast('1 request rejected', 'success');
     } else if (action === 'clarify') {
-      await clarifyRequest(id, 'REQUESTER', comment);
+      await clarifyRequest(id, 'OPL', comment);
       showToast('Clarification requested', 'success');
     } else if (action === 'reply') {
       await replyClarification(id, comment);

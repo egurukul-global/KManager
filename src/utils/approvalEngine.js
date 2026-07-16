@@ -691,15 +691,16 @@ export async function clarifyRequest(requestId, roleCode, message) {
     throw new Error('You are not authorized to request clarification');
   }
 
-  // Clarification always goes back to the person who submitted the request
   const body = String(message || '').trim();
   if (!body) throw new Error('Clarification message is required');
 
   await insertMessage(requestId, `[Clarify] ${body}`);
 
-  const status = 'CLARIFY-REQUESTER';
+  const status = 'CLARIFY-OPL';
   const updated = await updateRequest(requestId, {
     status,
+    current_role_code: 'OPL',
+    clarified_by_role: request.current_role_code,
     step_approved: false
   });
 
@@ -708,11 +709,7 @@ export async function clarifyRequest(requestId, roleCode, message) {
   }
 
   await clearOkMessagesForRequest(request.id);
-  await notifyUserForRequest(
-    request.created_by,
-    updated,
-    `${approvalNotifyLine(updated)}  Needs reply`
-  );
+  await notifyRoleForRequest(updated, 'OPL');
 
   return updated;
 }
@@ -736,12 +733,10 @@ export async function replyClarification(requestId, message) {
 
   await insertMessage(requestId, body);
 
-  const steps = await resolveFlowSteps(request.request_type, request.team_id);
-  const step = stepByOrder(steps, request.current_step_order) || firstStep(steps);
-
   const updated = await updateRequest(requestId, {
     status: 'SUBMITTED',
-    current_role_code: step?.role_code || request.current_role_code,
+    current_role_code: request.clarified_by_role || request.current_role_code,
+    clarified_by_role: null,
     step_approved: false
   });
 
