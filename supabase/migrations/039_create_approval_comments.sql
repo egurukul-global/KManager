@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS public.approval_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   request_id UUID NOT NULL REFERENCES public.approval_requests(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   comment TEXT,
   visible_to TEXT[] NOT NULL DEFAULT '{}',
   attachment_url TEXT,
@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS public.approval_comments (
 
 -- Enable RLS
 ALTER TABLE public.approval_comments ENABLE ROW LEVEL SECURITY;
+
+-- Drop policies if they exist to prevent conflicts
+DROP POLICY IF EXISTS select_approval_comments ON public.approval_comments;
+DROP POLICY IF EXISTS insert_approval_comments ON public.approval_comments;
 
 -- Select policy: User is creator OR 'ALL' in visible_to OR user has one of the roles in visible_to
 CREATE POLICY select_approval_comments ON public.approval_comments
