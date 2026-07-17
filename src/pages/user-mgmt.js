@@ -16,6 +16,8 @@ const USER_SELECT_MODAL_ID = 'userSelectModal';
 
 const ORG_ROLE_FILTERS = [
   { value: 'user', label: 'User' },
+  { value: 'fin', label: 'Finance reviewer (FIN)' },
+  { value: 'fip', label: 'Finance payments (FIP)' },
   { value: 'oh', label: 'Finance head (FIH)' },
   { value: 'caoh', label: 'Chief admin (CAO)' },
   { value: 'ceo', label: 'CEO' },

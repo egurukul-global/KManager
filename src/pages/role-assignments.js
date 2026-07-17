@@ -58,7 +58,11 @@ export function getRoleAssignmentsPage() {
       <form id="roleAssignForm" onsubmit="window.saveRoleAssignment(event)">
         <div class="form-grid">
           <div class="form-group">
-            <label>User</label>
+            <label>Search User</label>
+            <input type="text" id="roleAssignUserSearch" placeholder="Type to filter..." oninput="window.filterAssignUsers(this.value)" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>Select User</label>
             <select id="roleAssignUserId" required>
               <option value="">Loading users…</option>
             </select>
@@ -141,6 +145,26 @@ function populateUserSelect() {
 export async function initRoleAssignmentsPage() {
   window.saveRoleAssignment = saveRoleAssignment;
   window.deactivateRoleAssignment = deactivateRoleAssignment;
+  window.filterAssignUsers = function(query) {
+    const q = String(query || '').trim().toLowerCase();
+    const select = document.getElementById('roleAssignUserId');
+    if (!select) return;
+    
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">Select user…</option>' + 
+      usersCache
+        .filter(u => {
+          if (!q) return true;
+          const name = String(u.name || '').toLowerCase();
+          const email = String(u.email || '').toLowerCase();
+          return name.includes(q) || email.includes(q);
+        })
+        .map(u => {
+          const sel = u.id === currentVal ? ' selected' : '';
+          return `<option value="${u.id}"${sel}>${escapeHtml(userLabel(u))}</option>`;
+        })
+        .join('');
+  };
 
   if (!canManageRoleAssignments()) return;
 
