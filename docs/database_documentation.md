@@ -14,6 +14,7 @@ Stores user profile information and global organization roles.
 * `role` (`TEXT`): Global org role (`user`, `fin`, `fip`, `oh`, `caoh`, `ceo`, `admin`).
 * `gender` (`TEXT`): Monastic category classification (`male`, `female`).
 * `clearance_level` (`TEXT`): Messaging access clearance (`restricted`, `standard`, `supervisor`).
+* `escalation_tokens` (`INTEGER`): Count of remaining escalation strikes (0 to 3, default 3).
 * `created_at` (`TIMESTAMPTZ`): Profile creation date.
 
 ### `public.teams`
@@ -21,6 +22,9 @@ Groups of users representing departments, geographic locations, or projects.
 * `id` (`UUID`, PK): Unique team identifier.
 * `name` (`TEXT`, Unique): Display name of the team.
 * `is_personal_team` (`BOOLEAN`): Set to true for private individual work teams.
+* `has_budget_access` (`BOOLEAN`): True if team has Budget and Expense features active.
+* `has_tasks_access` (`BOOLEAN`): True if team has Task and Issue Tracker active.
+* `has_lms_access` (`BOOLEAN`): True if team has Gurukul LMS features active.
 * `created_at` (`TIMESTAMPTZ`): Creation timestamp.
 
 ### `public.user_teams`

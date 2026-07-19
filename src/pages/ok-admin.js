@@ -122,7 +122,7 @@ export function initOkAdminPage() {
 async function loadUsers() {
   const { data, error } = await supabaseClient
     .from('users')
-    .select('id, email, name, role, on_hold')
+    .select('id, email, name, role, on_hold, gender, clearance_level, escalation_tokens')
     .order('name');
   if (error) {
     showToast(error.message || 'Could not load people', 'error');
@@ -211,6 +211,37 @@ async function selectUser(userId) {
       </button>
     </div>
 
+    <h3 style="margin-top:20px;">Profile & Guardrails</h3>
+    <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;">
+      <div class="form-group" style="flex: 1; min-width: 150px;">
+        <label for="okSelectRole">Global Role</label>
+        <select id="okSelectRole" class="form-control" style="width: 100%; height: 38px; border-radius: 6px; border: 1px solid var(--border); padding: 6px 12px; background: white;">
+          <option value="user" ${user.role === 'user' ? 'selected' : ''}>User</option>
+          <option value="fin" ${user.role === 'fin' ? 'selected' : ''}>FIN</option>
+          <option value="fip" ${user.role === 'fip' ? 'selected' : ''}>FIP</option>
+          <option value="oh" ${user.role === 'oh' ? 'selected' : ''}>OH (FIH)</option>
+          <option value="caoh" ${user.role === 'caoh' ? 'selected' : ''}>CAOH (CAO)</option>
+          <option value="ceo" ${user.role === 'ceo' ? 'selected' : ''}>CEO</option>
+          <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 150px;">
+        <label for="okSelectGender">Gender</label>
+        <select id="okSelectGender" class="form-control" style="width: 100%; height: 38px; border-radius: 6px; border: 1px solid var(--border); padding: 6px 12px; background: white;">
+          <option value="male" ${user.gender === 'male' ? 'selected' : ''}>Male</option>
+          <option value="female" ${user.gender === 'female' ? 'selected' : ''}>Female</option>
+        </select>
+      </div>
+      <div class="form-group" style="flex: 1; min-width: 150px;">
+        <label for="okSelectTokens">Escalation Tokens</label>
+        <select id="okSelectTokens" class="form-control" style="width: 100%; height: 38px; border-radius: 6px; border: 1px solid var(--border); padding: 6px 12px; background: white;">
+          <option value="1" ${user.escalation_tokens === 1 ? 'selected' : ''}>1</option>
+          <option value="2" ${user.escalation_tokens === 2 ? 'selected' : ''}>2</option>
+          <option value="3" ${user.escalation_tokens === 3 || user.escalation_tokens === undefined || user.escalation_tokens === null ? 'selected' : ''}>3 (Default)</option>
+        </select>
+      </div>
+    </div>
+
     <h3>Apps</h3>
     <div class="ok-access-checks" id="okAppChecks">
       ${OK_APPS.map(a => `
@@ -273,6 +304,28 @@ async function toggleAdmin(user, currentlyAdmin) {
 }
 
 async function saveAccess(userId) {
+  const roleValue = document.getElementById('okSelectRole').value;
+  const genderValue = document.getElementById('okSelectGender').value;
+  const tokensValue = parseInt(document.getElementById('okSelectTokens').value, 10);
+
+  const { error: userUpdateErr } = await supabaseClient
+    .from('users')
+    .update({
+      role: roleValue,
+      gender: genderValue,
+      escalation_tokens: tokensValue
+    })
+    .eq('id', userId);
+
+  if (userUpdateErr) return showToast(userUpdateErr.message, 'error');
+
+  const userObj = allUsers.find(u => u.id === userId);
+  if (userObj) {
+    userObj.role = roleValue;
+    userObj.gender = genderValue;
+    userObj.escalation_tokens = tokensValue;
+  }
+
   const apps = [...document.querySelectorAll('#okAppChecks [data-app]')];
   const menus = [...document.querySelectorAll('#okMenuChecks [data-menu]')];
 

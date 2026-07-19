@@ -71,19 +71,20 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
     }
   }
 
-  const needsPersonalFlag = state.teams.some(t => t.is_personal_team === undefined);
-  if (needsPersonalFlag && state.teams.length) {
+  if (state.teams.length) {
     const teamIds = state.teams.map(t => t.team_id);
     const { data: teamMeta } = await supabaseClient
       .from('teams')
-      .select('id, is_personal_team')
+      .select('id, is_personal_team, has_budget_access, has_tasks_access, has_lms_access')
       .in('id', teamIds);
 
-    const metaMap = Object.fromEntries((teamMeta || []).map(t => [t.id, !!t.is_personal_team]));
+    const metaMap = Object.fromEntries((teamMeta || []).map(t => [t.id, t]));
     state.teams.forEach(t => {
-      if (t.is_personal_team === undefined) {
-        t.is_personal_team = !!metaMap[t.team_id];
-      }
+      const meta = metaMap[t.team_id] || {};
+      t.is_personal_team = !!meta.is_personal_team;
+      t.has_budget_access = meta.has_budget_access !== false;
+      t.has_tasks_access = meta.has_tasks_access !== false;
+      t.has_lms_access = !!meta.has_lms_access;
     });
   }
 
