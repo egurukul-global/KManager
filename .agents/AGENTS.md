@@ -1,0 +1,5 @@
+# Agent Rules
+
+1. **Database Documentation Sync**: Whenever you make a database schema change, you must:
+   * Write/modify the SQL migration file in `supabase/migrations/`.
+   * Update the `docs/database_documentation.md` file in the repository to reflect the changes (new columns, tables, functions, triggers, or RLS policies).

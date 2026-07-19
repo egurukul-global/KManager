@@ -370,12 +370,16 @@ async function loadInboxFromServer() {
     const requestIds = inboxCache.map(r => r.id);
     if (requestIds.length) {
       const { data: commentCounts, error: commentError } = await supabaseClient
-        .from('approval_comments')
-        .select('request_id');
+        .from('messages')
+        .select('metadata')
+        .eq('metadata->>link_type', 'budget');
       if (!commentError && commentCounts) {
         const counts = {};
         commentCounts.forEach(c => {
-          counts[c.request_id] = (counts[c.request_id] || 0) + 1;
+          const reqId = c.metadata?.link_id;
+          if (reqId) {
+            counts[reqId] = (counts[reqId] || 0) + 1;
+          }
         });
         Object.entries(counts).forEach(([reqId, count]) => {
           rowCommentCountMap.set(reqId, count);
@@ -822,15 +826,29 @@ async function submitApprovalAction() {
     }
 
     if (comment || finalAttachmentUrl) {
+      const { data: requestData } = await supabaseClient
+        .from('approval_requests')
+        .select('team_id')
+        .eq('id', id)
+        .single();
+      const teamId = requestData?.team_id;
+
+      if (!teamId) throw new Error('Could not find team associated with this request');
+
       const { error: commentErr } = await supabaseClient
-        .from('approval_comments')
+        .from('messages')
         .insert({
-          request_id: id,
-          user_id: state.user.id,
-          comment: comment || null,
-          visible_to: visibleTo,
+          sender_id: state.user.id,
+          recipient_type: 'team',
+          recipient_id: teamId,
+          body: comment || (finalAttachmentUrl ? 'Attachment shared' : ''),
           attachment_url: finalAttachmentUrl || null,
-          attachment_name: finalAttachmentName || null
+          attachment_name: finalAttachmentName || null,
+          metadata: {
+            link_type: 'budget',
+            link_id: id,
+            visible_to: visibleTo
+          }
         });
       if (commentErr) throw commentErr;
     }
@@ -930,9 +948,9 @@ async function openCommentsTimeline(requestId) {
 
   try {
     const { data: comments, error } = await supabaseClient
-      .from('approval_comments')
+      .from('messages')
       .select('*')
-      .eq('request_id', requestId)
+      .eq('metadata->>link_id', requestId)
       .order('created_at', { ascending: true });
 
     if (error) throw error;
@@ -942,7 +960,7 @@ async function openCommentsTimeline(requestId) {
       return;
     }
 
-    const userIds = [...new Set(comments.map(c => c.user_id))];
+    const userIds = [...new Set(comments.map(c => c.sender_id).filter(Boolean))];
     const usersMap = {};
     if (userIds.length) {
       const { data: usersData, error: userError } = await supabaseClient
@@ -969,7 +987,7 @@ async function openCommentsTimeline(requestId) {
     }));
 
     timeline.innerHTML = commentsWithUrls.map(c => {
-      const u = usersMap[c.user_id] || {};
+      const u = usersMap[c.sender_id] || {};
       const date = new Date(c.created_at).toLocaleString();
       const senderName = u.name || u.email || 'System';
       const senderRole = u.role ? ` (${u.role.toUpperCase()})` : '';
@@ -989,7 +1007,7 @@ async function openCommentsTimeline(requestId) {
             <strong>${escapeHtml(senderName)}${escapeHtml(senderRole)}</strong>
             <span>${date}</span>
           </div>
-          <div style="font-size: 0.95em; white-space: pre-wrap; word-break: break-word;">${escapeHtml(c.comment || 'Attachment shared')}</div>
+          <div style="font-size: 0.95em; white-space: pre-wrap; word-break: break-word;">${escapeHtml(c.body || 'Attachment shared')}</div>
           ${attachmentHtml}
         </div>
       `;
