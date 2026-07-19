@@ -137,15 +137,28 @@ export function getTeamMgmtPage() {
         </div>
       </div>
       ${isOrgAdmin() ? `
-        <form id="teamRenameForm" class="team-rename-row" style="display:none; margin-top:20px; border-top:1px solid var(--border); padding-top:20px;" onsubmit="window.saveTeamRename(event)">
-          <div class="form-grid-row form-grid-row--team-rename">
-            <div class="form-group">
+        <form id="teamRenameForm" style="display:none; margin-top:20px; border-top:1px solid var(--border); padding-top:20px;" onsubmit="window.saveTeamRename(event)">
+          <div class="form-grid-row" style="display: flex; gap: 16px; align-items: flex-end;">
+            <div class="form-group" style="flex: 1;">
               <label for="teamRenameName">Rename Team</label>
               <input type="text" id="teamRenameName" required maxlength="120" placeholder="Edit team name">
             </div>
-            <div class="form-group team-rename-actions">
-              <label>&nbsp;</label>
-              <button type="submit">Save name</button>
+            <div class="form-group" style="margin-bottom: 2px;">
+              <button type="submit">Save settings</button>
+            </div>
+          </div>
+          <div style="margin-top: 15px;">
+            <label style="font-weight: 600; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; margin-bottom: 8px; display: block;">Team Capabilities</label>
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+              <label class="ok-pin-check" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="teamCheckBudget"> Budget & Finance
+              </label>
+              <label class="ok-pin-check" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="teamCheckTasks"> Task Tracker
+              </label>
+              <label class="ok-pin-check" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                <input type="checkbox" id="teamCheckLms"> Gurukul LMS
+              </label>
             </div>
           </div>
         </form>
@@ -231,15 +244,29 @@ async function loadManageableTeams() {
     if (isOrgAdmin()) {
       const { data: teams, error } = await supabaseClient
         .from('teams')
-        .select('id, name, is_personal_team')
+        .select('id, name, is_personal_team, has_budget_access, has_tasks_access, has_lms_access')
         .eq('is_personal_team', false)
         .order('name');
       if (error) throw error;
-      teamsCache = (teams || []).map(t => ({ id: t.id, name: t.name, member_count: 0 }));
+      teamsCache = (teams || []).map(t => ({
+        id: t.id,
+        name: t.name,
+        has_budget_access: t.has_budget_access,
+        has_tasks_access: t.has_tasks_access,
+        has_lms_access: t.has_lms_access,
+        member_count: 0
+      }));
     } else {
       teamsCache = (state.teams || [])
         .filter(t => String(t.access_level || '').toLowerCase() === 'oht')
-        .map(t => ({ id: t.team_id, name: t.team_name, member_count: 0 }));
+        .map(t => ({
+          id: t.team_id,
+          name: t.team_name,
+          has_budget_access: t.has_budget_access,
+          has_tasks_access: t.has_tasks_access,
+          has_lms_access: t.has_lms_access,
+          member_count: 0
+        }));
     }
 
     select.innerHTML = teamsCache.length
@@ -298,6 +325,12 @@ async function onTeamsPageSelectChange() {
   if (renameRow && renameInput && isOrgAdmin()) {
     renameRow.style.display = '';
     renameInput.value = team?.name || '';
+    const checkBudget = document.getElementById('teamCheckBudget');
+    const checkTasks = document.getElementById('teamCheckTasks');
+    const checkLms = document.getElementById('teamCheckLms');
+    if (checkBudget) checkBudget.checked = team?.has_budget_access !== false;
+    if (checkTasks) checkTasks.checked = team?.has_tasks_access !== false;
+    if (checkLms) checkLms.checked = !!team?.has_lms_access;
   }
   document.getElementById('memberTeamId').value = teamId;
 
@@ -455,17 +488,35 @@ async function saveTeamRename(e) {
   btn.textContent = 'Saving…';
   btn.disabled = true;
 
+  const checkBudget = document.getElementById('teamCheckBudget');
+  const checkTasks = document.getElementById('teamCheckTasks');
+  const checkLms = document.getElementById('teamCheckLms');
+
+  const budget = checkBudget ? checkBudget.checked : true;
+  const tasks = checkTasks ? checkTasks.checked : true;
+  const lms = checkLms ? checkLms.checked : false;
+
   try {
     const { error } = await supabaseClient
       .from('teams')
-      .update({ name })
+      .update({
+        name,
+        has_budget_access: budget,
+        has_tasks_access: tasks,
+        has_lms_access: lms
+      })
       .eq('id', teamId);
     if (error) throw error;
 
     const team = teamsCache.find(t => t.id === teamId);
-    if (team) team.name = name;
+    if (team) {
+      team.name = name;
+      team.has_budget_access = budget;
+      team.has_tasks_access = tasks;
+      team.has_lms_access = lms;
+    }
 
-    showToast('Team name updated', 'success');
+    showToast('Team settings updated', 'success');
     await loadManageableTeams();
     const select = document.getElementById('teamsPageSelect');
     if (select) select.value = teamId;

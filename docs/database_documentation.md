@@ -70,6 +70,13 @@ Unified common communication log (Direct messages, team chats, role queues, and 
 * `allow_replies` (`BOOLEAN`): False for read-only instructions or system logs.
 * `metadata` (`JSONB`): Direct deep-links and custom parameters.
 
+### `public.ok_app_admins`
+Maps app codes (modules) to specific users as local app/module administrators.
+* `id` (`UUID`, PK)
+* `app_code` (`TEXT`): Code of the application (e.g. `'finance'`, `'gurukul'`).
+* `user_id` (`UUID`): References `public.users(id)`.
+* `created_at` (`TIMESTAMPTZ`): Creation timestamp.
+
 ---
 
 ## 2. Core Custom Functions

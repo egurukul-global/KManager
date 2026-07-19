@@ -57,7 +57,7 @@ export const FINANCE_MENU_KEYS = [
 ];
 
 export function isOkAdmin() {
-  return !!state.isOkAdmin;
+  return !!state.isOkAdmin || (state.okAppAdmins && state.okAppAdmins.length > 0);
 }
 
 export function hasAppAccess(appCode) {
@@ -67,9 +67,8 @@ export function hasAppAccess(appCode) {
 
 export function hasMenuAccess(appCode, menuKey) {
   if (!hasAppAccess(appCode)) return false;
-  if (state.isOkAdmin) return true;
+  if (state.isOkAdmin || (state.okAppAdmins && state.okAppAdmins.includes(appCode))) return true;
   const menus = state.okMenus || [];
-  // If no menu rows loaded yet, fall back to team role rules only (legacy)
   if (!menus.length) return true;
   return menus.some(m => m.app_code === appCode && m.menu_key === menuKey && m.enabled !== false);
 }
@@ -78,25 +77,27 @@ export function getAppMeta(code) {
   return OK_APPS.find(a => a.code === code) || null;
 }
 
-/** Load OK admin flag, apps, menus, pins into state. */
+/** Load OK admin flag, app admins, apps, menus, pins into state. */
 export async function loadOkAccess(userId) {
   if (!userId) {
     state.isOkAdmin = false;
+    state.okAppAdmins = [];
     state.okApps = [];
     state.okMenus = [];
     state.okPins = [];
     return;
   }
 
-  const [adminRes, appsRes, menusRes, pinsRes] = await Promise.all([
+  const [adminRes, appAdminRes, appsRes, menusRes, pinsRes] = await Promise.all([
     supabaseClient.from('ok_admins').select('user_id').eq('user_id', userId).maybeSingle(),
+    supabaseClient.from('ok_app_admins').select('app_code').eq('user_id', userId),
     supabaseClient.from('ok_app_access').select('app_code, enabled').eq('user_id', userId),
     supabaseClient.from('ok_menu_access').select('app_code, menu_key, enabled').eq('user_id', userId).eq('enabled', true),
     supabaseClient.from('ok_home_pins').select('app_code, sort_order').eq('user_id', userId).order('sort_order')
   ]);
 
   state.isOkAdmin = !!adminRes.data;
-  // Only enabled apps count — empty list means no apps (do not auto-grant Finance)
+  state.okAppAdmins = (appAdminRes.data || []).map(a => a.app_code);
   state.okApps = (appsRes.data || []).filter(a => a.enabled === true);
   state.okMenus = menusRes.data || [];
   state.okPins = pinsRes.data || [];

@@ -33,6 +33,7 @@ import { getRoleAssignmentsPage, initRoleAssignmentsPage } from './pages/role-as
 import { getExpenseReportsPage, initExpenseReportsPage } from './pages/expense-reports.js';
 import { getAddExpensePage, initAddExpensePage, getExpenseManagerPage, initExpenseManagerPage } from './pages/expenses.js';
 import { getGenerateReceiptPage, initGenerateReceiptPage } from './pages/generate-receipt.js';
+import { getTasksPage, initTasksPage } from './pages/tasks.js';
 import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js';
 import { getDisplayName } from './utils/displayName.js';
 import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher, updateAccessBadge } from './utils/teamAccess.js';
@@ -475,6 +476,29 @@ function renderAppShell() {
             </div>
           </div>
 
+          <div class="nav-item" data-section="tasks">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">📋</span>
+              <span>Tasks</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="tasks" onclick="window.showPage('tasks')">Task Board</div>
+            </div>
+          </div>
+
+          <div class="nav-item" data-section="gurukul">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">🎓</span>
+              <span>Gurukul LMS</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="gurukul-lms" onclick="window.showPage('gurukul-lms')">Student Roster</div>
+              <div class="nav-subitem" data-page="courses" onclick="window.showPage('courses')">Course Catalog</div>
+            </div>
+          </div>
+
           <div class="nav-item" data-section="setup">
             <div class="nav-item-header" onclick="window.toggleNavItem(this)">
               <span class="icon">🔧</span>
@@ -621,6 +645,22 @@ function renderAppShell() {
   window.handleLogout = handleLogout;
   window.navToTab = navToTab;
   window.goOkHome = () => navigateOk('/');
+  window.openDeepLink = openDeepLink;
+}
+
+export function openDeepLink(linkType, linkId, teamId) {
+  if (teamId && state.currentTeam?.team_id !== teamId) {
+    switchTeam(teamId);
+  }
+  if (linkType === 'budget') {
+    sessionStorage.setItem('ok_open_page', 'approval-portal');
+    if (linkId) sessionStorage.setItem('ok_open_request_id', linkId);
+    showPage('approval-portal');
+  } else if (linkType === 'task') {
+    sessionStorage.setItem('ok_open_page', 'tasks');
+    if (linkId) sessionStorage.setItem('ok_open_task_id', linkId);
+    showPage('tasks');
+  }
 }
 
 // ==================== NAVIGATION ====================
@@ -771,7 +811,8 @@ export function showPage(pageName) {
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
     'user-mgmt': { html: getUserMgmtPage, init: initUserMgmtPage },
-    'team-mgmt': { html: getTeamMgmtPage, init: initTeamMgmtPage }
+    'team-mgmt': { html: getTeamMgmtPage, init: initTeamMgmtPage },
+    'tasks': { html: getTasksPage, init: initTasksPage }
   };
 
   updateBottomNavActive(pageName);

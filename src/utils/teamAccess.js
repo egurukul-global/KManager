@@ -190,4 +190,6 @@ export async function refreshAccessibleTeams() {
   syncCurrentTeamAfterReload(preferredTeamId);
   populateTeamSwitcher();
   updateAccessBadge();
+  const { applyNavPermissions } = await import('./navPermissions.js');
+  applyNavPermissions();
 }

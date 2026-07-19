@@ -192,6 +192,8 @@ export function applyNavPermissions() {
     expense: ['add-expense', 'expense-manager', 'generate-receipt'],
     financials: ['financial-status', 'reconcile', 'reconciliation-overview', 'reconciliation-approval'],
     reports: ['expense-reports', 'my-finances'],
+    tasks: ['tasks'],
+    gurukul: ['gurukul-lms', 'courses'],
     admin: ['team-mgmt', 'role-assignments', 'user-mgmt', 'budget-calendar', 'category-master'],
     dashboard: ['dashboard', 'profile', 'approval-portal']
   };

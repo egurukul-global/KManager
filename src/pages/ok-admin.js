@@ -198,15 +198,18 @@ async function selectUser(userId) {
   const menuSet = new Set((menusRes.data || []).filter(m => m.enabled).map(m => m.menu_key));
   const isAdmin = !!adminRes.data;
 
+  const isGlobalAdmin = !!state.isOkAdmin;
+  const managedApps = state.okAppAdmins || [];
+
   detail.innerHTML = `
     <h2>${escapeHtml(user.name || '—')}</h2>
     <p class="page-intro">${escapeHtml(user.email || '')}</p>
 
     <div class="btn-group" style="margin-bottom:16px;">
-      <button type="button" class="${user.on_hold ? 'secondary' : ''}" id="okToggleHold">
+      <button type="button" class="${user.on_hold ? 'secondary' : ''}" id="okToggleHold" ${isGlobalAdmin ? '' : 'disabled style="opacity:0.6; pointer-events:none;"'}>
         ${user.on_hold ? 'Clear hold' : 'Put on hold'}
       </button>
-      <button type="button" class="secondary" id="okToggleAdmin">
+      <button type="button" class="secondary" id="okToggleAdmin" ${isGlobalAdmin ? '' : 'disabled style="opacity:0.6; pointer-events:none;"'}>
         ${isAdmin ? 'Remove OK Admin' : 'Make OK Admin'}
       </button>
     </div>
@@ -215,7 +218,7 @@ async function selectUser(userId) {
     <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;">
       <div class="form-group" style="flex: 1; min-width: 150px;">
         <label for="okSelectRole">Global Role</label>
-        <select id="okSelectRole" class="form-control" style="width: 100%; height: 38px; border-radius: 6px; border: 1px solid var(--border); padding: 6px 12px; background: white;">
+        <select id="okSelectRole" class="form-control" style="width: 100%; height: 38px; border-radius: 6px; border: 1px solid var(--border); padding: 6px 12px; background: white;" ${isGlobalAdmin ? '' : 'disabled style="opacity:0.6; pointer-events:none;"'}>
           <option value="user" ${user.role === 'user' ? 'selected' : ''}>User</option>
           <option value="fin" ${user.role === 'fin' ? 'selected' : ''}>FIN</option>
           <option value="fip" ${user.role === 'fip' ? 'selected' : ''}>FIP</option>
@@ -227,14 +230,14 @@ async function selectUser(userId) {
       </div>
       <div class="form-group" style="flex: 1; min-width: 150px;">
         <label for="okSelectGender">Gender</label>
-        <select id="okSelectGender" class="form-control" style="width: 100%; height: 38px; border-radius: 6px; border: 1px solid var(--border); padding: 6px 12px; background: white;">
+        <select id="okSelectGender" class="form-control" style="width: 100%; height: 38px; border-radius: 6px; border: 1px solid var(--border); padding: 6px 12px; background: white;" ${isGlobalAdmin ? '' : 'disabled style="opacity:0.6; pointer-events:none;"'}>
           <option value="male" ${user.gender === 'male' ? 'selected' : ''}>Male</option>
           <option value="female" ${user.gender === 'female' ? 'selected' : ''}>Female</option>
         </select>
       </div>
       <div class="form-group" style="flex: 1; min-width: 150px;">
         <label for="okSelectTokens">Escalation Tokens</label>
-        <select id="okSelectTokens" class="form-control" style="width: 100%; height: 38px; border-radius: 6px; border: 1px solid var(--border); padding: 6px 12px; background: white;">
+        <select id="okSelectTokens" class="form-control" style="width: 100%; height: 38px; border-radius: 6px; border: 1px solid var(--border); padding: 6px 12px; background: white;" ${isGlobalAdmin ? '' : 'disabled style="opacity:0.6; pointer-events:none;"'}>
           <option value="1" ${user.escalation_tokens === 1 ? 'selected' : ''}>1</option>
           <option value="2" ${user.escalation_tokens === 2 ? 'selected' : ''}>2</option>
           <option value="3" ${user.escalation_tokens === 3 || user.escalation_tokens === undefined || user.escalation_tokens === null ? 'selected' : ''}>3 (Default)</option>
@@ -244,22 +247,30 @@ async function selectUser(userId) {
 
     <h3>Apps</h3>
     <div class="ok-access-checks" id="okAppChecks">
-      ${OK_APPS.map(a => `
-        <label class="ok-pin-check">
-          <input type="checkbox" data-app="${a.code}" ${appSet.has(a.code) ? 'checked' : ''}>
-          ${escapeHtml(a.label)}${a.live ? '' : ' (soon)'}
-        </label>
-      `).join('')}
+      ${OK_APPS.map(a => {
+        const canManage = isGlobalAdmin || managedApps.includes(a.code);
+        const disabled = canManage ? '' : 'disabled';
+        return `
+          <label class="ok-pin-check" style="${canManage ? '' : 'opacity: 0.6; pointer-events: none;'}">
+            <input type="checkbox" data-app="${a.code}" ${appSet.has(a.code) ? 'checked' : ''} ${disabled}>
+            ${escapeHtml(a.label)}${a.live ? '' : ' (soon)'}
+          </label>
+        `;
+      }).join('')}
     </div>
 
     <h3 style="margin-top:20px;">Finance menus</h3>
     <div class="ok-access-checks ok-access-checks--menus" id="okMenuChecks">
-      ${FINANCE_MENU_KEYS.map(m => `
-        <label class="ok-pin-check">
-          <input type="checkbox" data-menu="${m.key}" ${menuSet.has(m.key) ? 'checked' : ''}>
-          ${escapeHtml(m.label)}
-        </label>
-      `).join('')}
+      ${FINANCE_MENU_KEYS.map(m => {
+        const canManage = isGlobalAdmin || managedApps.includes('finance');
+        const disabled = canManage ? '' : 'disabled';
+        return `
+          <label class="ok-pin-check" style="${canManage ? '' : 'opacity: 0.6; pointer-events: none;'}">
+            <input type="checkbox" data-menu="${m.key}" ${menuSet.has(m.key) ? 'checked' : ''} ${disabled}>
+            ${escapeHtml(m.label)}
+          </label>
+        `;
+      }).join('')}
     </div>
 
     <div class="btn-group" style="margin-top:20px;">
@@ -304,26 +315,29 @@ async function toggleAdmin(user, currentlyAdmin) {
 }
 
 async function saveAccess(userId) {
-  const roleValue = document.getElementById('okSelectRole').value;
-  const genderValue = document.getElementById('okSelectGender').value;
-  const tokensValue = parseInt(document.getElementById('okSelectTokens').value, 10);
+  const isGlobalAdmin = !!state.isOkAdmin;
+  if (isGlobalAdmin) {
+    const roleValue = document.getElementById('okSelectRole').value;
+    const genderValue = document.getElementById('okSelectGender').value;
+    const tokensValue = parseInt(document.getElementById('okSelectTokens').value, 10);
 
-  const { error: userUpdateErr } = await supabaseClient
-    .from('users')
-    .update({
-      role: roleValue,
-      gender: genderValue,
-      escalation_tokens: tokensValue
-    })
-    .eq('id', userId);
+    const { error: userUpdateErr } = await supabaseClient
+      .from('users')
+      .update({
+        role: roleValue,
+        gender: genderValue,
+        escalation_tokens: tokensValue
+      })
+      .eq('id', userId);
 
-  if (userUpdateErr) return showToast(userUpdateErr.message, 'error');
+    if (userUpdateErr) return showToast(userUpdateErr.message, 'error');
 
-  const userObj = allUsers.find(u => u.id === userId);
-  if (userObj) {
-    userObj.role = roleValue;
-    userObj.gender = genderValue;
-    userObj.escalation_tokens = tokensValue;
+    const userObj = allUsers.find(u => u.id === userId);
+    if (userObj) {
+      userObj.role = roleValue;
+      userObj.gender = genderValue;
+      userObj.escalation_tokens = tokensValue;
+    }
   }
 
   const apps = [...document.querySelectorAll('#okAppChecks [data-app]')];
