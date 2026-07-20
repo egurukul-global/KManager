@@ -7,6 +7,7 @@ import {
 } from '../utils/okAccess.js';
 import { loadActionableApprovalNotifs } from '../utils/approvalEngine.js';
 import { state } from '../state.js';
+import { supabaseClient } from '../db.js';
 import { renderOkShell, initOkShell } from './ok-shell.js';
 import kmofLogo from '../../KMOF.png';
 
