@@ -438,7 +438,11 @@ function renderTasksPage() {
     return;
   }
 
-  app.innerHTML = renderOkShell('Task Board');
+  app.innerHTML = renderOkShell({
+    title: 'Task Board',
+    activePath: '/tasks',
+    mainHtml: '<div id="okShellContent"></div>'
+  });
   initOkShell();
 
   const content = document.getElementById('okShellContent');
