@@ -23,6 +23,13 @@ export const OK_APPS = [
     path: '/utilities',
     live: false,
     description: 'Coming soon'
+  },
+  {
+    code: 'tasks',
+    label: 'Tasks',
+    path: '/tasks',
+    live: true,
+    description: 'Unified Task Tracker'
   }
 ];
 
@@ -61,6 +68,7 @@ export function isOkAdmin() {
 }
 
 export function hasAppAccess(appCode) {
+  if (appCode === 'tasks') return true;
   const apps = state.okApps || [];
   return apps.some(a => a.app_code === appCode && a.enabled === true);
 }
@@ -263,6 +271,7 @@ export function parseAppPath() {
   if (lower === '/utilities' || lower.startsWith('/utilities/')) return 'utilities';
   if (lower === '/admin' || lower.startsWith('/admin/')) return 'ok-admin';
   if (lower === '/profile' || lower.startsWith('/profile/')) return 'ok-profile';
+  if (lower === '/tasks' || lower.startsWith('/tasks/')) return 'tasks';
   return 'home';
 }
 

@@ -29,7 +29,9 @@ function appInitial(code) {
 
 function pinnedApps() {
   const pins = (state.okPins || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-  return pins.map(p => p.app_code).filter(code => hasAppAccess(code));
+  const codes = pins.map(p => p.app_code).filter(code => hasAppAccess(code));
+  if (codes.length > 0) return codes;
+  return ['finance', 'tasks', 'gurukul', 'utilities'].filter(code => hasAppAccess(code) || state.isOkAdmin);
 }
 
 function logosHtml() {
@@ -142,40 +144,64 @@ async function loadNotifications() {
   if (!el) return;
 
   let rows = [];
+  let taskMsgs = [];
   try {
     rows = await loadActionableApprovalNotifs();
   } catch (err) {
     console.warn('approval notifs:', err);
-    el.innerHTML = `<p class="empty-state">Could not load notifications.</p>`;
-    return;
   }
 
-  if (!rows.length) {
+  try {
+    const { data } = await supabaseClient
+      .from('messages')
+      .select('*')
+      .eq('recipient_type', 'user')
+      .eq('recipient_id', state.user.id)
+      .eq('metadata->>link_type', 'task')
+      .order('created_at', { ascending: false });
+    taskMsgs = data || [];
+  } catch (err) {
+    console.warn('task notifs:', err);
+  }
+
+  if (!rows.length && !taskMsgs.length) {
     el.innerHTML = `<p class="empty-state">No notifications yet.</p>`;
     return;
   }
 
-  const mode = getNotificationMode();
-
-  if (mode === 'summary') {
-    const lines = summarizeActionable(rows);
-    el.innerHTML = `
-      <button type="button" class="ok-notif ok-notif--summary ok-notif--unread" data-summary="1">
-        <span class="ok-notif-line">${escapeHtml(lines.join('. ') + '.')}</span>
-      </button>
-    `;
-    el.querySelector('[data-summary]')?.addEventListener('click', () => {
-      openApprovals('', '');
-    });
-    return;
+  let html = '';
+  
+  if (rows.length) {
+    const mode = getNotificationMode();
+    if (mode === 'summary') {
+      const lines = summarizeActionable(rows);
+      html += `
+        <button type="button" class="ok-notif ok-notif--summary ok-notif--unread" data-summary="1" style="width:100%; text-align:left; margin-bottom:8px;">
+          <span class="ok-notif-line">${escapeHtml(lines.join('. ') + '.')}</span>
+        </button>
+      `;
+    } else {
+      html += rows.map(r => `
+        <button type="button" class="ok-notif ok-notif--line ok-notif--unread" data-action-id="${escapeHtml(r.id)}" data-team-id="${escapeHtml(r.team_id || '')}" style="width:100%; text-align:left; margin-bottom:8px;">
+          <span class="ok-notif-line">${escapeHtml(detailLine(r))}</span>
+        </button>
+      `).join('');
+    }
   }
 
-  el.innerHTML = rows.map(r => `
-    <button type="button" class="ok-notif ok-notif--line ok-notif--unread"
-      data-action-id="${escapeHtml(r.id)}" data-team-id="${escapeHtml(r.team_id || '')}">
-      <span class="ok-notif-line">${escapeHtml(detailLine(r))}</span>
+  html += taskMsgs.map(m => `
+    <button type="button" class="ok-notif ok-notif--line ok-notif--unread" data-task-id="${escapeHtml(m.metadata?.link_id || '')}" style="width:100%; text-align:left; margin-bottom:8px; border-left: 4px solid var(--primary);">
+      <span class="ok-notif-line">${escapeHtml(m.body)}</span>
     </button>
   `).join('');
+
+  el.innerHTML = html;
+
+  el.querySelectorAll('[data-summary="1"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openApprovals('', '');
+    });
+  });
 
   el.querySelectorAll('[data-action-id]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -183,6 +209,16 @@ async function loadNotifications() {
         btn.getAttribute('data-action-id') || '',
         btn.getAttribute('data-team-id') || ''
       );
+    });
+  });
+
+  el.querySelectorAll('[data-task-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const taskId = btn.getAttribute('data-task-id');
+      if (taskId) {
+        sessionStorage.setItem('ok_open_task_id', taskId);
+        navigateOk('/tasks');
+      }
     });
   });
 }

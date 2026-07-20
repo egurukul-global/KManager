@@ -26,6 +26,8 @@ const FINANCE_PAGES = new Set([
   'expense-reports', 'my-finances', 'category-master', 'budget-calendar'
 ]);
 
+const NON_FINANCE_PAGES = new Set(['tasks', 'gurukul-lms', 'courses', 'learners']);
+
 /** Pages an OTM (team member / OPS) may open. Team income/budgets/setup are hidden. */
 const OTM_ALLOWED_PAGES = new Set([
   'dashboard',
@@ -40,7 +42,11 @@ const OTM_ALLOWED_PAGES = new Set([
   'my-finances',
   'reconcile',
   'reconciliation-overview',
-  'reconciliation-approval'
+  'reconciliation-approval',
+  'tasks',
+  'gurukul-lms',
+  'courses',
+  'learners'
 ]);
 
 /** Pages a view-only user may open (read-only team finance). */
@@ -59,7 +65,11 @@ const VIEW_ALLOWED_PAGES = new Set([
   'my-finances',
   'my-income',
   'buckets',
-  'rates'
+  'rates',
+  'tasks',
+  'gurukul-lms',
+  'courses',
+  'learners'
 ]);
 
 /** Sub-items hidden for OTM inside sections that stay partially visible. */
@@ -120,7 +130,7 @@ export function canAccessPage(pageName) {
   if (['gurukul-lms', 'learners', 'courses'].includes(pageName) && state.currentTeam?.has_lms_access === false) return false;
 
   // One Kailasa Finance menu matrix
-  if (state.okMenus?.length && !hasMenuAccess('finance', pageName)) {
+  if (state.okMenus?.length && !NON_FINANCE_PAGES.has(pageName) && !hasMenuAccess('finance', pageName)) {
     return false;
   }
 
@@ -175,7 +185,7 @@ export function applyNavPermissions() {
       const role = String(state.user?.role || 'user').toLowerCase();
       if (!['admin', 'oh', 'caoh'].includes(role)) hide = true;
     }
-    if (state.okMenus?.length && !hasMenuAccess('finance', page)) hide = true;
+    if (state.okMenus?.length && !NON_FINANCE_PAGES.has(page) && !hasMenuAccess('finance', page)) hide = true;
 
     // Check selected team capabilities
     if (FINANCE_PAGES.has(page) && state.currentTeam?.has_budget_access === false) hide = true;

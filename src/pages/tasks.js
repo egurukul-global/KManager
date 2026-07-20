@@ -3,10 +3,12 @@ import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { setButtonLoading } from '../utils/uiHelpers.js';
+import { uploadReceipt, resolveReceiptViewUrl } from '../utils/upload.js';
 
 let activeTasks = [];
 let teamMembers = [];
 let editingTaskId = null;
+let tempAttachments = [];
 
 function escapeHtml(text) {
   return String(text || '')
@@ -18,22 +20,38 @@ function escapeHtml(text) {
 export function getTasksPage() {
   const team = state.currentTeam;
   if (!team) {
+    if (state.teams?.length) {
+      state.currentTeam = state.teams[0];
+      return getTasksPage();
+    }
     return `
       <h1 class="page-title">Task Board</h1>
-      <div class="card"><p class="empty-state">Select a team from the sidebar dropdown first.</p></div>
+      <div class="card"><p class="empty-state">You are not assigned to any teams.</p></div>
     `;
   }
 
   if (team.has_tasks_access === false) {
     return `
-      <h1 class="page-title">Task Board</h1>
-      <div class="card"><p class="empty-state">⚠️ Task &amp; Issue tracker is disabled for the team "${escapeHtml(team.team_name || team.name)}". Enable it under Teams settings.</p></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <h1 class="page-title" style="margin:0;">Tasks</h1>
+          <select id="tasksTeamSelect" onchange="window.switchTasksTeam(this.value)" style="padding:6px 10px; font-size:0.85em; border-radius:6px; border:1px solid var(--border); background:white; font-weight:600; cursor:pointer;">
+            ${(state.teams || []).map(t => `<option value="${t.team_id}" ${t.team_id === team.team_id ? 'selected' : ''}>${escapeHtml(t.team_name || t.name)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="card"><p class="empty-state">⚠️ Task &amp; Issue tracker is disabled for this team. Enable it under Teams settings.</p></div>
     `;
   }
 
   return `
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-      <h1 class="page-title" style="margin:0;">Tasks — ${escapeHtml(team.team_name || team.name)}</h1>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <h1 class="page-title" style="margin:0;">Tasks</h1>
+        <select id="tasksTeamSelect" onchange="window.switchTasksTeam(this.value)" style="padding:6px 10px; font-size:0.85em; border-radius:6px; border:1px solid var(--border); background:white; font-weight:600; cursor:pointer;">
+          ${(state.teams || []).map(t => `<option value="${t.team_id}" ${t.team_id === team.team_id ? 'selected' : ''}>${escapeHtml(t.team_name || t.name)}</option>`).join('')}
+        </select>
+      </div>
       <button type="button" class="success" onclick="window.openCreateTaskModal()">+ Add Task</button>
     </div>
 
@@ -72,7 +90,7 @@ export function getTasksPage() {
             <label>Description</label>
             <textarea id="taskFormDesc" style="height:80px;"></textarea>
           </div>
-          <div class="form-grid-row" style="display:flex; gap:16px;">
+          <div class="form-grid-row" style="display:flex; gap:12px;">
             <div class="form-group" style="flex:1;">
               <label>Status</label>
               <select id="taskFormStatus">
@@ -90,16 +108,65 @@ export function getTasksPage() {
                 <option value="high">High</option>
               </select>
             </div>
+            <div class="form-group" style="flex:1;">
+              <label>Finish By</label>
+              <input type="date" id="taskFormFinishBy" style="height:38px; border-radius:6px; border:1px solid var(--border); padding:0 8px; width:100%;">
+            </div>
           </div>
-          <div class="form-group">
-            <label>Assignee</label>
-            <select id="taskFormAssignee">
-              <option value="">Unassigned</option>
-            </select>
+
+          <!-- Panel Tabs -->
+          <div style="display:flex; gap:8px; margin-top:16px; border-bottom:1px solid var(--border); padding-bottom:12px;">
+            <button type="button" class="secondary" id="tabBtnAssignees" onclick="window.toggleTaskPanel('assignees')" style="flex:1; padding:6px; font-size:0.85em; display:flex; align-items:center; justify-content:center; gap:4px; margin:0;">
+              👤 Assignees <span id="badgeAssignees" style="background:#e5e7eb; border-radius:10px; padding:1px 6px; font-size:0.75em; font-weight:700;">0</span>
+            </button>
+            <button type="button" class="secondary" id="tabBtnAttachments" onclick="window.toggleTaskPanel('attachments')" style="flex:1; padding:6px; font-size:0.85em; display:flex; align-items:center; justify-content:center; gap:4px; margin:0;">
+              📎 Files <span id="badgeAttachments" style="background:#e5e7eb; border-radius:10px; padding:1px 6px; font-size:0.75em; font-weight:700;">0</span>
+            </button>
+            <button type="button" class="secondary" id="tabBtnDiscussions" onclick="window.toggleTaskPanel('discussions')" style="flex:1; padding:6px; font-size:0.85em; display:flex; align-items:center; justify-content:center; gap:4px; margin:0; display:none;">
+              💬 Chat <span id="badgeDiscussions" style="background:#e5e7eb; border-radius:10px; padding:1px 6px; font-size:0.75em; font-weight:700;">0</span>
+            </button>
           </div>
-          <div class="btn-group" style="margin-top:16px;">
-            <button type="submit" id="taskSaveBtn">Save</button>
-            <button type="button" class="secondary" onclick="window.closeTaskModal()">Cancel</button>
+
+          <!-- Panel: Assignees -->
+          <div id="panelAssignees" style="display:none; margin-top:12px;">
+            <div class="form-group">
+              <label>Primary Assignee</label>
+              <select id="taskFormAssignee">
+                <option value="">Unassigned</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-top: 10px;">
+              <label>Additional Assignees</label>
+              <div id="additionalAssigneesList" style="display:flex; flex-direction:column; gap:6px; max-height:100px; overflow-y:auto; border:1px solid var(--border); padding:8px; border-radius:6px; background:#fafafa;"></div>
+            </div>
+          </div>
+
+          <!-- Panel: Attachments -->
+          <div id="panelAttachments" style="display:none; margin-top:12px;">
+            <label style="font-weight:600; font-size:0.9em; margin-bottom:8px; display:block;">Attachments</label>
+            <div id="taskAttachmentsList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
+            <div id="taskUploadDropzone" style="border:2px dashed var(--border); border-radius:6px; padding:15px; text-align:center; cursor:pointer; background:#fafafa; font-size:0.85em; color:var(--text-secondary);">
+              <span id="taskUploadDropzoneText">📁 Click to choose file, drag-and-drop, or paste screenshot</span>
+              <input type="file" id="taskAttachmentFileInput" style="display:none;" multiple>
+            </div>
+          </div>
+
+          <!-- Panel: Discussions -->
+          <div id="panelDiscussions" style="display:none; margin-top:12px;">
+            <label style="font-weight:600; font-size:0.9em; margin-bottom:8px; display:block;">Discussions</label>
+            <div id="taskDiscussionTimeline" style="max-height: 200px; overflow-y: auto; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; background:#f9fafb; padding:10px; border-radius:6px; border:1px solid var(--border);"></div>
+            <div style="display:flex; gap:8px;">
+              <input type="text" id="taskDiscussionInput" placeholder="Write a comment..." style="flex:1; height:36px; padding:6px 12px; border-radius:6px; border:1px solid var(--border);">
+              <button type="button" class="primary" style="height:36px; padding:6px 16px; margin:0;" onclick="window.sendTaskComment()">Send</button>
+            </div>
+          </div>
+
+          <div class="btn-group" style="margin-top:20px; display:flex; justify-content:space-between; width:100%;">
+            <div style="display:flex; gap:8px;">
+              <button type="submit" id="taskSaveBtn">Save</button>
+              <button type="button" class="secondary" onclick="window.closeTaskModal()">Cancel</button>
+            </div>
+            <button type="button" class="danger" id="taskDeleteBtn" style="display:none;" onclick="window.deleteTaskClick()">Delete</button>
           </div>
         </form>
       </div>
@@ -108,15 +175,49 @@ export function getTasksPage() {
 }
 
 export function initTasksPage() {
+  window.switchTasksTeam = switchTasksTeam;
+
   const team = state.currentTeam;
-  if (!team || team.has_tasks_access === false) return;
+  if (!team || team.has_tasks_access === false) {
+    activeTasks = [];
+    return;
+  }
 
   window.openCreateTaskModal = openCreateTaskModal;
   window.closeTaskModal = closeTaskModal;
   window.saveTaskFormSubmit = saveTaskFormSubmit;
   window.openEditTaskModal = openEditTaskModal;
+  window.deleteTaskClick = deleteTaskClick;
+  window.removeTaskAttachment = removeTaskAttachment;
+  window.sendTaskComment = sendTaskComment;
+  window.toggleTaskPanel = toggleTaskPanel;
 
-  loadTasksData();
+  wireTaskUploadHandlers();
+
+  loadTasksData().then(() => {
+    const autoOpenId = sessionStorage.getItem('ok_open_task_id');
+    if (autoOpenId) {
+      sessionStorage.removeItem('ok_open_task_id');
+      openEditTaskModal(autoOpenId);
+    }
+  });
+}
+
+function switchTasksTeam(teamId) {
+  const match = state.teams.find(t => t.team_id === teamId);
+  if (match) {
+    state.currentTeam = match;
+    const sidebarSelect = document.getElementById('teamSelect');
+    if (sidebarSelect) sidebarSelect.value = teamId;
+
+    const shellContent = document.getElementById('okShellContent');
+    const mainContent = document.getElementById('mainContent');
+    const targetEl = shellContent || mainContent;
+    if (targetEl) {
+      targetEl.innerHTML = getTasksPage();
+      initTasksPage();
+    }
+  }
 }
 
 async function loadTasksData() {
@@ -132,7 +233,6 @@ async function loadTasksData() {
   if (colComp) colComp.innerHTML = '';
 
   try {
-    // 1. Fetch team tasks
     const { data: tasks, error } = await supabaseClient
       .from('tasks')
       .select('*')
@@ -140,7 +240,15 @@ async function loadTasksData() {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    activeTasks = tasks || [];
+
+    const today = new Date().toISOString().slice(0, 10);
+    activeTasks = (tasks || []).map(t => {
+      if (t.status === 'todo' && t.metadata?.finish_by_date && t.metadata.finish_by_date < today) {
+        t.status = 'backlog';
+        supabaseClient.from('tasks').update({ status: 'backlog' }).eq('id', t.id).then();
+      }
+      return t;
+    });
 
     // 2. Fetch team members to assign tasks
     const { data: members, error: memErr } = await supabaseClient
@@ -170,29 +278,50 @@ function renderKanbanBoard() {
     if (el) el.innerHTML = '';
   });
 
-  const priorityColors = {
-    low: '#9ca3af',
-    medium: '#eab308',
-    high: '#ef4444'
+  const statusColors = {
+    backlog: '#ef4444',
+    todo: '#3b82f6',
+    in_progress: '#eab308',
+    completed: '#22c55e'
   };
 
   activeTasks.forEach(t => {
     const el = cols[t.status];
-    if (!el) return;
+       const assignee = teamMembers.find(m => m.id === t.assigned_to);
+    
+    const assignees = [];
+    if (assignee) assignees.push(assignee);
+    const additionalIds = t.metadata?.assigned_to_users || [];
+    additionalIds.forEach(id => {
+      if (id === t.assigned_to) return;
+      const mem = teamMembers.find(m => m.id === id);
+      if (mem) assignees.push(mem);
+    });
 
-    const assignee = teamMembers.find(m => m.id === t.assigned_to);
-    const assigneeName = assignee ? assignee.name : 'Unassigned';
+    let assigneesHtml = '<span style="font-size:0.75em; color:var(--text-secondary);">👤 Unassigned</span>';
+    if (assignees.length > 0) {
+      const badges = assignees.map(a => {
+        const initials = a.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+        return `<span style="background:#e5e7eb; border-radius:50%; width:20px; height:20px; display:inline-flex; align-items:center; justify-content:center; font-size:0.65em; font-weight:700; color:#4b5563; margin-left:-6px; border:2px solid white; box-shadow:0 1px 2px rgba(0,0,0,0.05);" title="${escapeHtml(a.name)}">${escapeHtml(initials)}</span>`;
+      }).join('');
+      assigneesHtml = `<div style="display:flex; align-items:center; padding-left:6px;">${badges}</div>`;
+    }
 
     const card = document.createElement('div');
     card.className = 'kanban-card card';
-    card.style = 'margin:0; padding:12px; cursor:pointer; background:white; border-left:4px solid ' + priorityColors[t.priority] + ';';
+    card.style = 'margin:0; padding:8px 12px; cursor:pointer; background:white; border-left:4px solid ' + statusColors[t.status] + '; display:flex; justify-content:space-between; align-items:center; gap:8px;';
     card.onclick = () => openEditTaskModal(t.id);
+    
+    const hasAttachments = !!(t.metadata?.attachment_url || (t.metadata?.attachments && t.metadata.attachments.length > 0));
+    
     card.innerHTML = `
-      <div style="font-size:0.75em; color:var(--text-secondary); margin-bottom:4px; font-weight:600;">${escapeHtml(t.task_number)}</div>
-      <div style="font-weight:600; font-size:0.9em; margin-bottom:6px;">${escapeHtml(t.title)}</div>
-      <div style="font-size:0.75em; color:var(--text-secondary); display:flex; justify-content:space-between;">
-        <span>👤 ${escapeHtml(assigneeName)}</span>
-        <span style="text-transform:capitalize;">${t.priority}</span>
+      <span style="font-weight:600; font-size:0.85em; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;">
+        <span style="color:var(--text-secondary); font-weight:500; font-size:0.9em; margin-right:4px;">${escapeHtml(t.task_number)}</span>
+        ${escapeHtml(t.title)}
+      </span>
+      <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
+        ${hasAttachments ? '<span style="font-size:0.8em; opacity:0.7;">📎</span>' : ''}
+        ${assigneesHtml}
       </div>
     `;
     el.appendChild(card);
@@ -213,6 +342,19 @@ function openCreateTaskModal() {
   document.getElementById('taskFormDesc').value = '';
   document.getElementById('taskFormStatus').value = 'todo';
   document.getElementById('taskFormPriority').value = 'medium';
+  document.getElementById('taskFormFinishBy').value = '';
+
+  tempAttachments = [];
+  renderTaskAttachmentsList();
+
+  resetTaskPanels();
+  document.getElementById('tabBtnDiscussions').style.display = 'none';
+  document.getElementById('badgeAssignees').textContent = '0';
+  document.getElementById('badgeAttachments').textContent = '0';
+  document.getElementById('badgeDiscussions').textContent = '0';
+
+  const delBtn = document.getElementById('taskDeleteBtn');
+  if (delBtn) delBtn.style.display = 'none';
 
   populateAssigneeSelect();
 
@@ -234,8 +376,44 @@ function openEditTaskModal(id) {
   document.getElementById('taskFormDesc').value = t.description || '';
   document.getElementById('taskFormStatus').value = t.status;
   document.getElementById('taskFormPriority').value = t.priority;
+  document.getElementById('taskFormFinishBy').value = t.metadata?.finish_by_date || '';
 
-  populateAssigneeSelect(t.assigned_to);
+  tempAttachments = t.metadata?.attachments ? JSON.parse(JSON.stringify(t.metadata.attachments)) : [];
+  if (t.metadata?.attachment_url && !tempAttachments.some(a => a.url === t.metadata.attachment_url)) {
+    tempAttachments.push({
+      name: t.metadata.attachment_name || 'Link',
+      url: t.metadata.attachment_url
+    });
+  }
+  renderTaskAttachmentsList();
+
+  resetTaskPanels();
+  document.getElementById('tabBtnDiscussions').style.display = 'flex';
+  
+  const assigneesCount = (t.assigned_to ? 1 : 0) + (t.metadata?.assigned_to_users || []).filter(uid => uid !== t.assigned_to).length;
+  document.getElementById('badgeAssignees').textContent = assigneesCount;
+  document.getElementById('badgeAttachments').textContent = tempAttachments.length;
+  
+  supabaseClient.from('messages').select('*', { count: 'exact', head: true })
+    .eq('metadata->>link_id', t.id).eq('metadata->>link_type', 'task')
+    .then(({ count }) => {
+      const badge = document.getElementById('badgeDiscussions');
+      if (badge) badge.textContent = count || 0;
+    });
+
+  const discInput = document.getElementById('taskDiscussionInput');
+  if (discInput) discInput.value = '';
+  loadTaskDiscussions(t.id);
+
+  const delBtn = document.getElementById('taskDeleteBtn');
+  if (delBtn) {
+    const isCreator = t.created_by === state.user.id;
+    const isGlobal = !!state.isOkAdmin;
+    delBtn.style.display = (isCreator || isGlobal) ? '' : 'none';
+  }
+
+  const additionalIds = t.metadata?.assigned_to_users || [];
+  populateAssigneeSelect(t.assigned_to, additionalIds);
 
   document.getElementById('taskModalTitle').textContent = `✏️ Edit ${t.task_number}`;
   const modal = document.getElementById('taskModal');
@@ -245,17 +423,44 @@ function openEditTaskModal(id) {
   }
 }
 
-function populateAssigneeSelect(selectedId = '') {
+function populateAssigneeSelect(selectedId = '', selectedAdditionalIds = []) {
   const select = document.getElementById('taskFormAssignee');
-  if (!select) return;
-  select.innerHTML = '<option value="">Unassigned</option>';
-  teamMembers.forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m.id;
-    opt.textContent = m.name;
-    if (m.id === selectedId) opt.selected = true;
-    select.appendChild(opt);
-  });
+  if (select) {
+    select.innerHTML = '<option value="">Unassigned</option>';
+    const hasSelf = teamMembers.some(m => m.id === state.user.id);
+    const listToRender = hasSelf ? teamMembers : [{ id: state.user.id, name: state.user.name }, ...teamMembers];
+    
+    listToRender.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.id === state.user.id ? `${m.name} (Self)` : m.name;
+      if (m.id === selectedId) opt.selected = true;
+      select.appendChild(opt);
+    });
+
+    select.onchange = () => {
+      const primaryId = select.value;
+      const checkedIds = [...document.querySelectorAll('#additionalAssigneesList [data-additional-user-id]:checked')].map(el => el.dataset.additionalUserId);
+      populateAssigneeSelect(primaryId, checkedIds);
+    };
+  }
+
+  const list = document.getElementById('additionalAssigneesList');
+  if (list) {
+    list.innerHTML = '';
+    if (!teamMembers.length) {
+      list.innerHTML = '<p class="empty-state" style="font-size:0.8em; margin:0;">No team members</p>';
+      return;
+    }
+    teamMembers.forEach(m => {
+      if (m.id === selectedId) return;
+      const isChecked = selectedAdditionalIds.includes(m.id);
+      const label = document.createElement('label');
+      label.style = 'display:flex; align-items:center; gap:6px; font-size:0.85em; cursor:pointer; margin-bottom:4px;';
+      label.innerHTML = `<input type="checkbox" data-additional-user-id="${m.id}" ${isChecked ? 'checked' : ''}> ${escapeHtml(m.name)}`;
+      list.appendChild(label);
+    });
+  }
 }
 
 function closeTaskModal() {
@@ -277,9 +482,20 @@ async function saveTaskFormSubmit(e) {
 
   setButtonLoading(btn, true);
 
+  const additionalCheckedIds = [...document.querySelectorAll('#additionalAssigneesList [data-additional-user-id]:checked')].map(el => el.dataset.additionalUserId);
+
+  const finishBy = document.getElementById('taskFormFinishBy').value;
+
+  const metadata = {
+    attachments: tempAttachments,
+    assigned_to_users: additionalCheckedIds,
+    finish_by_date: finishBy || null
+  };
+
   try {
+    let savedTaskId = editingTaskId;
+
     if (editingTaskId) {
-      // Update
       const { error } = await supabaseClient
         .from('tasks')
         .update({
@@ -287,14 +503,14 @@ async function saveTaskFormSubmit(e) {
           description,
           status,
           priority,
-          assigned_to: assignee
+          assigned_to: assignee,
+          metadata
         })
         .eq('id', editingTaskId);
 
       if (error) throw error;
       showToast('Task updated', 'success');
     } else {
-      // Create
       const teamId = state.currentTeam.team_id;
       const teamPrefix = (state.currentTeam.team_name || state.currentTeam.name || 'TSK').slice(0, 3).toUpperCase();
       
@@ -305,7 +521,7 @@ async function saveTaskFormSubmit(e) {
 
       const taskNo = `${teamPrefix}-${100000 + (count || 0) + 1}`;
 
-      const { error } = await supabaseClient
+      const { data: newTasks, error } = await supabaseClient
         .from('tasks')
         .insert({
           task_number: taskNo,
@@ -316,11 +532,39 @@ async function saveTaskFormSubmit(e) {
           assigned_to: assignee,
           created_by: state.user.id,
           team_id: teamId,
-          context_app: 'finance'
-        });
+          context_app: 'finance',
+          metadata
+        })
+        .select('id');
 
       if (error) throw error;
+      if (newTasks?.[0]) savedTaskId = newTasks[0].id;
       showToast('Task created', 'success');
+    }
+
+    if (savedTaskId) {
+      const allAssigneeIds = [];
+      if (assignee) allAssigneeIds.push(assignee);
+      additionalCheckedIds.forEach(id => {
+        if (id && !allAssigneeIds.includes(id)) allAssigneeIds.push(id);
+      });
+
+      const notifyPromises = allAssigneeIds
+        .filter(id => id !== state.user.id)
+        .map(id => {
+          return supabaseClient.from('messages').insert({
+            sender_id: state.user.id,
+            recipient_type: 'user',
+            recipient_id: id,
+            body: `📋 Task assigned: "${title}"`,
+            metadata: {
+              link_type: 'task',
+              link_id: savedTaskId,
+              team_id: state.currentTeam.team_id
+            }
+          });
+        });
+      await Promise.all(notifyPromises);
     }
 
     closeTaskModal();
@@ -331,4 +575,281 @@ async function saveTaskFormSubmit(e) {
   } finally {
     setButtonLoading(btn, false);
   }
+}
+
+async function deleteTaskClick() {
+  if (!editingTaskId) return;
+  const ok = await showConfirm('Are you sure you want to delete this task?');
+  if (!ok) return;
+
+  const btn = document.getElementById('taskDeleteBtn');
+  setButtonLoading(btn, true);
+
+  try {
+    const { error } = await supabaseClient
+      .from('tasks')
+      .delete()
+      .eq('id', editingTaskId);
+
+    if (error) throw error;
+    showToast('Task deleted', 'success');
+    closeTaskModal();
+    loadTasksData();
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Failed to delete task', 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+function wireTaskUploadHandlers() {
+  const dropzone = document.getElementById('taskUploadDropzone');
+  const fileInput = document.getElementById('taskAttachmentFileInput');
+
+  if (dropzone && fileInput) {
+    dropzone.onclick = () => fileInput.click();
+    
+    fileInput.onchange = (e) => {
+      const files = Array.from(e.target.files);
+      uploadTaskFiles(files);
+    };
+
+    dropzone.ondragover = (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'var(--primary)';
+    };
+    dropzone.ondragleave = () => {
+      dropzone.style.borderColor = 'var(--border)';
+    };
+    dropzone.ondrop = (e) => {
+      e.preventDefault();
+      dropzone.style.borderColor = 'var(--border)';
+      const files = Array.from(e.dataTransfer.files);
+      uploadTaskFiles(files);
+    };
+
+    window.removeEventListener('paste', handleTaskPasteEvent);
+    window.addEventListener('paste', handleTaskPasteEvent);
+  }
+}
+
+function handleTaskPasteEvent(e) {
+  const modal = document.getElementById('taskModal');
+  if (!modal || !modal.classList.contains('active')) return;
+
+  const items = e.clipboardData?.items || [];
+  const files = [];
+  for (const item of items) {
+    if (item.type.indexOf('image') !== -1) {
+      const blob = item.getAsFile();
+      if (blob) {
+        const file = new File([blob], `Screenshot-${new Date().toISOString().slice(0, 19).replace('T', '_')}.png`, { type: blob.type });
+        files.push(file);
+      }
+    }
+  }
+  if (files.length) {
+    uploadTaskFiles(files);
+  }
+}
+
+async function uploadTaskFiles(files) {
+  const text = document.getElementById('taskUploadDropzoneText');
+  if (text) text.textContent = '⏳ Uploading files...';
+
+  for (const file of files) {
+    try {
+      const { objectKey } = await uploadReceipt(file);
+      tempAttachments.push({
+        name: file.name,
+        url: objectKey
+      });
+    } catch (err) {
+      console.error(err);
+      showToast(`Upload failed for ${file.name}: ${err.message}`, 'error');
+    }
+  }
+
+  if (text) text.textContent = '📁 Click to choose file, drag-and-drop, or paste screenshot';
+  renderTaskAttachmentsList();
+}
+
+async function renderTaskAttachmentsList() {
+  const list = document.getElementById('taskAttachmentsList');
+  if (!list) return;
+
+  if (!tempAttachments.length) {
+    list.innerHTML = '<p class="empty-state" style="margin:5px 0; font-size:0.8em;">No files attached</p>';
+    return;
+  }
+
+  list.innerHTML = '';
+  for (let i = 0; i < tempAttachments.length; i++) {
+    const att = tempAttachments[i];
+    
+    let viewUrl = '#';
+    try {
+      viewUrl = await resolveReceiptViewUrl(att.url);
+    } catch (err) {
+      console.warn(err);
+    }
+
+    const row = document.createElement('div');
+    row.style = 'display:flex; justify-content:space-between; align-items:center; background:#f9fafb; padding:6px 10px; border-radius:6px; border:1px solid #e5e7eb; font-size:0.85em; margin-bottom:4px;';
+    row.innerHTML = `
+      <a href="${escapeHtml(viewUrl)}" target="_blank" style="color:var(--primary); text-decoration:underline; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:80%;">${escapeHtml(att.name)}</a>
+      <button type="button" class="danger" style="padding:2px 6px; font-size:0.8em; margin:0;" onclick="window.removeTaskAttachment(${i})">🗑️</button>
+    `;
+    list.appendChild(row);
+  }
+}
+
+function removeTaskAttachment(index) {
+  tempAttachments.splice(index, 1);
+  renderTaskAttachmentsList();
+}
+
+async function loadTaskDiscussions(taskId) {
+  const timeline = document.getElementById('taskDiscussionTimeline');
+  if (!timeline) return;
+
+  timeline.innerHTML = '<p class="empty-state" style="font-size:0.8em; margin:10px 0;">Loading comments…</p>';
+
+  try {
+    const { data: comments, error } = await supabaseClient
+      .from('messages')
+      .select('*')
+      .eq('metadata->>link_id', taskId)
+      .eq('metadata->>link_type', 'task')
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    if (!comments || !comments.length) {
+      timeline.innerHTML = '<p class="empty-state" style="font-size:0.8em; margin:10px 0;">No comments yet. Start the discussion!</p>';
+      return;
+    }
+
+    const userIds = [...new Set(comments.map(c => c.sender_id).filter(Boolean))];
+    const usersMap = {};
+    if (userIds.length) {
+      const { data: usersData } = await supabaseClient
+        .from('users')
+        .select('id, name, email')
+        .in('id', userIds);
+      if (usersData) {
+        usersData.forEach(u => {
+          usersMap[u.id] = u;
+        });
+      }
+    }
+
+    timeline.innerHTML = comments.map(c => {
+      const sender = usersMap[c.sender_id];
+      const senderName = sender ? sender.name : 'System';
+      const timeStr = new Date(c.created_at).toLocaleString();
+      return `
+        <div style="background:white; padding:8px; border-radius:6px; border:1px solid #e5e7eb; font-size:0.85em; display:flex; flex-direction:column; gap:4px;">
+          <div style="display:flex; justify-content:space-between; color:var(--text-secondary); font-size:0.8em; font-weight:600;">
+            <span>👤 ${escapeHtml(senderName)}</span>
+            <span>${timeStr}</span>
+          </div>
+          <div style="color:var(--text-main); font-weight:500;">${escapeHtml(c.body)}</div>
+        </div>
+      `;
+    }).join('');
+
+    timeline.scrollTop = timeline.scrollHeight;
+  } catch (err) {
+    console.error(err);
+    timeline.innerHTML = `<p class="empty-state" style="font-size:0.8em; color:var(--danger); margin:10px 0;">Failed to load discussions: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function sendTaskComment() {
+  if (!editingTaskId) return;
+
+  const input = document.getElementById('taskDiscussionInput');
+  const body = input?.value?.trim();
+  if (!body) return;
+
+  const btn = document.querySelector('#taskDiscussionSection button');
+  setButtonLoading(btn, true);
+
+  try {
+    const { error } = await supabaseClient
+      .from('messages')
+      .insert({
+        sender_id: state.user.id,
+        recipient_type: 'team',
+        recipient_id: state.currentTeam.team_id,
+        body,
+        metadata: {
+          link_type: 'task',
+          link_id: editingTaskId,
+          team_id: state.currentTeam.team_id
+        }
+      });
+
+    if (error) throw error;
+
+    if (input) input.value = '';
+    await loadTaskDiscussions(editingTaskId);
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Failed to send comment', 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+function toggleTaskPanel(name) {
+  const panels = {
+    assignees: document.getElementById('panelAssignees'),
+    attachments: document.getElementById('panelAttachments'),
+    discussions: document.getElementById('panelDiscussions')
+  };
+
+  const buttons = {
+    assignees: document.getElementById('tabBtnAssignees'),
+    attachments: document.getElementById('tabBtnAttachments'),
+    discussions: document.getElementById('tabBtnDiscussions')
+  };
+
+  Object.entries(panels).forEach(([k, el]) => {
+    if (!el) return;
+    if (k === name) {
+      const isHidden = el.style.display === 'none';
+      el.style.display = isHidden ? 'block' : 'none';
+      if (buttons[k]) {
+        if (isHidden) {
+          buttons[k].classList.remove('secondary');
+          buttons[k].classList.add('primary');
+        } else {
+          buttons[k].classList.remove('primary');
+          buttons[k].classList.add('secondary');
+        }
+      }
+    } else {
+      el.style.display = 'none';
+      if (buttons[k]) {
+        buttons[k].classList.remove('primary');
+        buttons[k].classList.add('secondary');
+      }
+    }
+  });
+}
+
+function resetTaskPanels() {
+  const panelNames = ['assignees', 'attachments', 'discussions'];
+  panelNames.forEach(name => {
+    const el = document.getElementById(`panel${name.charAt(0).toUpperCase() + name.slice(1)}`);
+    if (el) el.style.display = 'none';
+    const btn = document.getElementById(`tabBtn${name.charAt(0).toUpperCase() + name.slice(1)}`);
+    if (btn) {
+      btn.classList.remove('primary');
+      btn.classList.add('secondary');
+    }
+  });
 }

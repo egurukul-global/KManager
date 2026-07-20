@@ -34,6 +34,7 @@ import { getExpenseReportsPage, initExpenseReportsPage } from './pages/expense-r
 import { getAddExpensePage, initAddExpensePage, getExpenseManagerPage, initExpenseManagerPage } from './pages/expenses.js';
 import { getGenerateReceiptPage, initGenerateReceiptPage } from './pages/generate-receipt.js';
 import { getTasksPage, initTasksPage } from './pages/tasks.js';
+import { renderOkShell, initOkShell } from './pages/ok-shell.js';
 import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js';
 import { getDisplayName } from './utils/displayName.js';
 import { loadAccessibleTeams, syncCurrentTeamAfterReload, populateTeamSwitcher, updateAccessBadge } from './utils/teamAccess.js';
@@ -242,6 +243,11 @@ async function routeAfterAuth() {
     return;
   }
 
+  if (route === 'tasks') {
+    renderTasksPage();
+    return;
+  }
+
   if (route === 'gurukul' || route === 'utilities') {
     renderComingSoon(route);
     return;
@@ -425,6 +431,23 @@ function renderComingSoon(appCode) {
   initComingSoonPage();
 }
 
+function renderTasksPage() {
+  if (!hasAppAccess('tasks') && !state.isOkAdmin) {
+    showToast('You do not have access to Tasks.', 'warning');
+    navigateOk('/');
+    return;
+  }
+
+  app.innerHTML = renderOkShell('Task Board');
+  initOkShell();
+
+  const content = document.getElementById('okShellContent');
+  if (content) {
+    content.innerHTML = getTasksPage();
+    initTasksPage();
+  }
+}
+
 function renderAppShell() {
   const displayName = getDisplayName(state.user);
   app.innerHTML = `
@@ -475,7 +498,6 @@ function renderAppShell() {
               <div class="nav-subitem" data-page="approval-portal" onclick="window.showPage('approval-portal')">Approval Portal</div>
             </div>
           </div>
-
           <div class="nav-item" data-section="tasks">
             <div class="nav-item-header" onclick="window.toggleNavItem(this)">
               <span class="icon">📋</span>
@@ -486,7 +508,6 @@ function renderAppShell() {
               <div class="nav-subitem" data-page="tasks" onclick="window.showPage('tasks')">Task Board</div>
             </div>
           </div>
-
           <div class="nav-item" data-section="gurukul">
             <div class="nav-item-header" onclick="window.toggleNavItem(this)">
               <span class="icon">🎓</span>
