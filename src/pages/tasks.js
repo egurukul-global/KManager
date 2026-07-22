@@ -18,26 +18,26 @@ function escapeHtml(text) {
 }
 
 export function getTasksPage() {
-  const team = state.currentTeam;
+  let team = state.currentTeam;
   if (!team) {
-    if (state.teams?.length) {
-      state.currentTeam = state.teams[0];
-      return getTasksPage();
-    }
-    return `
-      <h1 class="page-title">Task Board</h1>
-      <div class="card"><p class="empty-state">You are not assigned to any teams.</p></div>
-    `;
+    team = { team_id: 'all', name: 'ALL Teams', team_name: 'ALL Teams' };
+    state.currentTeam = team;
   }
+  const isAll = team.team_id === 'all';
 
-  if (team.has_tasks_access === false) {
+  const selectorHtml = `
+    <select id="tasksTeamSelect" onchange="window.switchTasksTeam(this.value)" style="padding:6px 10px; font-size:0.85em; border-radius:6px; border:1px solid var(--border); background:white; font-weight:600; cursor:pointer;">
+      <option value="all" ${isAll ? 'selected' : ''}>ALL Teams</option>
+      ${(state.teams || []).map(t => `<option value="${t.team_id}" ${!isAll && t.team_id === team.team_id ? 'selected' : ''}>${escapeHtml(t.team_name || t.name)}</option>`).join('')}
+    </select>
+  `;
+
+  if (!isAll && team.has_tasks_access === false) {
     return `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
         <div style="display:flex; align-items:center; gap:12px;">
           <h1 class="page-title" style="margin:0;">Tasks</h1>
-          <select id="tasksTeamSelect" onchange="window.switchTasksTeam(this.value)" style="padding:6px 10px; font-size:0.85em; border-radius:6px; border:1px solid var(--border); background:white; font-weight:600; cursor:pointer;">
-            ${(state.teams || []).map(t => `<option value="${t.team_id}" ${t.team_id === team.team_id ? 'selected' : ''}>${escapeHtml(t.team_name || t.name)}</option>`).join('')}
-          </select>
+          ${selectorHtml}
         </div>
       </div>
       <div class="card"><p class="empty-state">⚠️ Task &amp; Issue tracker is disabled for this team. Enable it under Teams settings.</p></div>
@@ -48,9 +48,7 @@ export function getTasksPage() {
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px;">
       <div style="display:flex; align-items:center; gap:12px;">
         <h1 class="page-title" style="margin:0;">Tasks</h1>
-        <select id="tasksTeamSelect" onchange="window.switchTasksTeam(this.value)" style="padding:6px 10px; font-size:0.85em; border-radius:6px; border:1px solid var(--border); background:white; font-weight:600; cursor:pointer;">
-          ${(state.teams || []).map(t => `<option value="${t.team_id}" ${t.team_id === team.team_id ? 'selected' : ''}>${escapeHtml(t.team_name || t.name)}</option>`).join('')}
-        </select>
+        ${selectorHtml}
       </div>
       <button type="button" class="success" onclick="window.openCreateTaskModal()">+ Add Task</button>
     </div>
@@ -79,7 +77,12 @@ export function getTasksPage() {
     <div id="taskModal" class="modal">
       <div class="modal-content" style="max-width:500px;">
         <button type="button" class="close-modal" onclick="window.closeTaskModal()">&times;</button>
-        <h2 id="taskModalTitle">Task details</h2>
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:10px; margin-bottom:15px; margin-right:24px;">
+          <h2 id="taskModalTitle" style="margin:0; font-size:1.3em;">Task details</h2>
+          <select id="taskFormTeamId" onchange="window.handleModalTeamChange(this.value)" style="padding:4px 8px; font-size:0.85em; border-radius:6px; border:1px solid var(--border); background:#f9fafb; font-weight:600; width:180px; max-width:180px;">
+            ${(state.teams || []).map(t => `<option value="${t.team_id}">${escapeHtml(t.team_name || t.name)}</option>`).join('')}
+          </select>
+        </div>
         <form id="taskForm" onsubmit="window.saveTaskFormSubmit(event)">
           <input type="hidden" id="taskFormId">
           <div class="form-group">
@@ -191,6 +194,7 @@ export function initTasksPage() {
   window.removeTaskAttachment = removeTaskAttachment;
   window.sendTaskComment = sendTaskComment;
   window.toggleTaskPanel = toggleTaskPanel;
+  window.handleModalTeamChange = handleModalTeamChange;
 
   wireTaskUploadHandlers();
 
@@ -204,24 +208,31 @@ export function initTasksPage() {
 }
 
 function switchTasksTeam(teamId) {
-  const match = state.teams.find(t => t.team_id === teamId);
-  if (match) {
-    state.currentTeam = match;
-    const sidebarSelect = document.getElementById('teamSelect');
-    if (sidebarSelect) sidebarSelect.value = teamId;
-
-    const shellContent = document.getElementById('okShellContent');
-    const mainContent = document.getElementById('mainContent');
-    const targetEl = shellContent || mainContent;
-    if (targetEl) {
-      targetEl.innerHTML = getTasksPage();
-      initTasksPage();
+  if (teamId === 'all') {
+    state.currentTeam = { team_id: 'all', name: 'ALL Teams', team_name: 'ALL Teams' };
+  } else {
+    const match = state.teams.find(t => t.team_id === teamId);
+    if (match) {
+      state.currentTeam = match;
+      const sidebarSelect = document.getElementById('teamSelect');
+      if (sidebarSelect) sidebarSelect.value = teamId;
     }
+  }
+
+  const shellContent = document.getElementById('okShellContent');
+  const mainContent = document.getElementById('mainContent');
+  const targetEl = shellContent || mainContent;
+  if (targetEl) {
+    targetEl.innerHTML = getTasksPage();
+    initTasksPage();
   }
 }
 
 async function loadTasksData() {
   const teamId = state.currentTeam.team_id;
+  const isAll = teamId === 'all';
+  const teamIds = isAll ? (state.teams || []).map(t => t.team_id) : [teamId];
+
   const colBacklog = document.getElementById('col-backlog');
   const colTodo = document.getElementById('col-todo');
   const colInProg = document.getElementById('col-in_progress');
@@ -233,11 +244,14 @@ async function loadTasksData() {
   if (colComp) colComp.innerHTML = '';
 
   try {
-    const { data: tasks, error } = await supabaseClient
+    const query = supabaseClient
       .from('tasks')
       .select('*')
-      .eq('team_id', teamId)
       .order('created_at', { ascending: false });
+
+    const { data: tasks, error } = isAll 
+      ? await query.in('team_id', teamIds) 
+      : await query.eq('team_id', teamId);
 
     if (error) throw error;
 
@@ -250,15 +264,21 @@ async function loadTasksData() {
       return t;
     });
 
-    // 2. Fetch team members to assign tasks
     const { data: members, error: memErr } = await supabaseClient
       .from('user_teams')
       .select('user_id, users:user_id(id, name, email)')
-      .eq('team_id', teamId);
-    
-    teamMembers = (members || []).map(m => m.users).filter(Boolean);
+      .in('team_id', teamIds);
 
-    // Render columns
+    const rawMembers = (members || []).map(m => m.users).filter(Boolean);
+    const seenIds = new Set();
+    teamMembers = [];
+    rawMembers.forEach(m => {
+      if (!seenIds.has(m.id)) {
+        seenIds.add(m.id);
+        teamMembers.push(m);
+      }
+    });
+
     renderKanbanBoard();
   } catch (err) {
     console.error(err);
@@ -307,6 +327,11 @@ function renderKanbanBoard() {
       assigneesHtml = `<div style="display:flex; align-items:center; padding-left:6px;">${badges}</div>`;
     }
 
+    const taskTeam = state.teams.find(tm => tm.team_id === t.team_id);
+    const teamBadge = (state.currentTeam.team_id === 'all' && taskTeam)
+      ? `<span style="font-size:0.7em; background:#e0f2fe; color:#0369a1; padding:1px 6px; border-radius:4px; font-weight:700; margin-left:4px; display:inline-block;" title="Team">${escapeHtml(taskTeam.team_name || taskTeam.name)}</span>`
+      : '';
+
     const card = document.createElement('div');
     card.className = 'kanban-card card';
     card.style = 'margin:0; padding:8px 12px; cursor:pointer; background:white; border-left:4px solid ' + statusColors[t.status] + '; display:flex; justify-content:space-between; align-items:center; gap:8px;';
@@ -318,6 +343,7 @@ function renderKanbanBoard() {
       <span style="font-weight:600; font-size:0.85em; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;">
         <span style="color:var(--text-secondary); font-weight:500; font-size:0.9em; margin-right:4px;">${escapeHtml(t.task_number)}</span>
         ${escapeHtml(t.title)}
+        ${teamBadge}
       </span>
       <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
         ${hasAttachments ? '<span style="font-size:0.8em; opacity:0.7;">📎</span>' : ''}
@@ -353,10 +379,13 @@ function openCreateTaskModal() {
   document.getElementById('badgeAttachments').textContent = '0';
   document.getElementById('badgeDiscussions').textContent = '0';
 
+  const defaultTeamId = state.currentTeam.team_id === 'all' ? (state.teams?.[0]?.team_id || '') : state.currentTeam.team_id;
+  const teamDropdown = document.getElementById('taskFormTeamId');
+  if (teamDropdown) teamDropdown.value = defaultTeamId;
+  handleModalTeamChange(defaultTeamId);
+
   const delBtn = document.getElementById('taskDeleteBtn');
   if (delBtn) delBtn.style.display = 'none';
-
-  populateAssigneeSelect();
 
   document.getElementById('taskModalTitle').textContent = '➕ Add Task';
   const modal = document.getElementById('taskModal');
@@ -390,10 +419,15 @@ function openEditTaskModal(id) {
   resetTaskPanels();
   document.getElementById('tabBtnDiscussions').style.display = 'flex';
   
-  const assigneesCount = (t.assigned_to ? 1 : 0) + (t.metadata?.assigned_to_users || []).filter(uid => uid !== t.assigned_to).length;
+  const additionalIds = t.metadata?.assigned_to_users || [];
+  const assigneesCount = (t.assigned_to ? 1 : 0) + additionalIds.filter(uid => uid !== t.assigned_to).length;
   document.getElementById('badgeAssignees').textContent = assigneesCount;
   document.getElementById('badgeAttachments').textContent = tempAttachments.length;
   
+  const teamDropdown = document.getElementById('taskFormTeamId');
+  if (teamDropdown) teamDropdown.value = t.team_id;
+  handleModalTeamChange(t.team_id, t.assigned_to, additionalIds);
+
   supabaseClient.from('messages').select('*', { count: 'exact', head: true })
     .eq('metadata->>link_id', t.id).eq('metadata->>link_type', 'task')
     .then(({ count }) => {
@@ -411,9 +445,6 @@ function openEditTaskModal(id) {
     const isGlobal = !!state.isOkAdmin;
     delBtn.style.display = (isCreator || isGlobal) ? '' : 'none';
   }
-
-  const additionalIds = t.metadata?.assigned_to_users || [];
-  populateAssigneeSelect(t.assigned_to, additionalIds);
 
   document.getElementById('taskModalTitle').textContent = `✏️ Edit ${t.task_number}`;
   const modal = document.getElementById('taskModal');
@@ -479,6 +510,7 @@ async function saveTaskFormSubmit(e) {
   const status = document.getElementById('taskFormStatus').value;
   const priority = document.getElementById('taskFormPriority').value;
   const assignee = document.getElementById('taskFormAssignee').value || null;
+  const teamId = document.getElementById('taskFormTeamId').value;
 
   setButtonLoading(btn, true);
 
@@ -504,6 +536,7 @@ async function saveTaskFormSubmit(e) {
           status,
           priority,
           assigned_to: assignee,
+          team_id: teamId,
           metadata
         })
         .eq('id', editingTaskId);
@@ -511,8 +544,8 @@ async function saveTaskFormSubmit(e) {
       if (error) throw error;
       showToast('Task updated', 'success');
     } else {
-      const teamId = state.currentTeam.team_id;
-      const teamPrefix = (state.currentTeam.team_name || state.currentTeam.name || 'TSK').slice(0, 3).toUpperCase();
+      const selectedTeam = state.teams.find(t => t.team_id === teamId);
+      const teamPrefix = (selectedTeam?.team_name || selectedTeam?.name || 'TSK').slice(0, 3).toUpperCase();
       
       const { count } = await supabaseClient
         .from('tasks')
@@ -852,4 +885,18 @@ function resetTaskPanels() {
       btn.classList.add('secondary');
     }
   });
+}
+
+async function handleModalTeamChange(teamId, selectedId = '', selectedAdditionalIds = []) {
+  try {
+    const { data: members } = await supabaseClient
+      .from('user_teams')
+      .select('user_id, users:user_id(id, name, email)')
+      .eq('team_id', teamId);
+    
+    teamMembers = (members || []).map(m => m.users).filter(Boolean);
+    populateAssigneeSelect(selectedId, selectedAdditionalIds);
+  } catch (err) {
+    console.error(err);
+  }
 }
