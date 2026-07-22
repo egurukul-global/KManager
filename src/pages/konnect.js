@@ -39,11 +39,9 @@ export function getKonnectPage() {
       <!-- Left sidebar: Chats List -->
       <div style="width:320px; border-right:1px solid var(--border); display:flex; flex-direction:column; background:white;">
         <div style="padding:12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:8px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
             <input type="text" id="konnectSearch" placeholder="Search name or messages..." oninput="window.handleKonnectSearch(this.value)" style="flex:1; height:32px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); font-size:0.8em;">
-            <button onclick="window.openNewChatModal()" class="primary" style="padding:4px 8px; font-size:0.8em; margin:0; height:32px;" title="New Chat">➕</button>
-            <button onclick="window.openNewGroupModal()" class="secondary" style="padding:4px 8px; font-size:0.8em; margin:0; height:32px;" title="Create Group">👥</button>
-            <button onclick="window.openSettingsModal()" class="secondary" style="padding:4px 8px; font-size:0.8em; margin:0; height:32px;" title="Settings">⚙️</button>
+            <button onclick="window.openSettingsModal()" class="secondary" style="padding:4px; font-size:1.25em; margin:0; height:32px; width:32px; display:flex; align-items:center; justify-content:center; border:none; background:none; color:var(--primary); cursor:pointer;" title="Settings">⚙️</button>
           </div>
         </div>
 
@@ -67,8 +65,12 @@ export function getKonnectPage() {
       <div class="modal-content" style="max-width:400px;">
         <button type="button" class="close-modal" onclick="window.closeKonnectModals()">&times;</button>
         <h2 style="margin-top:0; margin-bottom:16px; font-size:1.2em;">New Chat</h2>
+        <div class="form-group" style="margin-bottom:12px;">
+          <label style="font-weight:600; font-size:0.85em; color:var(--text-main); display:block; margin-bottom:4px;">Search Volunteer</label>
+          <input type="text" id="newChatSearchInput" placeholder="Type name to filter..." oninput="window.filterNewChatRecipients(this.value)" style="width:100%; height:38px; border-radius:6px; border:1px solid var(--border); padding:6px 12px; font-size:0.9em; margin-bottom:8px;">
+        </div>
         <div class="form-group">
-          <label>Select Recipient</label>
+          <label style="font-weight:600; font-size:0.85em; color:var(--text-main); display:block; margin-bottom:4px;">Select Recipient</label>
           <select id="newChatRecipient" style="width:100%; height:38px; border-radius:6px; border:1px solid var(--border); padding:6px;"></select>
         </div>
         <div class="btn-group" style="margin-top:16px; display:flex; justify-content:flex-end; gap:8px;">
@@ -161,6 +163,7 @@ export function initKonnectPage() {
   window.handleChatFileSelection = handleChatFileSelection;
   window.closePromptModal = closePromptModal;
   window.closeConfirmModal = closeConfirmModal;
+  window.filterNewChatRecipients = filterNewChatRecipients;
 
   activeThread = null;
   loadKonnectRoster().then(() => {
@@ -374,7 +377,12 @@ function handleKonnectSearch(val) {
   renderConversations();
 }
 
+let allowedNewChatUsers = [];
+
 async function openNewChatModal() {
+  const input = document.getElementById('newChatSearchInput');
+  if (input) input.value = '';
+
   const select = document.getElementById('newChatRecipient');
   if (select) {
     select.innerHTML = '<option value="">Select contact...</option>';
@@ -382,7 +390,7 @@ async function openNewChatModal() {
     const myPerm = (perms || []).find(p => p.user_id === state.user.id);
     const allowOpposite = myPerm ? myPerm.allow_opposite_gender : false;
 
-    const allowedUsers = activeRoster.filter(u => {
+    allowedNewChatUsers = activeRoster.filter(u => {
       if (u.id === state.user.id) return false;
       if (state.user.gender && u.gender && state.user.gender !== u.gender) {
         if (!allowOpposite) return false;
@@ -392,12 +400,7 @@ async function openNewChatModal() {
       return true;
     });
 
-    allowedUsers.forEach(u => {
-      const opt = document.createElement('option');
-      opt.value = u.id;
-      opt.textContent = `${u.name} (${u.role || 'Volunteer'})`;
-      select.appendChild(opt);
-    });
+    renderNewChatRecipientsList(allowedNewChatUsers);
   }
 
   const modal = document.getElementById('newChatModal');
@@ -405,6 +408,25 @@ async function openNewChatModal() {
     modal.classList.add('active');
     modal.style.display = 'flex';
   }
+}
+
+function renderNewChatRecipientsList(list) {
+  const select = document.getElementById('newChatRecipient');
+  if (!select) return;
+  select.innerHTML = '<option value="">Select contact...</option>';
+  list.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.id;
+    opt.textContent = `${u.name} (${u.role || 'Volunteer'})`;
+    select.appendChild(opt);
+  });
+}
+
+function filterNewChatRecipients(query) {
+  const filtered = allowedNewChatUsers.filter(u => 
+    u.name.toLowerCase().includes(query.toLowerCase())
+  );
+  renderNewChatRecipientsList(filtered);
 }
 
 function openNewGroupModal() {
@@ -442,6 +464,10 @@ async function openSettingsModal() {
       const crossTeam = perm ? perm.cross_team_access : 'none';
 
       container.innerHTML = `
+        <div style="display:flex; flex-direction:column; gap:10px; border-bottom:1px solid var(--border); padding-bottom:12px; margin-bottom:12px;">
+          <button onclick="window.closeKonnectModals(); window.openNewChatModal();" class="primary" style="margin:0; width:100%;">➕ Start New Chat</button>
+          <button onclick="window.closeKonnectModals(); window.openNewGroupModal();" class="secondary" style="margin:0; width:100%;">👥 Create Group Chat</button>
+        </div>
         <div style="background:#f3f4f6; padding:10px; border-radius:6px;">
           <strong>Gender clearance:</strong> ${allowOpposite ? '✅ Allowed' : '❌ Opposing gender messages blocked'}
         </div>
@@ -564,7 +590,7 @@ async function selectConversation(type, id, name) {
 
     <!-- Bottom Input -->
     <div style="padding:16px; background:white; border-top:1px solid var(--border); display:flex; gap:10px; align-items:center;">
-      <button onclick="window.triggerChatAttachment()" class="secondary" style="height:40px; width:40px; margin:0; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.2em;" title="Attach File">📎</button>
+      <button onclick="window.triggerChatAttachment()" style="height:40px; width:40px; margin:0; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.25em; border:none; background:none; color:var(--primary); cursor:pointer;" title="Attach File">📎</button>
       <input type="file" id="konnectAttachmentInput" style="display:none;" onchange="window.handleChatFileSelection(event)">
       
       <input type="text" id="konnectMsgInput" placeholder="Type a message..." style="flex:1; height:40px; border-radius:8px; border:1px solid var(--border); padding:6px 12px; font-size:0.9em;" onkeydown="if(event.key==='Enter') window.sendKonnectMessage()">
@@ -631,11 +657,9 @@ async function loadMessages() {
       // Inline deletion countdown
       if (msg.id === deletingMessageId) {
         return `
-          <div style="align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:70%; margin:4px 0;">
-            <div style="background:#fee2e2; border:1px dashed #ef4444; border-radius:12px; padding:10px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; animation:pulse 1.5s infinite;">
-              <span style="font-size:0.85em; color:#b91c1c; font-weight:600;">Deleting in ${deletingCountdown}s...</span>
-              <button onclick="window.undoDeleteMessage(event)" style="padding:2px 8px; font-size:0.75em; font-weight:700; color:white; background:#ef4444; border:none; border-radius:4px; cursor:pointer;">Undo</button>
-            </div>
+          <div style="width:100%; margin:2px 0; font-size:0.85em; padding:4px 8px; background:#fee2e2; border:1px dashed #ef4444; border-radius:4px; display:flex; align-items:center; justify-content:space-between; gap:12px; animation:pulse 1.5s infinite;">
+            <span style="color:#b91c1c; font-weight:600;">Deleting in ${deletingCountdown}s...</span>
+            <button onclick="window.undoDeleteMessage(event)" style="padding:1px 6px; font-size:0.75em; font-weight:700; color:white; background:#ef4444; border:none; border-radius:3px; cursor:pointer;">Undo</button>
           </div>
         `;
       }
@@ -643,14 +667,10 @@ async function loadMessages() {
       // Quoted Reply Context block
       let quoteHtml = '';
       if (msg.metadata?.reply_to) {
-        const quoteBg = isMe ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.06)';
-        const quoteBorder = isMe ? '3px solid white' : '3px solid var(--primary)';
-        const quoteColor = isMe ? 'white' : 'var(--text-secondary)';
         quoteHtml = `
-          <div style="background:${quoteBg}; border-left:${quoteBorder}; padding:4px 8px; border-radius:4px; margin-bottom:6px; font-size:0.8em; color:${quoteColor};">
-            <strong style="display:block; font-size:0.9em; margin-bottom:2px;">${escapeHtml(msg.metadata.reply_to.sender)}</strong>
-            <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">${escapeHtml(msg.metadata.reply_to.body)}</span>
-          </div>
+          <span style="font-size:0.85em; color:#0369a1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; opacity:0.8; margin-bottom:2px;">
+            ➡️ Replying to ${escapeHtml(msg.metadata.reply_to.sender)}: "${escapeHtml(msg.metadata.reply_to.body)}"
+          </span>
         `;
       }
 
@@ -658,9 +678,9 @@ async function loadMessages() {
       let attachHtml = '';
       if (msg.attachment_url) {
         attachHtml = `
-          <div style="background:rgba(0,0,0,0.03); border:1px solid var(--border); border-radius:6px; padding:6px; display:flex; align-items:center; gap:8px; margin-top:6px; font-size:0.85em;">
+          <div style="background:white; border:1px solid var(--border); border-radius:4px; padding:3px 6px; display:inline-flex; align-items:center; gap:6px; margin-top:2px; font-size:0.85em; color:var(--primary);">
             <span>📎</span>
-            <a href="${msg.attachment_url}" target="_blank" style="color:var(--primary); font-weight:600; text-decoration:underline; word-break:break-all;">
+            <a href="${msg.attachment_url}" target="_blank" style="color:inherit; font-weight:600; text-decoration:underline; word-break:break-all;">
               ${escapeHtml(msg.attachment_name || 'Attached file')}
             </a>
           </div>
@@ -668,26 +688,26 @@ async function loadMessages() {
       }
 
       return `
-        <div class="msg-bubble-container" style="display:flex; flex-direction:column; align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:70%; position:relative; group;">
-          ${(!isMe && activeThread.type !== 'user') ? `<span style="font-size:0.75em; color:var(--text-secondary); margin-bottom:2px; font-weight:600; margin-left:4px;">${escapeHtml(senderName)}</span>` : ''}
-          
-          <div style="background:${isMe ? 'var(--primary)' : 'white'}; color:${isMe ? 'white' : 'var(--text-main)'}; border:1px solid ${isMe ? 'var(--primary)' : 'var(--border)'}; border-radius:12px; padding:8px 12px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85em; padding:6px 10px; border-bottom:1px solid #f3f4f6; background:${isMe ? '#fffbeb' : 'white'}; position:relative; min-height:36px; gap:8px;">
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center;">
             ${quoteHtml}
-            <p style="margin:0; font-size:0.9em; white-space:pre-wrap; word-break:break-word;">${escapeHtml(msg.body)}</p>
-            ${attachHtml}
-            
-            <div style="display:flex; justify-content:flex-end; align-items:center; gap:6px; margin-top:4px; font-size:0.7em; opacity:0.8;">
-              <span>${timeStr}</span>
-              <span class="msg-action-trigger" onclick="window.toggleMessageActions(event, '${msg.id}')" style="cursor:pointer; margin-left:6px; font-weight:700;" title="Actions">⋮</span>
+            <div style="display:flex; align-items:baseline; gap:6px; flex-wrap:wrap;">
+              <span style="font-weight:700; color:${isMe ? 'var(--primary)' : '#4b5563'}; flex-shrink:0;">${isMe ? 'Me' : escapeHtml(senderName)}:</span>
+              <span style="color:var(--text-main); white-space:normal; word-break:break-word; font-size:0.95em;">${escapeHtml(msg.body)}</span>
+              ${attachHtml}
             </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+            <span style="font-size:0.8em; color:var(--text-secondary);">${timeStr}</span>
+            <span class="msg-action-trigger" onclick="window.toggleMessageActions(event, '${msg.id}')" style="cursor:pointer; font-weight:700; color:var(--text-secondary); padding:2px 4px;" title="Actions">⋮</span>
+          </div>
 
-            <!-- Floating Actions Dropdown Card (explicit background and color overrides) -->
-            <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:30px; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:#1f2937;">
-              <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">💬 Reply</div>
-              ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📩 Mark Unread</div>` : ''}
-              <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#ef4444;">🗑️ Delete for me</div>
-              ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:white; color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
-            </div>
+          <!-- Floating Actions Dropdown Card -->
+          <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:28px; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:#1f2937;">
+            <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">💬 Reply</div>
+            ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📩 Mark Unread</div>` : ''}
+            <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#ef4444;">🗑️ Delete for me</div>
+            ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:white; color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
           </div>
         </div>
       `;
