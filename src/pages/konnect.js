@@ -554,7 +554,7 @@ async function selectConversation(type, id, name) {
     </div>
 
     <!-- Reply Context Bar -->
-    <div id="konnectReplyBar" style="display:none; padding:8px 16px; background:#e0f2fe; border-top:1px solid var(--border); border-left:4px solid var(--primary); display:flex; justify-content:space-between; align-items:center;">
+    <div id="konnectReplyBar" style="display:none; padding:8px 16px; background:#e0f2fe; border-top:1px solid var(--border); border-left:4px solid var(--primary); justify-content:space-between; align-items:center;">
       <div style="font-size:0.8em;">
         <strong>Replying to <span id="konnectReplySender"></span></strong>
         <p id="konnectReplyText" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px; color:#0369a1;"></p>
@@ -684,8 +684,7 @@ async function loadMessages() {
             <!-- Floating Actions Dropdown Card (explicit background and color overrides) -->
             <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:30px; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:#1f2937;">
               <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">💬 Reply</div>
-              <div onclick="window.triggerChatAttachment('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📎 Attach file</div>
-              <div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📩 Mark Unread</div>
+              ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📩 Mark Unread</div>` : ''}
               <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#ef4444;">🗑️ Delete for me</div>
               ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:white; color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
             </div>
