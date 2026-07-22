@@ -620,10 +620,15 @@ async function selectConversation(type, id, name) {
       .neq('sender_id', state.user.id);
   }
 
-  const { error } = await markReadQuery;
+  const { data, error } = await markReadQuery.select();
 
-  if (!error) {
-    loadConversations();
+  console.log("markReadQuery execution result:", { data, error, type, id });
+
+  if (error) {
+    console.error("Failed to mark messages as read:", error);
+    showToast(`Mark read error: ${error.message}`, 'error');
+  } else {
+    await loadConversations();
   }
 }
 
