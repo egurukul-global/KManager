@@ -92,3 +92,41 @@ Determines if the active user can approve or reject the request:
 * Evaluates if the user has the role matching the request's `current_role_code`.
 * Supports skip-level approval rules (allowing higher-step users to claim lower-step actions).
 * Mapped inside `supabase/migrations/037_skip_level_approvals.sql`.
+
+---
+
+## 3. Konnect Messaging Tables (Phase 4)
+
+### `public.chat_groups`
+Ad-hoc user-created groups.
+* `id` (`UUID`, PK)
+* `name` (`TEXT`): Display name of the custom group.
+* `created_by` (`UUID`): References `public.users(id)`.
+
+### `public.chat_group_members`
+Association table for custom groups.
+* `group_id` (`UUID`): References `public.chat_groups(id)`.
+* `user_id` (`UUID`): References `public.users(id)`.
+
+### `public.chat_preferences`
+Personal pinning preferences.
+* `user_id` (`UUID`): References `public.users(id)`.
+* `chat_target_type` (`TEXT`): `'user'`, `'team'`, `'group'`.
+* `chat_target_id` (`TEXT`): Target identifier.
+* `is_pinned` (`BOOLEAN`): True if user pinned this conversation.
+
+### `public.chat_permissions`
+Cross-gender and cross-team security filters.
+* `user_id` (`UUID`, PK): References `public.users(id)`.
+* `allow_opposite_gender` (`BOOLEAN`): Enables messaging users of opposite gender.
+* `cross_team_access` (`TEXT`): `'none'`, `'team'`, `'global'`.
+
+---
+
+## 4. Konnect Helper Functions
+
+### `public.can_chat_with(user_a UUID, user_b UUID)`
+Checks whether user_a is authorized to send direct messages to user_b.
+* Blocks messaging if genders differ unless both have `allow_opposite_gender = true`.
+* Restricts messaging boundaries if cross-team rules are `'none'` (restricting to shared teams).
+

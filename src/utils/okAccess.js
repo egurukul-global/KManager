@@ -30,6 +30,13 @@ export const OK_APPS = [
     path: '/tasks',
     live: true,
     description: 'Unified Task Tracker'
+  },
+  {
+    code: 'konnect',
+    label: 'Konnect',
+    path: '/konnect',
+    live: true,
+    description: 'Secure Monastery Chat Hub'
   }
 ];
 
@@ -68,7 +75,7 @@ export function isOkAdmin() {
 }
 
 export function hasAppAccess(appCode) {
-  if (appCode === 'tasks') return true;
+  if (appCode === 'tasks' || appCode === 'konnect') return true;
   const apps = state.okApps || [];
   return apps.some(a => a.app_code === appCode && a.enabled === true);
 }
@@ -272,6 +279,7 @@ export function parseAppPath() {
   if (lower === '/admin' || lower.startsWith('/admin/')) return 'ok-admin';
   if (lower === '/profile' || lower.startsWith('/profile/')) return 'ok-profile';
   if (lower === '/tasks' || lower.startsWith('/tasks/')) return 'tasks';
+  if (lower === '/konnect' || lower.startsWith('/konnect/')) return 'konnect';
   return 'home';
 }
 

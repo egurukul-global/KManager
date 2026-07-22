@@ -34,6 +34,7 @@ import { getExpenseReportsPage, initExpenseReportsPage } from './pages/expense-r
 import { getAddExpensePage, initAddExpensePage, getExpenseManagerPage, initExpenseManagerPage } from './pages/expenses.js';
 import { getGenerateReceiptPage, initGenerateReceiptPage } from './pages/generate-receipt.js';
 import { getTasksPage, initTasksPage } from './pages/tasks.js';
+import { getKonnectPage, initKonnectPage } from './pages/konnect.js';
 import { renderOkShell, initOkShell } from './pages/ok-shell.js';
 import { loadUserTeamDefaultsForCurrentTeam } from './utils/userTeamDefaults.js';
 import { getDisplayName } from './utils/displayName.js';
@@ -248,6 +249,11 @@ async function routeAfterAuth() {
     return;
   }
 
+  if (route === 'konnect') {
+    renderKonnectPage();
+    return;
+  }
+
   if (route === 'gurukul' || route === 'utilities') {
     renderComingSoon(route);
     return;
@@ -449,6 +455,27 @@ function renderTasksPage() {
   if (content) {
     content.innerHTML = getTasksPage();
     initTasksPage();
+  }
+}
+
+function renderKonnectPage() {
+  if (!hasAppAccess('konnect') && !state.isOkAdmin) {
+    showToast('You do not have access to Konnect.', 'warning');
+    navigateOk('/');
+    return;
+  }
+
+  app.innerHTML = renderOkShell({
+    title: 'Konnect',
+    activePath: '/konnect',
+    mainHtml: '<div id="okShellContent"></div>'
+  });
+  initOkShell();
+
+  const content = document.getElementById('okShellContent');
+  if (content) {
+    content.innerHTML = getKonnectPage();
+    initKonnectPage();
   }
 }
 

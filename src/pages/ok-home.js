@@ -32,7 +32,7 @@ function pinnedApps() {
   const pins = (state.okPins || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   const codes = pins.map(p => p.app_code).filter(code => hasAppAccess(code));
   if (codes.length > 0) return codes;
-  return ['finance', 'tasks', 'gurukul', 'utilities'].filter(code => hasAppAccess(code) || state.isOkAdmin);
+  return ['finance', 'tasks', 'konnect', 'gurukul', 'utilities'].filter(code => hasAppAccess(code) || state.isOkAdmin);
 }
 
 function logosHtml() {
