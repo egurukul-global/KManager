@@ -575,7 +575,7 @@ async function selectConversation(type, id, name) {
     </div>
 
     <!-- Messages Timeline -->
-    <div id="konnectTimeline" style="flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:12px;">
+    <div id="konnectTimeline" style="flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:3px;">
       <p class="empty-state">Loading timeline...</p>
     </div>
 
@@ -657,9 +657,11 @@ async function loadMessages() {
       // Inline deletion countdown
       if (msg.id === deletingMessageId) {
         return `
-          <div style="width:100%; margin:2px 0; font-size:0.85em; padding:4px 8px; background:#fee2e2; border:1px dashed #ef4444; border-radius:4px; display:flex; align-items:center; justify-content:space-between; gap:12px; animation:pulse 1.5s infinite;">
-            <span style="color:#b91c1c; font-weight:600;">Deleting in ${deletingCountdown}s...</span>
-            <button onclick="window.undoDeleteMessage(event)" style="padding:1px 6px; font-size:0.75em; font-weight:700; color:white; background:#ef4444; border:none; border-radius:3px; cursor:pointer;">Undo</button>
+          <div style="align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:80%; margin:2px 0;">
+            <div style="background:#fee2e2; border:1px dashed #ef4444; border-radius:6px; padding:4px 8px; display:flex; align-items:center; justify-content:space-between; gap:12px; animation:pulse 1.5s infinite;">
+              <span style="color:#b91c1c; font-weight:600; font-size:0.8em;">Deleting in ${deletingCountdown}s...</span>
+              <button onclick="window.undoDeleteMessage(event)" style="padding:1px 6px; font-size:0.75em; font-weight:700; color:white; background:#ef4444; border:none; border-radius:3px; cursor:pointer;">Undo</button>
+            </div>
           </div>
         `;
       }
@@ -667,10 +669,14 @@ async function loadMessages() {
       // Quoted Reply Context block
       let quoteHtml = '';
       if (msg.metadata?.reply_to) {
+        const quoteBg = isMe ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.06)';
+        const quoteBorder = isMe ? '3px solid white' : '3px solid var(--primary)';
+        const quoteColor = isMe ? 'white' : 'var(--text-secondary)';
         quoteHtml = `
-          <span style="font-size:0.85em; color:#0369a1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block; opacity:0.8; margin-bottom:2px;">
-            ➡️ Replying to ${escapeHtml(msg.metadata.reply_to.sender)}: "${escapeHtml(msg.metadata.reply_to.body)}"
-          </span>
+          <div style="background:${quoteBg}; border-left:${quoteBorder}; padding:2px 6px; border-radius:4px; margin-bottom:4px; font-size:0.8em; color:${quoteColor}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px;">
+            <strong style="display:block; font-size:0.9em; margin-bottom:1px;">${escapeHtml(msg.metadata.reply_to.sender)}</strong>
+            <span>${escapeHtml(msg.metadata.reply_to.body)}</span>
+          </div>
         `;
       }
 
@@ -678,7 +684,7 @@ async function loadMessages() {
       let attachHtml = '';
       if (msg.attachment_url) {
         attachHtml = `
-          <div style="background:white; border:1px solid var(--border); border-radius:4px; padding:3px 6px; display:inline-flex; align-items:center; gap:6px; margin-top:2px; font-size:0.85em; color:var(--primary);">
+          <div style="background:white; border:1px solid var(--border); border-radius:4px; padding:2px 6px; display:inline-flex; align-items:center; gap:6px; font-size:0.8em; color:var(--primary); vertical-align:middle;">
             <span>📎</span>
             <a href="${msg.attachment_url}" target="_blank" style="color:inherit; font-weight:600; text-decoration:underline; word-break:break-all;">
               ${escapeHtml(msg.attachment_name || 'Attached file')}
@@ -688,26 +694,24 @@ async function loadMessages() {
       }
 
       return `
-        <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.85em; padding:6px 10px; border-bottom:1px solid #f3f4f6; background:${isMe ? '#fffbeb' : 'white'}; position:relative; min-height:36px; gap:8px;">
-          <div style="flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center;">
+        <div class="msg-bubble-container" style="display:flex; flex-direction:column; align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:80%; position:relative; margin:2px 0;">
+          <div style="background:${isMe ? 'var(--primary)' : 'white'}; color:${isMe ? 'white' : 'var(--text-main)'}; border:1px solid ${isMe ? 'var(--primary)' : 'var(--border)'}; border-radius:${isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px'}; padding:4px 8px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative;">
             ${quoteHtml}
-            <div style="display:flex; align-items:baseline; gap:6px; flex-wrap:wrap;">
-              <span style="font-weight:700; color:${isMe ? 'var(--primary)' : '#4b5563'}; flex-shrink:0;">${isMe ? 'Me' : escapeHtml(senderName)}:</span>
-              <span style="color:var(--text-main); white-space:normal; word-break:break-word; font-size:0.95em;">${escapeHtml(msg.body)}</span>
+            <div style="display:flex; align-items:baseline; gap:6px; font-size:0.85em; flex-wrap:wrap;">
+              ${(!isMe && activeThread.type !== 'user') ? `<strong style="color:var(--primary); font-weight:700; flex-shrink:0; margin-right:2px;">${escapeHtml(senderName)}:</strong>` : ''}
+              <span style="white-space:normal; word-break:break-word; font-size:0.95em;">${escapeHtml(msg.body)}</span>
               ${attachHtml}
+              <span style="font-size:0.8em; opacity:0.8; margin-left:6px; flex-shrink:0;">${timeStr}</span>
+              <span class="msg-action-trigger" onclick="window.toggleMessageActions(event, '${msg.id}')" style="cursor:pointer; font-weight:700; opacity:0.8; padding:0 2px; flex-shrink:0;">⋮</span>
             </div>
-          </div>
-          <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
-            <span style="font-size:0.8em; color:var(--text-secondary);">${timeStr}</span>
-            <span class="msg-action-trigger" onclick="window.toggleMessageActions(event, '${msg.id}')" style="cursor:pointer; font-weight:700; color:var(--text-secondary); padding:2px 4px;" title="Actions">⋮</span>
-          </div>
 
-          <!-- Floating Actions Dropdown Card -->
-          <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:28px; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:#1f2937;">
-            <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">💬 Reply</div>
-            ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📩 Mark Unread</div>` : ''}
-            <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#ef4444;">🗑️ Delete for me</div>
-            ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:white; color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
+            <!-- Floating Actions Dropdown Card -->
+            <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:24px; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:#1f2937;">
+              <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">💬 Reply</div>
+              ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📩 Mark Unread</div>` : ''}
+              <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#ef4444;">🗑️ Delete for me</div>
+              ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:white; color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
+            </div>
           </div>
         </div>
       `;
