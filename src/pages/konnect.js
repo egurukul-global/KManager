@@ -3,6 +3,7 @@ import { supabaseClient } from '../db.js';
 import { state } from '../state.js';
 import { renderOkShell } from './ok-shell.js';
 import { showToast } from '../components/toasts.js';
+import { uploadReceipt, resolveReceiptViewUrl } from '../utils/upload.js';
 
 let activeThread = null; // { type: 'user'|'team'|'group', id: string, name: string }
 let conversationsList = [];
@@ -108,6 +109,32 @@ export function getKonnectPage() {
         </div>
       </div>
     </div>
+
+    <!-- Modal: Custom Prompt -->
+    <div id="konnectPromptModal" class="modal">
+      <div class="modal-content" style="max-width:400px;">
+        <h2 id="konnectPromptTitle" style="margin-top:0; font-size:1.15em; color:var(--text-main);">Enter Caption</h2>
+        <div class="form-group" style="margin:12px 0;">
+          <input type="text" id="konnectPromptInput" style="width:100%; height:38px; border-radius:6px; border:1px solid var(--border); padding:6px 12px; font-size:0.9em;">
+        </div>
+        <div class="btn-group" style="display:flex; justify-content:flex-end; gap:8px;">
+          <button type="button" class="secondary" onclick="window.closePromptModal(false)">Cancel</button>
+          <button type="button" class="primary" id="konnectPromptSubmitBtn" onclick="window.closePromptModal(true)">Submit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Custom Confirm -->
+    <div id="konnectConfirmModal" class="modal">
+      <div class="modal-content" style="max-width:380px; text-align:center;">
+        <h3 id="konnectConfirmTitle" style="margin-top:0; font-size:1.1em; color:var(--text-main);">Confirm Action</h3>
+        <p id="konnectConfirmMessage" style="font-size:0.9em; color:var(--text-secondary); margin-bottom:20px;"></p>
+        <div style="display:flex; justify-content:center; gap:12px;">
+          <button type="button" class="secondary" onclick="window.closeConfirmModal(false)">Cancel</button>
+          <button type="button" class="danger" id="konnectConfirmSubmitBtn" onclick="window.closeConfirmModal(true)" style="margin:0;">Yes, proceed</button>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -132,6 +159,8 @@ export function initKonnectPage() {
   window.undoDeleteMessage = undoDeleteMessage;
   window.triggerChatAttachment = triggerChatAttachment;
   window.handleChatFileSelection = handleChatFileSelection;
+  window.closePromptModal = closePromptModal;
+  window.closeConfirmModal = closeConfirmModal;
 
   activeThread = null;
   loadKonnectRoster().then(() => {
@@ -516,7 +545,6 @@ async function selectConversation(type, id, name) {
       </div>
       <div style="display:flex; gap:8px;">
         <button onclick="window.togglePinChat()" class="secondary" style="padding:4px 10px; font-size:0.8em; margin:0;">${isPinned ? '📌 Unpin' : '📌 Pin'}</button>
-        <button onclick="window.markChatAsUnread()" class="secondary" style="padding:4px 10px; font-size:0.8em; margin:0;">📩 Mark Unread</button>
       </div>
     </div>
 
@@ -615,8 +643,11 @@ async function loadMessages() {
       // Quoted Reply Context block
       let quoteHtml = '';
       if (msg.metadata?.reply_to) {
+        const quoteBg = isMe ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.06)';
+        const quoteBorder = isMe ? '3px solid white' : '3px solid var(--primary)';
+        const quoteColor = isMe ? 'white' : 'var(--text-secondary)';
         quoteHtml = `
-          <div style="background:rgba(0,0,0,0.06); border-left:3px solid var(--primary); padding:4px 8px; border-radius:4px; margin-bottom:6px; font-size:0.8em; color:var(--text-secondary);">
+          <div style="background:${quoteBg}; border-left:${quoteBorder}; padding:4px 8px; border-radius:4px; margin-bottom:6px; font-size:0.8em; color:${quoteColor};">
             <strong style="display:block; font-size:0.9em; margin-bottom:2px;">${escapeHtml(msg.metadata.reply_to.sender)}</strong>
             <span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block;">${escapeHtml(msg.metadata.reply_to.body)}</span>
           </div>
@@ -650,12 +681,13 @@ async function loadMessages() {
               <span class="msg-action-trigger" onclick="window.toggleMessageActions(event, '${msg.id}')" style="cursor:pointer; margin-left:6px; font-weight:700;" title="Actions">⋮</span>
             </div>
 
-            <!-- Floating Actions Dropdown Card -->
-            <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:30px; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:100; font-size:0.85em; flex-direction:column; width:130px; overflow:hidden;">
-              <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; color:var(--text-main); border-bottom:1px solid #f3f4f6; text-align:left;">💬 Reply</div>
-              <div onclick="window.triggerChatAttachment('${msg.id}')" style="padding:8px 12px; cursor:pointer; color:var(--text-main); border-bottom:1px solid #f3f4f6; text-align:left;">📎 Attach file</div>
-              <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; color:#ef4444; border-bottom:1px solid #f3f4f6; text-align:left;">🗑️ Delete for me</div>
-              ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; color:#ef4444; font-weight:600; text-align:left;">🗑️ Delete for all</div>` : ''}
+            <!-- Floating Actions Dropdown Card (explicit background and color overrides) -->
+            <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:30px; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:#1f2937;">
+              <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">💬 Reply</div>
+              <div onclick="window.triggerChatAttachment('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📎 Attach file</div>
+              <div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📩 Mark Unread</div>
+              <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#ef4444;">🗑️ Delete for me</div>
+              ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:white; color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
             </div>
           </div>
         </div>
@@ -831,28 +863,16 @@ async function handleChatFileSelection(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  const caption = prompt(`Enter a caption for "${file.name}" (optional):`) || file.name;
+  const captionInput = await showCustomPrompt(`Enter a caption for "${file.name}" (optional):`, file.name);
+  if (captionInput === null) return;
+  const caption = captionInput.trim() || file.name;
 
   try {
     showToast('Uploading attachment...', 'info');
 
-    // 1. Get signed R2 upload URL (reusing existing receipts uploader logic)
-    const { data, error } = await supabaseClient.functions.invoke('get-receipt-upload-url', {
-      body: { filename: file.name, contentType: file.type }
-    });
+    const { objectKey } = await uploadReceipt(file);
+    const publicUrl = resolveReceiptViewUrl(objectKey);
 
-    if (error) throw error;
-
-    // 2. PUT upload to R2
-    const uploadRes = await fetch(data.uploadUrl, {
-      method: 'PUT',
-      headers: { 'Content-Type': file.type },
-      body: file
-    });
-
-    if (!uploadRes.ok) throw new Error('Upload failed');
-
-    // 3. Send message with attachment
     const { error: msgErr } = await supabaseClient
       .from('messages')
       .insert({
@@ -860,7 +880,7 @@ async function handleChatFileSelection(e) {
         recipient_type: activeThread.type,
         recipient_id: activeThread.id,
         body: `Shared file: ${caption}`,
-        attachment_url: data.publicUrl,
+        attachment_url: publicUrl,
         attachment_name: caption
       });
 
@@ -898,18 +918,20 @@ async function togglePinChat() {
   }
 }
 
-async function markChatAsUnread() {
-  if (!activeThread) return;
+async function markChatAsUnread(msgId) {
+  let targetMsgId = msgId;
   
-  // Find last received message in active conversation
-  const lastReceived = allMessages.find(m => {
-    const isThisThread = activeThread.type === 'user'
-      ? (m.recipient_type === 'user' && m.sender_id === activeThread.id && m.recipient_id === state.user.id)
-      : (m.recipient_type === activeThread.type && m.recipient_id === activeThread.id && m.sender_id !== state.user.id);
-    return isThisThread;
-  });
+  if (!targetMsgId && activeThread) {
+    const lastReceived = allMessages.find(m => {
+      const isThisThread = activeThread.type === 'user'
+        ? (m.recipient_type === 'user' && m.sender_id === activeThread.id && m.recipient_id === state.user.id)
+        : (m.recipient_type === activeThread.type && m.recipient_id === activeThread.id && m.sender_id !== state.user.id);
+      return isThisThread;
+    });
+    if (lastReceived) targetMsgId = lastReceived.id;
+  }
 
-  if (!lastReceived) {
+  if (!targetMsgId) {
     showToast('No messages to mark as unread', 'warning');
     return;
   }
@@ -918,12 +940,69 @@ async function markChatAsUnread() {
     const { error } = await supabaseClient
       .from('messages')
       .update({ read_at: null })
-      .eq('id', lastReceived.id);
+      .eq('id', targetMsgId);
 
     if (error) throw error;
-    showToast('Conversation marked unread', 'success');
+    showToast('Message marked unread', 'success');
     await loadConversations();
+    document.querySelectorAll('.msg-actions-dropdown').forEach(el => el.style.display = 'none');
   } catch (err) {
     console.error(err);
   }
 }
+
+// Custom Promise-Driven dialog prompts (replacing native prompt/confirm)
+let promptResolver = null;
+function showCustomPrompt(title, defaultValue = '') {
+  return new Promise(resolve => {
+    promptResolver = resolve;
+    document.getElementById('konnectPromptTitle').textContent = title;
+    const input = document.getElementById('konnectPromptInput');
+    if (input) {
+      input.value = defaultValue;
+      input.focus();
+    }
+    const modal = document.getElementById('konnectPromptModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.style.display = 'flex';
+    }
+  });
+}
+window.closePromptModal = function(submitted) {
+  const modal = document.getElementById('konnectPromptModal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+  if (promptResolver) {
+    const val = document.getElementById('konnectPromptInput').value;
+    promptResolver(submitted ? val : null);
+    promptResolver = null;
+  }
+};
+
+let confirmResolver = null;
+function showCustomConfirm(title, message) {
+  return new Promise(resolve => {
+    confirmResolver = resolve;
+    document.getElementById('konnectConfirmTitle').textContent = title;
+    document.getElementById('konnectConfirmMessage').textContent = message;
+    const modal = document.getElementById('konnectConfirmModal');
+    if (modal) {
+      modal.classList.add('active');
+      modal.style.display = 'flex';
+    }
+  });
+}
+window.closeConfirmModal = function(confirmed) {
+  const modal = document.getElementById('konnectConfirmModal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+  if (confirmResolver) {
+    confirmResolver(confirmed);
+    confirmResolver = null;
+  }
+};
