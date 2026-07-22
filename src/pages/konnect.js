@@ -164,6 +164,17 @@ export function initKonnectPage() {
   window.closePromptModal = closePromptModal;
   window.closeConfirmModal = closeConfirmModal;
   window.filterNewChatRecipients = filterNewChatRecipients;
+  window.toggleSelfDestructPanel = () => {
+    const panel = document.getElementById('selfDestructConfigPanel');
+    if (panel) panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+  };
+  window.handleSelfDestructToggle = () => {
+    const enabled = document.getElementById('selfDestructEnabled')?.checked;
+    const container = document.getElementById('selfDestructTimerContainer');
+    const badge = document.getElementById('selfDestructActiveBadge');
+    if (container) container.style.display = enabled ? 'flex' : 'none';
+    if (badge) badge.style.display = enabled ? 'block' : 'none';
+  };
 
   activeThread = null;
   loadKonnectRoster().then(() => {
@@ -593,10 +604,31 @@ async function selectConversation(type, id, name) {
     </div>
 
     <!-- Bottom Input -->
-    <div style="padding:16px; background:white; border-top:1px solid var(--border); display:flex; gap:10px; align-items:center;">
+    <div style="padding:16px; background:white; border-top:1px solid var(--border); display:flex; gap:10px; align-items:center; position:relative;">
+      <!-- Floating Self Destruct Panel -->
+      <div id="selfDestructConfigPanel" style="display:none; position:absolute; bottom:65px; left:16px; background:white; border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); padding:12px; z-index:100; width:220px; flex-direction:column; gap:8px;">
+        <div style="font-weight:600; font-size:0.85em; display:flex; justify-content:space-between; align-items:center;">
+          <span>⏱️ Timed Message</span>
+          <button type="button" onclick="window.toggleSelfDestructPanel()" style="background:none; border:none; cursor:pointer; font-weight:700;">×</button>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px; font-size:0.8em; margin:4px 0;">
+          <input type="checkbox" id="selfDestructEnabled" onchange="window.handleSelfDestructToggle()">
+          <label for="selfDestructEnabled" style="cursor:pointer; user-select:none;">Enable timer</label>
+        </div>
+        <div id="selfDestructTimerContainer" style="display:none; flex-direction:column; gap:4px;">
+          <span style="font-size:0.75em; color:var(--text-secondary);">Seconds (15 to 300):</span>
+          <input type="number" id="selfDestructSeconds" min="15" max="300" value="60" style="border:1px solid var(--border); padding:4px 8px; border-radius:4px; font-size:0.85em;">
+        </div>
+      </div>
+
       <button onclick="window.triggerChatAttachment()" style="height:40px; width:40px; margin:0; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.25em; border:none; background:none; color:var(--primary); cursor:pointer;" title="Attach File">📎</button>
       <input type="file" id="konnectAttachmentInput" style="display:none;" onchange="window.handleChatFileSelection(event)">
       
+      <button onclick="window.toggleSelfDestructPanel()" id="konnectSelfDestructBtn" style="height:40px; width:40px; margin:0; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.25em; border:none; background:none; color:var(--primary); cursor:pointer; position:relative;" title="Timed Message">
+        ⏱️
+        <span id="selfDestructActiveBadge" style="display:none; position:absolute; top:4px; right:4px; background:var(--success); width:8px; height:8px; border-radius:50%;"></span>
+      </button>
+
       <input type="text" id="konnectMsgInput" placeholder="Type a message..." style="flex:1; height:40px; border-radius:8px; border:1px solid var(--border); padding:6px 12px; font-size:0.9em;" onkeydown="if(event.key==='Enter') window.sendKonnectMessage()">
       <button onclick="window.sendKonnectMessage()" class="primary" style="height:40px; margin:0; padding:0 20px; font-size:0.9em; font-weight:600;">Send</button>
     </div>
@@ -620,13 +652,10 @@ async function selectConversation(type, id, name) {
       .neq('sender_id', state.user.id);
   }
 
-  const { data, error } = await markReadQuery.select();
-
-  console.log("markReadQuery execution result:", { data, error, type, id });
+  const { error } = await markReadQuery;
 
   if (error) {
     console.error("Failed to mark messages as read:", error);
-    showToast(`Mark read error: ${error.message}`, 'error');
   } else {
     await loadConversations();
   }
@@ -712,17 +741,71 @@ async function loadMessages() {
         `;
       }
 
+      const destructDuration = msg.metadata?.destruct_duration;
+      let isTimedPlaceholder = false;
+      let remainingSeconds = null;
+
+      if (destructDuration) {
+        const readAtStr = msg.metadata?.read_by_users?.[state.user.id];
+        if (!readAtStr) {
+          isTimedPlaceholder = true;
+        } else {
+          const readAt = new Date(readAtStr).getTime();
+          const elapsed = Math.floor((Date.now() - readAt) / 1000);
+          remainingSeconds = destructDuration - elapsed;
+          if (remainingSeconds <= 0) {
+            window.expireTimedMessage(msg.id);
+            return '';
+          }
+        }
+      }
+
+      let contentBody = '';
+      if (isTimedPlaceholder) {
+        contentBody = `
+          <div onclick="window.revealTimedMessage(event, '${msg.id}', ${destructDuration})" style="cursor:pointer; display:flex; align-items:center; gap:6px; background:${isMe ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.05)'}; padding:6px 12px; border-radius:6px; font-style:italic; font-size:0.9em; user-select:none; width:100%; box-sizing:border-box;">
+            ⏱️ Timed message (${destructDuration}s) - Tap to reveal
+          </div>
+        `;
+      } else {
+        contentBody = `
+          <span style="white-space:normal; word-break:break-word; font-size:0.95em;">${escapeHtml(msg.body)}</span>
+          ${attachHtml}
+        `;
+
+        if (remainingSeconds !== null) {
+          window.__konnectTimedIntervals = window.__konnectTimedIntervals || {};
+          if (!window.__konnectTimedIntervals[msg.id]) {
+            let sec = remainingSeconds;
+            window.__konnectTimedIntervals[msg.id] = setInterval(() => {
+              sec--;
+              const el = document.getElementById(`timer-${msg.id}`);
+              if (el) {
+                el.textContent = `⏱️ ${sec}s`;
+              }
+              if (sec <= 0) {
+                window.expireTimedMessage(msg.id);
+              }
+            }, 1000);
+          }
+        }
+      }
+
+      const timerBadge = remainingSeconds !== null 
+        ? `<span id="timer-${msg.id}" style="color:${isMe ? '#fecaca' : '#ef4444'}; font-weight:700; margin-left:6px; font-size:0.8em; flex-shrink:0;">⏱️ ${remainingSeconds}s</span>`
+        : '';
+
       return `
-        <div class="msg-bubble-container" style="display:flex; flex-direction:column; align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:80%; position:relative; margin:2px 0;">
-          <div style="background:${isMe ? 'var(--primary)' : 'white'}; color:${isMe ? 'white' : 'var(--text-main)'}; border:1px solid ${isMe ? 'var(--primary)' : 'var(--border)'}; border-radius:${isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px'}; padding:4px 8px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative;">
+        <div class="msg-bubble-container" data-msg-id="${msg.id}" style="display:flex; flex-direction:column; align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:80%; position:relative; margin:2px 0;">
+          <div style="background:${isMe ? 'var(--primary)' : 'white'}; color:${isMe ? 'white' : 'var(--text-main)'}; border:1px solid ${isMe ? 'var(--primary)' : 'var(--border)'}; border-radius:${isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px'}; padding:4px 8px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; width:100%; box-sizing:border-box;">
             ${quoteHtml}
             <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:0.85em; width:100%;">
               <div style="min-width:0; flex:1;">
                 ${(!isMe && activeThread.type !== 'user') ? `<strong style="color:var(--primary); font-weight:700; margin-right:4px;">${escapeHtml(senderName)}:</strong>` : ''}
-                <span style="white-space:normal; word-break:break-word; font-size:0.95em;">${escapeHtml(msg.body)}</span>
-                ${attachHtml}
+                ${contentBody}
               </div>
               <div style="display:flex; align-items:center; gap:4px; flex-shrink:0; margin-left:6px; white-space:nowrap;">
+                ${timerBadge}
                 <span style="font-size:0.8em; opacity:0.8;">${timeStr}</span>
                 <span class="msg-action-trigger" onclick="window.toggleMessageActions(event, '${msg.id}')" style="cursor:pointer; font-weight:700; opacity:0.8; padding:0 2px;">⋮</span>
               </div>
@@ -763,6 +846,19 @@ async function sendKonnectMessage() {
     };
   }
 
+  const selfDestructEnabled = document.getElementById('selfDestructEnabled')?.checked;
+  const selfDestructSecondsInput = document.getElementById('selfDestructSeconds');
+  if (selfDestructEnabled && selfDestructSecondsInput) {
+    const duration = parseInt(selfDestructSecondsInput.value, 10) || 60;
+    if (duration >= 15 && duration <= 300) {
+      metadata.destruct_duration = duration;
+      metadata.read_by_users = {};
+    } else {
+      showToast('Timed message range must be 15s to 300s', 'warning');
+      return;
+    }
+  }
+
   try {
     const { error } = await supabaseClient
       .from('messages')
@@ -777,6 +873,9 @@ async function sendKonnectMessage() {
     if (error) throw error;
     input.value = '';
     cancelReply();
+    const checkbox = document.getElementById('selfDestructEnabled');
+    if (checkbox) checkbox.checked = false;
+    window.handleSelfDestructToggle();
     await loadMessages();
     await loadConversations();
   } catch (err) {
@@ -1050,5 +1149,81 @@ window.closeConfirmModal = function(confirmed) {
   if (confirmResolver) {
     confirmResolver(confirmed);
     confirmResolver = null;
+  }
+};
+
+window.revealTimedMessage = async function(e, msgId, duration) {
+  e.stopPropagation();
+  const yes = await showCustomConfirm('Timed Message', `This is a timed message and will self-destruct in ${duration}s. Do you want to open it?`);
+  if (!yes) return;
+
+  const msg = allMessages.find(m => m.id === msgId);
+  if (msg) {
+    msg.metadata = msg.metadata || {};
+    msg.metadata.read_by_users = msg.metadata.read_by_users || {};
+    msg.metadata.read_by_users[state.user.id] = new Date().toISOString();
+
+    try {
+      await supabaseClient.from('messages').update({ metadata: msg.metadata }).eq('id', msgId);
+      await loadMessages();
+    } catch (err) {
+      console.error("Failed to update reveal state:", err);
+    }
+  }
+};
+
+window.expireTimedMessage = async function(msgId) {
+  // Clear local interval if any
+  if (window.__konnectTimedIntervals && window.__konnectTimedIntervals[msgId]) {
+    clearInterval(window.__konnectTimedIntervals[msgId]);
+    delete window.__konnectTimedIntervals[msgId];
+  }
+
+  // Hide element instantly from DOM
+  const bubble = document.querySelector(`[data-msg-id="${msgId}"]`);
+  if (bubble) bubble.style.display = 'none';
+
+  try {
+    const msg = allMessages.find(m => m.id === msgId);
+    if (!msg) return;
+
+    if (activeThread.type === 'user') {
+      // 1-to-1 chat: recipient expired, delete completely
+      await supabaseClient.from('messages').delete().eq('id', msgId);
+    } else {
+      // Group/team chat: hide for this user
+      msg.metadata = msg.metadata || {};
+      msg.metadata.deleted_by_users = msg.metadata.deleted_by_users || [];
+      if (!msg.metadata.deleted_by_users.includes(state.user.id)) {
+        msg.metadata.deleted_by_users.push(state.user.id);
+      }
+
+      // Check if all members except sender have read it
+      let totalMembers = 0;
+      if (activeThread.type === 'group') {
+        const { count } = await supabaseClient
+          .from('chat_group_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('group_id', activeThread.id);
+        totalMembers = count || 0;
+      } else if (activeThread.type === 'team') {
+        const { count } = await supabaseClient
+          .from('user_teams')
+          .select('*', { count: 'exact', head: true })
+          .eq('team_id', activeThread.id);
+        totalMembers = count || 0;
+      }
+
+      const readCount = Object.keys(msg.metadata.read_by_users || {}).length;
+      if (totalMembers > 0 && readCount >= (totalMembers - 1)) {
+        // Everyone read it, delete completely
+        await supabaseClient.from('messages').delete().eq('id', msgId);
+      } else {
+        // Otherwise, update metadata to hide for current user
+        await supabaseClient.from('messages').update({ metadata: msg.metadata }).eq('id', msgId);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to expire timed message:", err);
   }
 };
