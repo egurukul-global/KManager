@@ -20,16 +20,28 @@ CREATE TABLE IF NOT EXISTS public.chat_group_members (
 ALTER TABLE public.chat_groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_group_members ENABLE ROW LEVEL SECURITY;
 
--- 3. Define policies for chat_groups
+-- 3. Create helper function to bypass RLS recursion on membership checks
+CREATE OR REPLACE FUNCTION public.is_group_member(p_group_id uuid, p_user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.chat_group_members
+    WHERE group_id = p_group_id AND user_id = p_user_id
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_group_member(uuid, uuid) TO authenticated;
+
+-- 4. Define policies for chat_groups using the helper
 DROP POLICY IF EXISTS select_chat_groups ON public.chat_groups;
 CREATE POLICY select_chat_groups ON public.chat_groups
   FOR SELECT TO authenticated
   USING (
     created_by = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.chat_group_members cgm
-      WHERE cgm.group_id = chat_groups.id AND cgm.user_id = auth.uid()
-    )
+    OR public.is_group_member(id, auth.uid())
   );
 
 DROP POLICY IF EXISTS manage_chat_groups ON public.chat_groups;
@@ -38,16 +50,13 @@ CREATE POLICY manage_chat_groups ON public.chat_groups
   USING (created_by = auth.uid())
   WITH CHECK (created_by = auth.uid());
 
--- 4. Define policies for chat_group_members
+-- 5. Define policies for chat_group_members
 DROP POLICY IF EXISTS select_group_members ON public.chat_group_members;
 CREATE POLICY select_group_members ON public.chat_group_members
   FOR SELECT TO authenticated
   USING (
     user_id = auth.uid()
-    OR EXISTS (
-      SELECT 1 FROM public.chat_group_members cgm
-      WHERE cgm.group_id = chat_group_members.group_id AND cgm.user_id = auth.uid()
-    )
+    OR public.is_group_member(group_id, auth.uid())
   );
 
 DROP POLICY IF EXISTS manage_group_members ON public.chat_group_members;
@@ -61,7 +70,7 @@ CREATE POLICY manage_group_members ON public.chat_group_members
   );
 
 
--- 5. Create chat_preferences table
+-- 6. Create chat_preferences table
 CREATE TABLE IF NOT EXISTS public.chat_preferences (
   user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
   chat_target_type TEXT NOT NULL CHECK (chat_target_type IN ('user', 'team', 'group')),
@@ -81,7 +90,7 @@ CREATE POLICY manage_chat_preferences ON public.chat_preferences
   WITH CHECK (user_id = auth.uid());
 
 
--- 6. Create chat_permissions table
+-- 7. Create chat_permissions table
 CREATE TABLE IF NOT EXISTS public.chat_permissions (
   user_id UUID PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
   allow_opposite_gender BOOLEAN NOT NULL DEFAULT false,
@@ -109,7 +118,7 @@ CREATE POLICY manage_chat_permissions ON public.chat_permissions
   );
 
 
--- 7. Create public.can_chat_with validation function
+-- 8. Create public.can_chat_with validation function
 CREATE OR REPLACE FUNCTION public.can_chat_with(user_a uuid, user_b uuid)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -169,7 +178,7 @@ $$;
 GRANT EXECUTE ON FUNCTION public.can_chat_with(uuid, uuid) TO authenticated;
 
 
--- 8. Recreate public.messages RLS policies to check direct/group/team limits
+-- 9. Recreate public.messages RLS policies to check direct/group/team limits
 DROP POLICY IF EXISTS select_messages ON public.messages;
 DROP POLICY IF EXISTS insert_messages ON public.messages;
 
@@ -182,10 +191,7 @@ CREATE POLICY select_messages ON public.messages
       SELECT 1 FROM public.user_teams ut
       WHERE ut.team_id::text = messages.recipient_id AND ut.user_id = auth.uid()
     ))
-    OR (recipient_type = 'group' AND EXISTS (
-      SELECT 1 FROM public.chat_group_members cgm
-      WHERE cgm.group_id::text = messages.recipient_id AND cgm.user_id = auth.uid()
-    ))
+    OR (recipient_type = 'group' AND public.is_group_member(messages.recipient_id::uuid, auth.uid()))
     OR (recipient_type = 'role' AND (
       EXISTS (
         SELECT 1 FROM public.request_role_assignments rra
@@ -213,9 +219,6 @@ CREATE POLICY insert_messages ON public.messages
       recipient_type = 'team'
       OR recipient_type = 'role'
       OR (recipient_type = 'user' AND public.can_chat_with(auth.uid(), recipient_id::uuid))
-      OR (recipient_type = 'group' AND EXISTS (
-        SELECT 1 FROM public.chat_group_members cgm
-        WHERE cgm.group_id::text = messages.recipient_id AND cgm.user_id = auth.uid()
-      ))
+      OR (recipient_type = 'group' AND public.is_group_member(messages.recipient_id::uuid, auth.uid()))
     )
   );
