@@ -123,6 +123,7 @@ export async function handleLogout() {
   // Reset flag after a delay
   setTimeout(() => { isLoggingOut = false; }, 500);
 }
+window.handleLogout = handleLogout;
 
 async function checkExistingSession() {
   const { data: { session } } = await supabaseClient.auth.getSession();

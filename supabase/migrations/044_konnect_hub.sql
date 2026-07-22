@@ -1,5 +1,8 @@
 -- Migration 044: Create Konnect Chat tables and Security Rules
 
+-- Alter messages table to add read_at column if not exists
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMP WITH TIME ZONE NULL;
+
 -- 1. Create chat_groups table
 CREATE TABLE IF NOT EXISTS public.chat_groups (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

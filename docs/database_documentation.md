@@ -69,6 +69,7 @@ Unified common communication log (Direct messages, team chats, role queues, and 
 * `attachment_url` (`TEXT`), `attachment_name` (`TEXT`): File attachments (R2 keys).
 * `allow_replies` (`BOOLEAN`): False for read-only instructions or system logs.
 * `metadata` (`JSONB`): Direct deep-links and custom parameters.
+* `read_at` (`TIMESTAMPTZ`): Timestamp when marked read by recipient(s).
 
 ### `public.ok_app_admins`
 Maps app codes (modules) to specific users as local app/module administrators.
