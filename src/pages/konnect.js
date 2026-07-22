@@ -604,12 +604,23 @@ async function selectConversation(type, id, name) {
 
   await loadMessages();
   
-  // Mark read using is() for null
-  const { error } = await supabaseClient.from('messages')
+  let markReadQuery = supabaseClient.from('messages')
     .update({ read_at: new Date().toISOString() })
-    .eq('recipient_type', type)
-    .eq('recipient_id', id)
     .is('read_at', null);
+
+  if (type === 'user') {
+    markReadQuery = markReadQuery
+      .eq('recipient_type', 'user')
+      .eq('sender_id', id)
+      .eq('recipient_id', state.user.id);
+  } else {
+    markReadQuery = markReadQuery
+      .eq('recipient_type', type)
+      .eq('recipient_id', id)
+      .neq('sender_id', state.user.id);
+  }
+
+  const { error } = await markReadQuery;
 
   if (!error) {
     loadConversations();
@@ -677,7 +688,7 @@ async function loadMessages() {
         const quoteBorder = isMe ? '3px solid white' : '3px solid var(--primary)';
         const quoteColor = isMe ? 'white' : 'var(--text-secondary)';
         quoteHtml = `
-          <div style="background:${quoteBg}; border-left:${quoteBorder}; padding:2px 6px; border-radius:4px; margin-bottom:4px; font-size:0.8em; color:${quoteColor}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:320px; display:block;">
+          <div style="background:${quoteBg}; border-left:${quoteBorder}; padding:2px 6px; border-radius:4px; margin-bottom:4px; font-size:0.8em; color:${quoteColor}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; box-sizing:border-box; display:block;">
             <strong>${escapeHtml(msg.metadata.reply_to.sender)}</strong>: "${escapeHtml(msg.metadata.reply_to.body)}"
           </div>
         `;
