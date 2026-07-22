@@ -181,6 +181,7 @@ GRANT EXECUTE ON FUNCTION public.can_chat_with(uuid, uuid) TO authenticated;
 -- 9. Recreate public.messages RLS policies to check direct/group/team limits
 DROP POLICY IF EXISTS select_messages ON public.messages;
 DROP POLICY IF EXISTS insert_messages ON public.messages;
+DROP POLICY IF EXISTS update_messages ON public.messages;
 
 CREATE POLICY select_messages ON public.messages
   FOR SELECT TO authenticated
@@ -222,3 +223,16 @@ CREATE POLICY insert_messages ON public.messages
       OR (recipient_type = 'group' AND public.is_group_member(messages.recipient_id::uuid, auth.uid()))
     )
   );
+
+CREATE POLICY update_messages ON public.messages
+  FOR UPDATE TO authenticated
+  USING (
+    sender_id = auth.uid()
+    OR (recipient_type = 'user' AND recipient_id = auth.uid()::text)
+    OR (recipient_type = 'team' AND EXISTS (
+      SELECT 1 FROM public.user_teams ut
+      WHERE ut.team_id::text = messages.recipient_id AND ut.user_id = auth.uid()
+    ))
+    OR (recipient_type = 'group' AND public.is_group_member(messages.recipient_id::uuid, auth.uid()))
+  )
+  WITH CHECK (true);

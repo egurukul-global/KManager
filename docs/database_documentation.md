@@ -130,3 +130,14 @@ Checks whether user_a is authorized to send direct messages to user_b.
 * Blocks messaging if genders differ unless both have `allow_opposite_gender = true`.
 * Restricts messaging boundaries if cross-team rules are `'none'` (restricting to shared teams).
 
+---
+
+## 5. RLS Policies Added / Modified
+* **`public.messages`**:
+  * `select_messages`: Allows reading messages sent by you, sent directly to you (passing `can_chat_with`), shared in your teams, shared in your custom groups, or role assignments matching CAO/FIH.
+  * `insert_messages`: Allows sending messages to direct/group/team recipients if authorized.
+  * `update_messages`: Allows updating messages (specifically `read_at`) if you are the sender, direct recipient, or a member of the target team or group.
+* **`public.chat_groups` & `public.chat_group_members`**:
+  * Restricts access to group creators and group members using recursion-safe `is_group_member` checks.
+
+
