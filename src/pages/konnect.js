@@ -35,9 +35,57 @@ function escapeHtml(text) {
 
 export function getKonnectPage() {
   return `
-    <div style="display:flex; height:calc(100vh - 120px); background:#f9fafb; border-radius:12px; border:1px solid var(--border); overflow:hidden;">
+    <style>
+      .konnect-container {
+        display: flex;
+        height: calc(100vh - 120px);
+        background: #f9fafb;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        overflow: hidden;
+      }
+      .konnect-sidebar {
+        width: 320px;
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        background: white;
+      }
+      .konnect-chat-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: #f3f4f6;
+        position: relative;
+      }
+      @media (max-width: 768px) {
+        .konnect-container {
+          height: calc(100vh - 130px);
+          border-radius: 0;
+          border: none;
+        }
+        .konnect-container:not(.active-chat) .konnect-sidebar {
+          width: 100% !important;
+          display: flex !important;
+        }
+        .konnect-container:not(.active-chat) .konnect-chat-area {
+          display: none !important;
+        }
+        .konnect-container.active-chat .konnect-sidebar {
+          display: none !important;
+        }
+        .konnect-container.active-chat .konnect-chat-area {
+          width: 100% !important;
+          display: flex !important;
+        }
+        #konnectMobileBackBtn {
+          display: inline-flex !important;
+        }
+      }
+    </style>
+    <div id="konnectContainer" class="konnect-container">
       <!-- Left sidebar: Chats List -->
-      <div style="width:320px; border-right:1px solid var(--border); display:flex; flex-direction:column; background:white;">
+      <div class="konnect-sidebar">
         <div style="padding:12px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
             <input type="text" id="konnectSearch" placeholder="Search name or messages..." oninput="window.handleKonnectSearch(this.value)" style="flex:1; height:32px; padding:4px 8px; border-radius:6px; border:1px solid var(--border); font-size:0.8em;">
@@ -51,7 +99,7 @@ export function getKonnectPage() {
       </div>
 
       <!-- Right sidebar: Main Chat Area -->
-      <div id="konnectChatArea" style="flex:1; display:flex; flex-direction:column; background:#f3f4f6; position:relative;">
+      <div id="konnectChatArea" class="konnect-chat-area">
         <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:40px; text-align:center; color:var(--text-secondary);">
           <span style="font-size:4em; margin-bottom:16px;">💬</span>
           <h2 style="font-size:1.3em; font-weight:600; margin-bottom:8px; color:var(--text-main);">Welcome to Konnect</h2>
@@ -165,6 +213,7 @@ export function initKonnectPage() {
   window.startDirectChat = startDirectChat;
   window.createGroupChatSubmit = createGroupChatSubmit;
   window.selectConversation = selectConversation;
+  window.backToChatsList = backToChatsList;
   window.sendKonnectMessage = sendKonnectMessage;
   window.togglePinChat = togglePinChat;
   window.markChatAsUnread = markChatAsUnread;
@@ -590,6 +639,11 @@ async function selectConversation(type, id, name) {
 
   renderConversations();
 
+  const container = document.getElementById('konnectContainer');
+  if (container) {
+    container.classList.add('active-chat');
+  }
+
   const area = document.getElementById('konnectChatArea');
   if (!area) return;
 
@@ -598,9 +652,12 @@ async function selectConversation(type, id, name) {
   area.innerHTML = `
     <!-- Top Bar -->
     <div style="padding:12px 20px; background:white; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; z-index:10;">
-      <div>
-        <h2 style="margin:0; font-size:1.05em; font-weight:600; color:var(--text-main);">${escapeHtml(name)}</h2>
-        <span style="font-size:0.75em; color:var(--text-secondary); text-transform:uppercase;">${type} conversation</span>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button id="konnectMobileBackBtn" onclick="window.backToChatsList()" class="secondary" style="display:none; padding:4px 8px; margin:0; font-size:0.85em; border-radius:6px; border:1px solid var(--border); font-weight:600; cursor:pointer;">&larr; Back</button>
+        <div>
+          <h2 style="margin:0; font-size:1.05em; font-weight:600; color:var(--text-main);">${escapeHtml(name)}</h2>
+          <span style="font-size:0.75em; color:var(--text-secondary); text-transform:uppercase;">${type} conversation</span>
+        </div>
       </div>
       <div style="display:flex; gap:8px;">
         <button onclick="window.togglePinChat()" class="secondary" style="padding:4px 10px; font-size:0.8em; margin:0;">${isPinned ? '📌 Unpin' : '📌 Pin'}</button>
@@ -1430,4 +1487,23 @@ function closeInfoModal() {
     modal.classList.remove('active');
     modal.style.display = 'none';
   }
+}
+
+function backToChatsList() {
+  activeThread = null;
+  const container = document.getElementById('konnectContainer');
+  if (container) {
+    container.classList.remove('active-chat');
+  }
+  const area = document.getElementById('konnectChatArea');
+  if (area) {
+    area.innerHTML = `
+      <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:40px; text-align:center; color:var(--text-secondary);">
+        <span style="font-size:4em; margin-bottom:16px;">💬</span>
+        <h2 style="font-size:1.3em; font-weight:600; margin-bottom:8px; color:var(--text-main);">Welcome to Konnect</h2>
+        <p style="font-size:0.9em; max-width:320px; margin:0;">Select a contact, team, or group from the list on the left to start messaging securely.</p>
+      </div>
+    `;
+  }
+  renderConversations();
 }
