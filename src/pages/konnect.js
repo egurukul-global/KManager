@@ -58,9 +58,18 @@ export function getKonnectPage() {
         background: #f3f4f6;
         position: relative;
       }
+      .konnect-input-bar {
+        padding: 16px;
+        background: white;
+        border-top: 1px solid var(--border);
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        position: relative;
+      }
       @media (max-width: 768px) {
         .konnect-container {
-          height: calc(100vh - 130px);
+          height: calc(100vh - 170px);
           border-radius: 0;
           border: none;
         }
@@ -80,6 +89,25 @@ export function getKonnectPage() {
         }
         #konnectMobileBackBtn {
           display: inline-flex !important;
+        }
+        .konnect-input-bar {
+          padding: 8px 10px !important;
+          gap: 6px !important;
+        }
+        #konnectAttachmentBtn, #konnectSelfDestructBtn {
+          width: 36px !important;
+          height: 36px !important;
+          font-size: 1.15em !important;
+        }
+        #konnectMsgInput {
+          height: 36px !important;
+          font-size: 0.85em !important;
+          padding: 4px 8px !important;
+        }
+        .konnect-send-btn {
+          height: 36px !important;
+          padding: 0 12px !important;
+          font-size: 0.85em !important;
         }
       }
     </style>
@@ -471,9 +499,29 @@ async function openNewChatModal() {
     const { data: perms } = await supabaseClient.from('chat_permissions').select('*');
     const myPerm = (perms || []).find(p => p.user_id === state.user.id);
     const allowOpposite = myPerm ? myPerm.allow_opposite_gender : false;
+    const crossTeam = myPerm ? myPerm.cross_team_access : 'none';
+
+    let sharedTeamUserIds = [];
+    if (crossTeam !== 'global') {
+      const { data: myTeamRows } = await supabaseClient
+        .from('user_teams')
+        .select('team_id')
+        .eq('user_id', state.user.id);
+      const myTeamIds = (myTeamRows || []).map(r => r.team_id);
+      if (myTeamIds.length > 0) {
+        const { data: sharedRows } = await supabaseClient
+          .from('user_teams')
+          .select('user_id')
+          .in('team_id', myTeamIds);
+        sharedTeamUserIds = [...new Set((sharedRows || []).map(r => r.user_id))];
+      }
+    }
 
     allowedNewChatUsers = activeRoster.filter(u => {
       if (u.id === state.user.id) return false;
+      if (crossTeam !== 'global') {
+        if (!sharedTeamUserIds.includes(u.id)) return false;
+      }
       if (state.user.gender && u.gender && state.user.gender !== u.gender) {
         if (!allowOpposite) return false;
         const otherPerm = (perms || []).find(p => p.user_id === u.id);
@@ -551,7 +599,7 @@ async function openSettingsModal() {
           <button onclick="window.closeKonnectModals(); window.openNewGroupModal();" class="secondary" style="margin:0; width:100%;">👥 Create Group Chat</button>
         </div>
         <div style="background:#f3f4f6; padding:10px; border-radius:6px;">
-          <strong>Gender clearance:</strong> ${allowOpposite ? '✅ Allowed' : '❌ Opposing gender messages blocked'}
+          <strong>Gender clearance:</strong> ${allowOpposite ? '✅ Allowed' : '❌ Opposite gender messages blocked'}
         </div>
         <div style="background:#f3f4f6; padding:10px; border-radius:6px;">
           <strong>Cross-team access:</strong> <span style="text-transform:capitalize;">${crossTeam}</span>
@@ -679,7 +727,7 @@ async function selectConversation(type, id, name) {
     </div>
 
     <!-- Bottom Input -->
-    <div style="padding:16px; background:white; border-top:1px solid var(--border); display:flex; gap:10px; align-items:center; position:relative;">
+    <div class="konnect-input-bar">
       <!-- Floating Self Destruct Panel -->
       <div id="selfDestructConfigPanel" style="display:none; position:absolute; bottom:65px; left:16px; background:white; border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); padding:12px; z-index:100; width:220px; flex-direction:column; gap:8px;">
         <div style="font-weight:600; font-size:0.85em; display:flex; justify-content:space-between; align-items:center;">
@@ -696,7 +744,7 @@ async function selectConversation(type, id, name) {
         </div>
       </div>
 
-      <button onclick="window.triggerChatAttachment()" style="height:40px; width:40px; margin:0; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.25em; border:none; background:none; color:var(--primary); cursor:pointer;" title="Attach File">📎</button>
+      <button id="konnectAttachmentBtn" onclick="window.triggerChatAttachment()" style="height:40px; width:40px; margin:0; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.25em; border:none; background:none; color:var(--primary); cursor:pointer;" title="Attach File">📎</button>
       <input type="file" id="konnectAttachmentInput" style="display:none;" onchange="window.handleChatFileSelection(event)">
       
       <button onclick="window.toggleSelfDestructPanel()" id="konnectSelfDestructBtn" style="height:40px; width:40px; margin:0; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.25em; border:none; background:none; color:var(--primary); cursor:pointer; position:relative;" title="Timed Message">
@@ -705,7 +753,7 @@ async function selectConversation(type, id, name) {
       </button>
 
       <input type="text" id="konnectMsgInput" placeholder="Type a message..." style="flex:1; height:40px; border-radius:8px; border:1px solid var(--border); padding:6px 12px; font-size:0.9em;" onkeydown="if(event.key==='Enter') window.sendKonnectMessage()">
-      <button onclick="window.sendKonnectMessage()" class="primary" style="height:40px; margin:0; padding:0 20px; font-size:0.9em; font-weight:600;">Send</button>
+      <button onclick="window.sendKonnectMessage()" class="primary konnect-send-btn" style="height:40px; margin:0; padding:0 20px; font-size:0.9em; font-weight:600;">Send</button>
     </div>
   `;
 
