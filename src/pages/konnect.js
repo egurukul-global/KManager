@@ -137,6 +137,22 @@ export function getKonnectPage() {
         </div>
       </div>
     </div>
+
+    <!-- Modal: Read Receipts Info -->
+    <div id="konnectInfoModal" class="modal">
+      <div class="modal-content" style="max-width:400px; text-align:left;">
+        <h3 style="margin-top:0; font-size:1.1em; color:var(--text-main); display:flex; justify-content:space-between; align-items:center;">
+          <span>ℹ️ Message Read Info</span>
+          <button onclick="window.closeInfoModal()" style="background:none; border:none; font-size:1.25em; cursor:pointer; font-weight:700; color:var(--text-secondary);">&times;</button>
+        </h3>
+        <div id="konnectInfoContent" style="max-height:280px; overflow-y:auto; margin:16px 0; font-size:0.9em; display:flex; flex-direction:column; gap:8px;">
+          <!-- Loaded dynamically -->
+        </div>
+        <div style="display:flex; justify-content:flex-end;">
+          <button type="button" class="secondary" onclick="window.closeInfoModal()">Close</button>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -164,6 +180,8 @@ export function initKonnectPage() {
   window.closePromptModal = closePromptModal;
   window.closeConfirmModal = closeConfirmModal;
   window.filterNewChatRecipients = filterNewChatRecipients;
+  window.showReadReceipts = showReadReceipts;
+  window.closeInfoModal = closeInfoModal;
   window.toggleSelfDestructPanel = () => {
     const panel = document.getElementById('selfDestructConfigPanel');
     if (panel) panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
@@ -650,6 +668,26 @@ async function selectConversation(type, id, name) {
       .eq('recipient_type', type)
       .eq('recipient_id', id)
       .neq('sender_id', state.user.id);
+
+    // Group/Team: log read event under read_by_users in metadata
+    try {
+      const { data: unreadMsgs } = await supabaseClient
+        .from('messages')
+        .select('*')
+        .eq('recipient_type', type)
+        .eq('recipient_id', id)
+        .neq('sender_id', state.user.id);
+      
+      const toUpdate = (unreadMsgs || []).filter(m => !m.metadata?.read_by_users?.[state.user.id]);
+      for (const m of toUpdate) {
+        m.metadata = m.metadata || {};
+        m.metadata.read_by_users = m.metadata.read_by_users || {};
+        m.metadata.read_by_users[state.user.id] = new Date().toISOString();
+        await supabaseClient.from('messages').update({ metadata: m.metadata }).eq('id', m.id);
+      }
+    } catch (e) {
+      console.warn("Failed to log read event under metadata:", e);
+    }
   }
 
   const { error } = await markReadQuery;
@@ -661,11 +699,31 @@ async function selectConversation(type, id, name) {
   }
 }
 
+let activeThreadMemberCount = 2;
+
 async function loadMessages() {
   const timeline = document.getElementById('konnectTimeline');
   if (!timeline) return;
 
   try {
+    if (activeThread) {
+      if (activeThread.type === 'group') {
+        const { count } = await supabaseClient
+          .from('chat_group_members')
+          .select('*', { count: 'exact', head: true })
+          .eq('group_id', activeThread.id);
+        activeThreadMemberCount = count || 2;
+      } else if (activeThread.type === 'team') {
+        const { count } = await supabaseClient
+          .from('user_teams')
+          .select('*', { count: 'exact', head: true })
+          .eq('team_id', activeThread.id);
+        activeThreadMemberCount = count || 2;
+      } else {
+        activeThreadMemberCount = 2;
+      }
+    }
+
     const { data: messages, error } = await supabaseClient
       .from('messages')
       .select('*')
@@ -745,17 +803,46 @@ async function loadMessages() {
       let isTimedPlaceholder = false;
       let remainingSeconds = null;
 
-      if (destructDuration && !isMe) {
-        const readAtStr = msg.metadata?.read_by_users?.[state.user.id];
-        if (!readAtStr) {
-          isTimedPlaceholder = true;
+      if (destructDuration) {
+        if (!isMe) {
+          const readAtStr = msg.metadata?.read_by_users?.[state.user.id];
+          if (!readAtStr) {
+            isTimedPlaceholder = true;
+          } else {
+            const readAt = new Date(readAtStr).getTime();
+            const elapsed = Math.floor((Date.now() - readAt) / 1000);
+            remainingSeconds = destructDuration - elapsed;
+            if (remainingSeconds <= 0) {
+              window.expireTimedMessage(msg.id);
+              return '';
+            }
+          }
         } else {
-          const readAt = new Date(readAtStr).getTime();
-          const elapsed = Math.floor((Date.now() - readAt) / 1000);
-          remainingSeconds = destructDuration - elapsed;
-          if (remainingSeconds <= 0) {
-            window.expireTimedMessage(msg.id);
-            return '';
+          // I am the sender: check if recipients have read and expired
+          if (activeThread.type === 'user') {
+            const receiverReadAtStr = msg.metadata?.read_by_users?.[activeThread.id];
+            if (receiverReadAtStr) {
+              const readAt = new Date(receiverReadAtStr).getTime();
+              const elapsed = Math.floor((Date.now() - readAt) / 1000);
+              remainingSeconds = destructDuration - elapsed;
+              if (remainingSeconds <= 0) {
+                window.expireTimedMessage(msg.id);
+                return '';
+              }
+            }
+          } else {
+            const readUsers = Object.keys(msg.metadata?.read_by_users || {});
+            const targetCount = activeThreadMemberCount - 1;
+            if (readUsers.length >= targetCount && readUsers.length > 0) {
+              const readTimestamps = Object.values(msg.metadata.read_by_users).map(t => new Date(t).getTime());
+              const latestReadAt = Math.max(...readTimestamps);
+              const elapsed = Math.floor((Date.now() - latestReadAt) / 1000);
+              remainingSeconds = destructDuration - elapsed;
+              if (remainingSeconds <= 0) {
+                window.expireTimedMessage(msg.id);
+                return '';
+              }
+            }
           }
         }
       }
@@ -792,12 +879,32 @@ async function loadMessages() {
       }
 
       const timerBadge = remainingSeconds !== null 
-        ? `<span id="timer-${msg.id}" style="color:${isMe ? '#fecaca' : '#ef4444'}; font-weight:700; margin-left:6px; font-size:0.8em; flex-shrink:0;">⏱️ ${remainingSeconds}s</span>`
-        : (destructDuration && isMe ? `<span style="color:#fecaca; margin-left:6px; font-size:0.8em; flex-shrink:0;" title="Timed Message">⏱️ ${destructDuration}s</span>` : '');
+        ? `<span id="timer-${msg.id}" style="color:${isMe ? 'var(--primary)' : '#ef4444'}; font-weight:700; margin-left:6px; font-size:0.8em; flex-shrink:0;">⏱️ ${remainingSeconds}s</span>`
+        : (destructDuration && isMe ? `<span style="color:var(--primary); margin-left:6px; font-size:0.8em; flex-shrink:0;" title="Timed Message">⏱️ ${destructDuration}s</span>` : '');
+
+      let statusDot = '';
+      if (isMe) {
+        if (activeThread.type === 'user') {
+          const isRead = msg.read_at || msg.metadata?.read_by_users?.[activeThread.id];
+          statusDot = isRead 
+            ? `<span style="font-size:0.7em; margin-left:4px;" title="Read">🟢</span>`
+            : `<span style="font-size:0.7em; margin-left:4px;" title="Sent">🔴</span>`;
+        } else {
+          const readCount = Object.keys(msg.metadata?.read_by_users || {}).length;
+          const targetCount = activeThreadMemberCount - 1;
+          if (readCount === 0) {
+            statusDot = `<span style="font-size:0.7em; margin-left:4px;" title="Sent">🔴</span>`;
+          } else if (readCount < targetCount) {
+            statusDot = `<span style="font-size:0.7em; margin-left:4px;" title="Read by some (${readCount}/${targetCount})">🟠</span>`;
+          } else {
+            statusDot = `<span style="font-size:0.7em; margin-left:4px;" title="Read by all (${readCount}/${targetCount})">🟢</span>`;
+          }
+        }
+      }
 
       return `
         <div class="msg-bubble-container" data-msg-id="${msg.id}" style="display:flex; flex-direction:column; align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:80%; position:relative; margin:2px 0;">
-          <div style="background:${isMe ? 'var(--primary)' : 'white'}; color:${isMe ? 'white' : 'var(--text-main)'}; border:1px solid ${isMe ? 'var(--primary)' : 'var(--border)'}; border-radius:${isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px'}; padding:4px 8px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; width:100%; box-sizing:border-box;">
+          <div style="background:white; color:var(--text-main); border:${isMe ? '2px solid var(--primary)' : '1px solid var(--border)'}; border-radius:${isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px'}; padding:4px 8px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; width:100%; box-sizing:border-box;">
             ${quoteHtml}
             <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:0.85em; width:100%;">
               <div style="min-width:0; flex:1;">
@@ -807,6 +914,7 @@ async function loadMessages() {
               <div style="display:flex; align-items:center; gap:4px; flex-shrink:0; margin-left:6px; white-space:nowrap;">
                 ${timerBadge}
                 <span style="font-size:0.8em; opacity:0.8;">${timeStr}</span>
+                ${statusDot}
                 <span class="msg-action-trigger" onclick="window.toggleMessageActions(event, '${msg.id}')" style="cursor:pointer; font-weight:700; opacity:0.8; padding:0 2px;">⋮</span>
               </div>
             </div>
@@ -814,6 +922,7 @@ async function loadMessages() {
             <!-- Floating Actions Dropdown Card -->
             <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:24px; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:#1f2937;">
               <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">💬 Reply</div>
+              ${isMe ? `<div onclick="window.showReadReceipts('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">ℹ️ Info</div>` : ''}
               ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📩 Mark Unread</div>` : ''}
               <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#ef4444;">🗑️ Delete for me</div>
               ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:white; color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
@@ -1229,3 +1338,80 @@ window.expireTimedMessage = async function(msgId) {
     console.error("Failed to expire timed message:", err);
   }
 };
+
+async function showReadReceipts(msgId) {
+  // Close dropdowns
+  document.querySelectorAll('.msg-actions-dropdown').forEach(el => el.style.display = 'none');
+
+  const msg = allMessages.find(m => m.id === msgId);
+  if (!msg) return;
+
+  const contentDiv = document.getElementById('konnectInfoContent');
+  if (!contentDiv) return;
+
+  contentDiv.innerHTML = '<p style="text-align:center;">Loading read receipts...</p>';
+  const modal = document.getElementById('konnectInfoModal');
+  if (modal) {
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
+
+  let listHtml = '';
+  try {
+    if (activeThread.type === 'user') {
+      const isRead = msg.read_at || msg.metadata?.read_by_users?.[activeThread.id];
+      const readTime = isRead ? new Date(msg.read_at || msg.metadata?.read_by_users?.[activeThread.id]).toLocaleString() : '';
+      listHtml = `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #f3f4f6;">
+          <strong style="color:var(--text-main);">${escapeHtml(activeThread.name)}</strong>
+          <span>${isRead ? `🟢 Read at ${readTime}` : '🔴 Unread'}</span>
+        </div>
+      `;
+    } else {
+      let members = [];
+      if (activeThread.type === 'group') {
+        const { data } = await supabaseClient
+          .from('chat_group_members')
+          .select('user_id, users(name)')
+          .eq('group_id', activeThread.id);
+        members = data || [];
+      } else {
+        const { data } = await supabaseClient
+          .from('user_teams')
+          .select('user_id, users(name)')
+          .eq('team_id', activeThread.id);
+        members = data || [];
+      }
+
+      const recipients = members.filter(m => m.user_id !== state.user.id);
+      listHtml = recipients.map(m => {
+        const name = m.users?.name || 'Unknown Member';
+        const readAtStr = msg.metadata?.read_by_users?.[m.user_id];
+        const readTime = readAtStr ? new Date(readAtStr).toLocaleString() : '';
+        return `
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid #f3f4f6;">
+            <strong style="color:var(--text-main);">${escapeHtml(name)}</strong>
+            <span>${readAtStr ? `🟢 Read at ${readTime}` : '🔴 Unread'}</span>
+          </div>
+        `;
+      }).join('');
+
+      if (recipients.length === 0) {
+        listHtml = '<p style="color:var(--text-secondary); font-style:italic;">No other members in this chat</p>';
+      }
+    }
+  } catch (e) {
+    console.error("Failed to load read receipts details:", e);
+    listHtml = '<p style="color:var(--danger);">Error loading read receipts details</p>';
+  }
+
+  contentDiv.innerHTML = listHtml;
+}
+
+function closeInfoModal() {
+  const modal = document.getElementById('konnectInfoModal');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+}
