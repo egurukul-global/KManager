@@ -1388,13 +1388,13 @@ async function showReadReceipts(msgId) {
       if (activeThread.type === 'group') {
         const { data } = await supabaseClient
           .from('chat_group_members')
-          .select('user_id, users(name)')
+          .select('user_id, users:user_id(name)')
           .eq('group_id', activeThread.id);
         members = data || [];
       } else {
         const { data } = await supabaseClient
           .from('user_teams')
-          .select('user_id, users(name)')
+          .select('user_id, users:user_id(name)')
           .eq('team_id', activeThread.id);
         members = data || [];
       }

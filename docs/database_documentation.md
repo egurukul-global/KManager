@@ -140,5 +140,7 @@ Checks whether user_a is authorized to send direct messages to user_b.
   * `update_messages`: Allows updating messages (specifically `read_at`) if you are the sender, direct recipient, or a member of the target team or group.
 * **`public.chat_groups` & `public.chat_group_members`**:
   * Restricts access to group creators and group members using recursion-safe `is_group_member` checks.
+* **`public.users`**:
+  * `users_select_all`: Allows all authenticated users to read basic profile records (fixing name lookup joins).
 
 
