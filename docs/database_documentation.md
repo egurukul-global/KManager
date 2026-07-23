@@ -78,6 +78,25 @@ Maps app codes (modules) to specific users as local app/module administrators.
 * `user_id` (`UUID`): References `public.users(id)`.
 * `created_at` (`TIMESTAMPTZ`): Creation timestamp.
 
+### `public.ok_app_access`
+Enables app/module access clearance for users.
+* `user_id` (`UUID`, PK): References `public.users(id)`.
+* `app_code` (`TEXT`, PK): Allowed values: `'finance'`, `'gurukul'`, `'utilities'`, `'tasks'`, `'konnect'`.
+* `enabled` (`BOOLEAN`): True if app is enabled.
+
+### `public.ok_menu_access`
+Enables granular menu access within applications.
+* `user_id` (`UUID`, PK): References `public.users(id)`.
+* `app_code` (`TEXT`, PK): Allowed values: `'finance'`, `'gurukul'`, `'utilities'`, `'tasks'`, `'konnect'`.
+* `menu_key` (`TEXT`, PK): Key representing specific page/menu.
+* `enabled` (`BOOLEAN`): True if menu is enabled.
+
+### `public.ok_home_pins`
+Stores customized application logos pinned on the user's home screen.
+* `user_id` (`UUID`, PK): References `public.users(id)`.
+* `app_code` (`TEXT`, PK): Allowed values: `'finance'`, `'gurukul'`, `'utilities'`, `'tasks'`, `'konnect'`.
+* `sort_order` (`INTEGER`): Order of display.
+
 ---
 
 ## 2. Core Custom Functions
@@ -135,8 +154,8 @@ Checks whether user_a is authorized to send direct messages to user_b.
 
 ## 5. RLS Policies Added / Modified
 * **`public.messages`**:
-  * `select_messages`: Allows reading messages sent by you, sent directly to you (passing `can_chat_with`), shared in your teams, shared in your custom groups, or role assignments matching CAO/FIH.
-  * `insert_messages`: Allows sending messages to direct/group/team recipients if authorized.
+  * `select_messages`: Allows reading messages sent by you, sent directly to you (passing `can_chat_with`), shared in your teams, shared in your custom groups, role assignments matching CAO/FIH, or budget plan comments matching the user's role code specified in `visible_to` metadata (e.g. OPL, OPH, FIN, FIH, CAO, FIP).
+  * `insert_messages`: Allows sending messages to direct/group/role recipients, and restricts team channel messaging to team members or users with privileged global roles (fin, fip, oh, caoh, ceo, admin).
   * `update_messages`: Allows updating messages (specifically `read_at`) if you are the sender, direct recipient, or a member of the target team or group.
 * **`public.chat_groups` & `public.chat_group_members`**:
   * Restricts access to group creators and group members using recursion-safe `is_group_member` checks.

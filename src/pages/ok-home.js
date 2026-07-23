@@ -10,6 +10,8 @@ import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import { renderOkShell, initOkShell } from './ok-shell.js';
 import kmofLogo from '../../KMOF.png';
+import tasksLogo from '../../tasks logo.png';
+import konnectLogo from '../../konnect logo.png';
 
 function escapeHtml(text) {
   return String(text || '')
@@ -20,6 +22,8 @@ function escapeHtml(text) {
 
 function appLogoSrc(code) {
   if (code === 'finance') return kmofLogo;
+  if (code === 'tasks') return tasksLogo;
+  if (code === 'konnect') return konnectLogo;
   return '';
 }
 
