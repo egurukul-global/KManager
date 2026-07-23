@@ -745,7 +745,7 @@ async function loadMessages() {
       let isTimedPlaceholder = false;
       let remainingSeconds = null;
 
-      if (destructDuration) {
+      if (destructDuration && !isMe) {
         const readAtStr = msg.metadata?.read_by_users?.[state.user.id];
         if (!readAtStr) {
           isTimedPlaceholder = true;
@@ -793,7 +793,7 @@ async function loadMessages() {
 
       const timerBadge = remainingSeconds !== null 
         ? `<span id="timer-${msg.id}" style="color:${isMe ? '#fecaca' : '#ef4444'}; font-weight:700; margin-left:6px; font-size:0.8em; flex-shrink:0;">⏱️ ${remainingSeconds}s</span>`
-        : '';
+        : (destructDuration && isMe ? `<span style="color:#fecaca; margin-left:6px; font-size:0.8em; flex-shrink:0;" title="Timed Message">⏱️ ${destructDuration}s</span>` : '');
 
       return `
         <div class="msg-bubble-container" data-msg-id="${msg.id}" style="display:flex; flex-direction:column; align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:80%; position:relative; margin:2px 0;">
@@ -876,6 +876,8 @@ async function sendKonnectMessage() {
     const checkbox = document.getElementById('selfDestructEnabled');
     if (checkbox) checkbox.checked = false;
     window.handleSelfDestructToggle();
+    const panel = document.getElementById('selfDestructConfigPanel');
+    if (panel) panel.style.display = 'none';
     await loadMessages();
     await loadConversations();
   } catch (err) {
