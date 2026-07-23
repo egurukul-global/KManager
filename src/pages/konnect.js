@@ -776,11 +776,11 @@ async function loadMessages() {
       // Quoted Reply Context block
       let quoteHtml = '';
       if (msg.metadata?.reply_to) {
-        const quoteBg = isMe ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.06)';
-        const quoteBorder = isMe ? '3px solid white' : '3px solid var(--primary)';
-        const quoteColor = isMe ? 'white' : 'var(--text-secondary)';
+        const quoteBg = 'rgba(0,0,0,0.05)';
+        const quoteBorder = '3px solid var(--primary)';
+        const quoteColor = 'var(--text-secondary)';
         quoteHtml = `
-          <div style="background:${quoteBg}; border-left:${quoteBorder}; padding:2px 6px; border-radius:4px; margin-bottom:4px; font-size:0.8em; color:${quoteColor}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; box-sizing:border-box; display:block;">
+          <div style="background:${quoteBg}; border-left:${quoteBorder}; padding:4px 8px; border-radius:4px; margin-bottom:4px; font-size:0.8em; color:${quoteColor}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%; box-sizing:border-box; display:block; border-bottom:1px solid rgba(0,0,0,0.05);">
             <strong>${escapeHtml(msg.metadata.reply_to.sender)}</strong>: "${escapeHtml(msg.metadata.reply_to.body)}"
           </div>
         `;
@@ -1003,6 +1003,22 @@ function toggleMessageActions(e, msgId) {
   const el = document.getElementById(`msgDropdown-${msgId}`);
   if (el) {
     el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+    if (el.style.display === 'flex') {
+      const trigger = e.target;
+      const rect = trigger.getBoundingClientRect();
+      const container = document.getElementById('konnectTimeline');
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        const spaceBelow = containerRect.bottom - rect.bottom;
+        if (spaceBelow < 150) {
+          el.style.top = 'auto';
+          el.style.bottom = '24px';
+        } else {
+          el.style.bottom = 'auto';
+          el.style.top = '24px';
+        }
+      }
+    }
   }
 }
 

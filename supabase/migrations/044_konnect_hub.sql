@@ -239,3 +239,9 @@ CREATE POLICY update_messages ON public.messages
     OR (recipient_type = 'group' AND public.is_group_member(messages.recipient_id::uuid, auth.uid()))
   )
   WITH CHECK (true);
+
+-- 10. Allow all authenticated users to read users table (fixes 'Unknown' sender name and read receipts joins)
+DROP POLICY IF EXISTS users_select_all ON public.users;
+CREATE POLICY users_select_all ON public.users
+  FOR SELECT TO authenticated
+  USING (true);
