@@ -86,6 +86,19 @@ async function ensurePersonalTeam(admin, userId, displayName, createdBy) {
   });
   if (memErr) throw memErr;
 
+  const roleCodes = ['OPH', 'FIN', 'FIH'];
+  const rraInserts = roleCodes.map(code => ({
+    id: crypto.randomUUID(),
+    user_id: userId,
+    role_code: code,
+    team_id: teamId,
+    is_active: true,
+    assigned_by: createdBy || userId
+  }));
+
+  const { error: rraErr } = await admin.from('request_role_assignments').insert(rraInserts);
+  if (rraErr) throw rraErr;
+
   const { error: bucketErr } = await admin.from('buckets').insert({
     id: crypto.randomUUID(),
     team_id: teamId,

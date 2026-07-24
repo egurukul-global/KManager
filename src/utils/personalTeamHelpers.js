@@ -89,6 +89,19 @@ export async function ensurePersonalTeamForUser(userId, displayName, createdByUs
   });
   if (membershipError) throw membershipError;
 
+  const roleCodes = ['OPH', 'FIN', 'FIH'];
+  const rraInserts = roleCodes.map(code => ({
+    id: crypto.randomUUID(),
+    user_id: userId,
+    role_code: code,
+    team_id: teamId,
+    is_active: true,
+    assigned_by: createdByUserId || userId
+  }));
+
+  const { error: rraError } = await supabaseClient.from('request_role_assignments').insert(rraInserts);
+  if (rraError) throw rraError;
+
   const bucketPayload = {
     id: crypto.randomUUID(),
     team_id: teamId,
