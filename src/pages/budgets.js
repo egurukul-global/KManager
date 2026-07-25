@@ -855,8 +855,8 @@ export function getViewBudgetsPage() {
           <div class="form-group">
             <label>Status</label>
             <select id="budgetFilterStatus" onchange="window.onBudgetStatusFilterChange()">
-              <option value="approved" selected>Approved</option>
-              <option value="all">All</option>
+              <option value="all" selected>All</option>
+              <option value="approved">Approved</option>
               <option value="draft">Draft</option>
               <option value="submitted">Submitted</option>
               <option value="rejected">Rejected</option>
@@ -968,7 +968,7 @@ export async function initViewBudgetsPage() {
 
   const statusFilterEl = document.getElementById('budgetFilterStatus');
   const nameFilterEl = document.getElementById('budgetFilterName');
-  const statusFilter = statusFilterEl ? statusFilterEl.value : 'approved';
+  const statusFilter = statusFilterEl ? statusFilterEl.value : 'all';
   const nameFilter = nameFilterEl ? nameFilterEl.value : '';
 
   const teamId = state.currentTeam?.team_id;
@@ -1758,7 +1758,7 @@ async function submitBudgetApprovalHandler(budgetId) {
         .eq('team_id', teamId)
         .eq('is_deleted', false)
         .neq('id', budget.id)
-        .not('status', 'in', '("closed","received")'),
+        .in('status', ['approved', 'received']),
       supabaseClient
         .from('buckets')
         .select('id, name, balance, currency')
