@@ -1576,7 +1576,7 @@ window.renderWizardStep = function() {
     if (!wizardOpenBudgets.length) {
       html = `
         <div class="card" style="padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
-          <p style="color: #28a745; font-weight: bold; margin: 0;">✓ All previous budgets are closed or received. No explanation required.</p>
+          <p style="color: #28a745; font-weight: bold; margin: 0;">✓ You do not have any other open active budgets.</p>
         </div>
       `;
     } else {
