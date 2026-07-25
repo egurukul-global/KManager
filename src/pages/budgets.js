@@ -1398,6 +1398,11 @@ function getWizardStepsForBudget(budget) {
 
 window.closeWizardModal = function() {
   document.getElementById('submissionWizardModal').classList.remove('active');
+  const btn = document.getElementById('wizardNextBtn');
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = 'Next';
+  }
   wizardBudget = null;
   wizardStep = 1;
   wizardData = {};
@@ -2068,13 +2073,42 @@ window.renderWizardStep = function() {
     `;
   } else if (wizardStep === 10) {
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 380px; overflow-y: auto;">
-        <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 8px;">Submission Summary</h4>
-        <p><strong>Budget Name:</strong> ${escapeHtmlAttr(wizardBudget.name)}</p>
-        <p><strong>Explanations Filed:</strong> ${wizardData.openBudgetsExplanation?.length || 0}</p>
-        <p><strong>Bank/Cash Total Balance:</strong> $${wizardData.bankBalance}</p>
-        <p><strong>Allocations Summed:</strong> $${(wizardBudget.total_amount || wizardBudget.totalAmount || 0).toFixed(2)}</p>
-        <p><strong>Housing Address:</strong> ${escapeHtmlAttr(wizardData.housingInfo?.address || 'None')}</p>
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 420px; overflow-y: auto;">
+        <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #28a745;">Submission Summary &amp; Verification</h4>
+        <p style="margin-bottom: 15px; font-weight: bold; color: #cc241d;">⚠ Please verify the financial numbers and category allocations below before submitting.</p>
+        
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9rem;">
+          <thead>
+            <tr style="background: #f1f1f1; text-align: left;">
+              <th style="padding: 6px; border: 1px solid #ddd;">Category</th>
+              <th style="padding: 6px; border: 1px solid #ddd;">Local Amount</th>
+              <th style="padding: 6px; border: 1px solid #ddd;">USD Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(wizardBudget.categories || []).map(cat => `
+              <tr>
+                <td style="padding: 6px; border: 1px solid #ddd;">
+                  ${escapeHtmlAttr(cat.category)} ${cat.subcategory ? `<span style="color: #666; font-size: 0.8rem;">(${escapeHtmlAttr(cat.subcategory)})</span>` : ''}
+                </td>
+                <td style="padding: 6px; border: 1px solid #ddd;">
+                  ${Number(cat.localAmount || cat.local_amount || 0).toFixed(2)} ${escapeHtmlAttr(cat.currency || 'USD')}
+                </td>
+                <td style="padding: 6px; border: 1px solid #ddd; font-weight: bold;">
+                  $${Number(cat.usdAmount || cat.usd_amount || 0).toFixed(2)}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div style="font-size: 0.9rem; line-height: 1.5; border-top: 1px solid #eee; padding-top: 10px;">
+          <p><strong>Budget Proposal Name:</strong> ${escapeHtmlAttr(wizardBudget.name)}</p>
+          <p><strong>Total Proposed USD:</strong> $${(wizardBudget.total_amount || wizardBudget.totalAmount || 0).toFixed(2)}</p>
+          <p><strong>Reconciliation Total Balance:</strong> $${wizardData.bankBalance}</p>
+          <p><strong>Housing Address:</strong> ${escapeHtmlAttr(wizardData.housingInfo?.address || 'None')}</p>
+          <p><strong>Explanations for open budgets:</strong> ${wizardData.openBudgetsExplanation?.length || 0} budgets explained</p>
+        </div>
       </div>
       <p style="color: #666; font-size: 0.9rem; margin-top: 15px;">Please confirm all details are correct. Clicking Submit will record your accountability statistics and route this budget plan for approval.</p>
     `;
