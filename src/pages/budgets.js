@@ -59,6 +59,46 @@ function escapeHtmlAttr(s) {
     .replace(/</g, '&lt;');
 }
 
+export async function ensureUnallocatedBudgetExists(teamId) {
+  if (!teamId) return null;
+  try {
+    const { data: existing } = await supabaseClient
+      .from('budget_plans')
+      .select('id')
+      .eq('team_id', teamId)
+      .eq('budget_type', 'unallocated')
+      .eq('is_deleted', false)
+      .maybeSingle();
+
+    if (existing) return existing.id;
+
+    const newBudget = {
+      team_id: teamId,
+      name: 'Unallocated Funds',
+      status: 'received',
+      approval_status: 'APPROVED',
+      budget_type: 'unallocated',
+      categories: [],
+      total_amount: 0,
+      spent_amount: 0,
+      created_by: state.user?.id,
+      is_deleted: false
+    };
+
+    const { data: inserted, error } = await supabaseClient
+      .from('budget_plans')
+      .insert(newBudget)
+      .select('id')
+      .single();
+
+    if (error) throw error;
+    return inserted.id;
+  } catch (err) {
+    console.error('ensureUnallocatedBudgetExists error:', err);
+    return null;
+  }
+}
+
 function formatLocalInput(value) {
   const n = parseFloat(value);
   if (Number.isNaN(n)) return '';

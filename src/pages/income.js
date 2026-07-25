@@ -19,6 +19,7 @@ import {
 import { applyDefaultsToIncomeForm, loadUserTeamDefaultsForCurrentTeam } from '../utils/userTeamDefaults.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 import { getBudgetStatus } from '../utils/budgetStatus.js';
+import { ensureUnallocatedBudgetExists } from './budgets.js';
 
 // ==========================================
 // MODULE-LEVEL CACHE (team-scoped)
@@ -484,12 +485,19 @@ window.createIncomeRecord = async function(e) {
     }
   });
 
+  const teamId = state.currentTeam?.team_id;
+
   if (allocationsExceedIncome(totalAllocated, amount_usd)) {
     showToast('Cannot save. Allocations exceed your registered income amount.', 'error');
     return;
   }
 
-  const teamId = state.currentTeam?.team_id;
+  const unallocatedBudgetId = await ensureUnallocatedBudgetExists(teamId);
+  if (totalAllocated < amount_usd && unallocatedBudgetId) {
+    const remainder = amount_usd - totalAllocated;
+    allocations.push({ budget_id: unallocatedBudgetId, amount_usd: remainder });
+    totalAllocated = amount_usd;
+  }
 
   const incomePayload = {
     team_id: teamId,
@@ -960,12 +968,20 @@ window.saveEditedIncomeRecord = async function(e) {
     }
   });
 
+  const teamId = state.currentTeam?.team_id;
+
   if (allocationsExceedIncome(totalAllocated, amount_usd)) {
     showToast('Allocations exceed total income value!', 'error');
     return;
   }
 
-  const teamId = state.currentTeam?.team_id;
+  const unallocatedBudgetId = await ensureUnallocatedBudgetExists(teamId);
+  if (totalAllocated < amount_usd && unallocatedBudgetId) {
+    const remainder = amount_usd - totalAllocated;
+    allocations.push({ budget_id: unallocatedBudgetId, amount_usd: remainder });
+    totalAllocated = amount_usd;
+  }
+
   const existing = state.incomeRecords.find(r => r.id === id) || {};
 
   const updatedRecord = {
