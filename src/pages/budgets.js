@@ -1363,19 +1363,38 @@ let wizardStep = 1;
 let wizardData = {};
 let wizardOpenBudgets = [];
 let wizardBuckets = [];
+let wizardMembers = [];
 
-const WIZARD_STEPS = [
-  { step: 1, title: 'Step 1: Open Budgets Review', id: 'step-open-budgets' },
-  { step: 2, title: 'Step 2: Close Previous Month Expenses', id: 'step-close-expenses' },
-  { step: 3, title: 'Step 3: Bank & Cash Reconciliation', id: 'step-reconciliation' },
-  { step: 4, title: 'Step 4: Team Information', id: 'step-team-info' },
-  { step: 5, title: 'Step 5: Housing Information', id: 'step-housing-info' },
-  { step: 6, title: 'Step 6: Accomplishments', id: 'step-accomplishments' },
-  { step: 7, title: 'Step 7: Income Report', id: 'step-income-report' },
-  { step: 8, title: 'Step 8: Social Media Tracking', id: 'step-social-media' },
-  { step: 9, title: 'Step 9: Coursing / Outreach Tracking', id: 'step-coursing' },
-  { step: 10, title: 'Step 10: Final Review & Submit', id: 'step-final-submit' }
-];
+function getWizardStepsForBudget(budget) {
+  const type = String(budget?.budget_type || 'monthly').toLowerCase();
+  if (type === 'monthly') {
+    return [
+      { step: 1, title: 'Step 1: Open Budgets Review', id: 'step-open-budgets' },
+      { step: 2, title: 'Step 2: Close Previous Month Expenses', id: 'step-close-expenses' },
+      { step: 3, title: 'Step 3: Bank & Cash Reconciliation', id: 'step-reconciliation' },
+      { step: 4, title: 'Step 4: Team Allocation', id: 'step-team-allocation' },
+      { step: 5, title: 'Step 5: Housing Details', id: 'step-housing-info' },
+      { step: 6, title: 'Step 6: Accomplishments', id: 'step-accomplishments' },
+      { step: 7, title: 'Step 7: Income Report', id: 'step-income-report' },
+      { step: 8, title: 'Step 8: Social Media Tracking', id: 'step-social-media' },
+      { step: 9, title: 'Step 9: Causing', id: 'step-causing' },
+      { step: 10, title: 'Step 10: Final Review & Submit', id: 'step-final-submit' }
+    ];
+  } else if (type === 'medical') {
+    return [
+      { step: 1, title: 'Step 1: Medical Case Details', id: 'step-medical-details' },
+      { step: 2, title: 'Step 2: Final Review & Submit', id: 'step-final-submit' }
+    ];
+  } else if (type === 'travel') {
+    return [
+      { step: 1, title: 'Step 1: Travel Itinerary', id: 'step-travel-details' },
+      { step: 2, title: 'Step 2: Final Review & Submit', id: 'step-final-submit' }
+    ];
+  }
+  return [
+    { step: 1, title: 'Step 1: Final Review & Submit', id: 'step-final-submit' }
+  ];
+}
 
 window.closeWizardModal = function() {
   document.getElementById('submissionWizardModal').classList.remove('active');
@@ -1384,116 +1403,270 @@ window.closeWizardModal = function() {
   wizardData = {};
   wizardOpenBudgets = [];
   wizardBuckets = [];
+  wizardMembers = [];
 };
 
 window.wizardPrevStep = function() {
   if (wizardStep > 1) {
+    saveStepData();
     wizardStep--;
     window.renderWizardStep();
   }
 };
 
-window.wizardNextStep = async function() {
-  const container = document.getElementById('wizardStepsContainer');
-  let updatePayload = {};
+function getCategoryAllocations(categoryName, totalAmount) {
+  if (wizardData.allocations && wizardData.allocations[categoryName]) {
+    return wizardData.allocations[categoryName];
+  }
+  const count = wizardMembers.length;
+  if (count === 0) return {};
+  const base = Math.floor((totalAmount / count) * 100) / 100;
+  const totalAllocated = base * count;
+  const remainder = Math.round((totalAmount - totalAllocated) * 100) / 100;
+  const allocations = {};
+  const lead = wizardMembers.find(m => m.access_level === 'opl') || wizardMembers[0];
+  wizardMembers.forEach(m => {
+    allocations[m.id] = base;
+  });
+  if (lead && remainder !== 0) {
+    allocations[lead.id] = Math.round((allocations[lead.id] + remainder) * 100) / 100;
+  }
+  return allocations;
+}
+
+window.onAllocationChange = function(categoryIndex, memberId, inputEl) {
+  const category = wizardBudget.categories[categoryIndex];
+  const categoryName = category.name || category.category;
+  const totalAmount = category.usdAmount || category.usd_amount || 0;
+  let val = parseFloat(inputEl.value) || 0;
+  if (val < 0) val = 0;
+  if (val > totalAmount) {
+    showToast(`Allocation cannot exceed category total of $${totalAmount}`, 'warning');
+    val = totalAmount;
+    inputEl.value = val.toFixed(2);
+  }
+  if (!wizardData.allocations) wizardData.allocations = {};
+  if (!wizardData.allocations[categoryName]) {
+    wizardData.allocations[categoryName] = getCategoryAllocations(categoryName, totalAmount);
+  }
+  if (!wizardData.customizedAllocations) wizardData.customizedAllocations = {};
+  if (!wizardData.customizedAllocations[categoryName]) {
+    wizardData.customizedAllocations[categoryName] = {};
+  }
+  wizardData.customizedAllocations[categoryName][memberId] = val;
+  const customized = wizardData.customizedAllocations[categoryName];
+  let customSum = 0;
+  wizardMembers.forEach(m => {
+    if (customized[m.id] !== undefined) {
+      customSum += customized[m.id];
+    }
+  });
+  const remainder = totalAmount - customSum;
+  const remainingMembers = wizardMembers.filter(m => customized[m.id] === undefined);
+  if (remainingMembers.length > 0) {
+    if (remainder < 0) {
+      showToast('Sum of allocations exceeds total category amount!', 'warning');
+      delete customized[memberId];
+      window.renderWizardStep();
+      return;
+    }
+    const base = Math.floor((remainder / remainingMembers.length) * 100) / 100;
+    const allocated = base * remainingMembers.length;
+    const roundingRemainder = Math.round((remainder - allocated) * 100) / 100;
+    remainingMembers.forEach(m => {
+      wizardData.allocations[categoryName][m.id] = base;
+    });
+    const lead = remainingMembers.find(m => m.access_level === 'opl') || remainingMembers[0];
+    if (lead && roundingRemainder !== 0) {
+      wizardData.allocations[categoryName][lead.id] = Math.round((wizardData.allocations[categoryName][lead.id] + roundingRemainder) * 100) / 100;
+    }
+  }
+  wizardData.allocations[categoryName][memberId] = val;
+  wizardMembers.forEach(m => {
+    const input = document.getElementById(`alloc-${categoryIndex}-${m.id}`);
+    if (input && input !== inputEl) {
+      input.value = (wizardData.allocations[categoryName][m.id] || 0).toFixed(2);
+    }
+  });
+};
+
+function saveStepData() {
+  const steps = getWizardStepsForBudget(wizardBudget);
+  const type = String(wizardBudget?.budget_type || 'monthly').toLowerCase();
+  if (type !== 'monthly') return; // Custom types handled individually
 
   if (wizardStep === 1) {
     const explanations = [];
-    let valid = true;
     wizardOpenBudgets.forEach((ob, idx) => {
-      const reason = document.getElementById(`ob-reason-${idx}`)?.value?.trim();
-      const status = document.getElementById(`ob-status-${idx}`)?.value?.trim();
-      const closure = document.getElementById(`ob-closure-${idx}`)?.value?.trim();
-      if (!reason || !status || !closure) {
-        valid = false;
-        return;
-      }
+      const reason = document.getElementById(`ob-reason-${idx}`)?.value?.trim() || '';
+      const status = document.getElementById(`ob-status-${idx}`)?.value?.trim() || '';
+      const closure = document.getElementById(`ob-closure-${idx}`)?.value?.trim() || '';
       explanations.push({ budgetId: ob.id, name: ob.name, reason, status, closure });
     });
-    if (!valid && wizardOpenBudgets.length > 0) {
-      showToast('Please complete all open budget explanation fields', 'warning');
-      return;
-    }
     wizardData.openBudgetsExplanation = explanations;
-    updatePayload.open_budgets_explanation = explanations;
   } else if (wizardStep === 2) {
-    const confirmChk = document.getElementById('confirmExpensesClosed')?.checked;
-    if (!confirmChk) {
-      showToast('You must confirm previous month expenses are frozen', 'warning');
-      return;
-    }
-    wizardData.expensesClosed = true;
+    wizardData.expensesClosed = document.getElementById('confirmExpensesClosed')?.checked || false;
   } else if (wizardStep === 3) {
-    const confirmChk = document.getElementById('confirmReconciliation')?.checked;
-    if (!confirmChk) {
-      showToast('You must confirm the reconciliation details are correct', 'warning');
-      return;
-    }
-    const total = wizardBuckets.reduce((sum, b) => sum + (b.balance || 0), 0);
-    wizardData.cashBalance = 0;
-    wizardData.bankBalance = total;
-    wizardData.remainingFunds = total;
-    wizardData.reconciliationConfirmed = true;
-
-    updatePayload.recon_cash_balance = 0;
-    updatePayload.recon_bank_balance = total;
-    updatePayload.recon_remaining_funds = total;
-  } else if (wizardStep === 4) {
-    const info = document.getElementById('wizardTeamInfo')?.value?.trim();
-    if (!info) {
-      showToast('Team information is required', 'warning');
-      return;
-    }
-    wizardData.teamInfo = info;
-    updatePayload.submission_team_info = { text: info };
+    wizardData.reconciliationConfirmed = document.getElementById('confirmReconciliation')?.checked || false;
   } else if (wizardStep === 5) {
-    const info = document.getElementById('wizardHousingInfo')?.value?.trim();
-    if (!info) {
-      showToast('Housing information is required', 'warning');
-      return;
-    }
-    wizardData.housingInfo = info;
-    updatePayload.submission_housing_info = { text: info };
+    const utils = [];
+    if (document.getElementById('util-wifi')?.checked) utils.push('wifi');
+    if (document.getElementById('util-gas')?.checked) utils.push('gas');
+    if (document.getElementById('util-electricity')?.checked) utils.push('electricity');
+    if (document.getElementById('util-water')?.checked) utils.push('water');
+    if (document.getElementById('util-garbage')?.checked) utils.push('garbage');
+    wizardData.housingInfo = {
+      address: document.getElementById('house-address')?.value?.trim() || '',
+      rent: parseFloat(document.getElementById('house-rent')?.value) || 0,
+      mapUrl: document.getElementById('house-map')?.value?.trim() || '',
+      ownerName: document.getElementById('house-owner')?.value?.trim() || '',
+      ownerPhone: document.getElementById('house-phone')?.value?.trim() || '',
+      bedrooms: parseInt(document.getElementById('house-bedrooms')?.value, 10) || 0,
+      bathrooms: parseFloat(document.getElementById('house-bathrooms')?.value) || 0,
+      occupants: parseInt(document.getElementById('house-occupants')?.value, 10) || 0,
+      hasAgreement: document.getElementById('house-agreement-chk')?.checked || false,
+      agreementFile: document.getElementById('house-agreement-file')?.value?.trim() || '',
+      utilities: utils,
+      furnished: document.getElementById('house-furnished')?.value || 'no'
+    };
   } else if (wizardStep === 6) {
-    const info = document.getElementById('wizardAccomplishments')?.value?.trim();
-    if (!info) {
-      showToast('Accomplishments are required', 'warning');
-      return;
-    }
-    wizardData.accomplishments = info;
-    updatePayload.submission_accomplishments = { text: info };
+    const accData = {};
+    wizardMembers.forEach(m => {
+      accData[m.id] = {
+        accomplishments: document.getElementById(`acc-text-${m.id}`)?.value?.trim() || '',
+        goals: document.getElementById(`goals-text-${m.id}`)?.value?.trim() || ''
+      };
+    });
+    wizardData.accomplishmentsData = accData;
   } else if (wizardStep === 7) {
-    const info = document.getElementById('wizardIncomeReport')?.value?.trim();
-    if (!info) {
-      showToast('Income report is required', 'warning');
-      return;
-    }
-    wizardData.incomeReport = info;
-    updatePayload.submission_income_report = { text: info };
+    const incData = {};
+    wizardMembers.forEach(m => {
+      incData[m.id] = {
+        sevas: parseFloat(document.getElementById(`inc-sevas-${m.id}`)?.value) || 0,
+        business: parseFloat(document.getElementById(`inc-business-${m.id}`)?.value) || 0,
+        donations: parseFloat(document.getElementById(`inc-donations-${m.id}`)?.value) || 0
+      };
+    });
+    wizardData.incomeData = incData;
   } else if (wizardStep === 8) {
-    const handles = document.getElementById('wizardSocialHandles')?.value?.trim();
-    const yoga = parseInt(document.getElementById('wizardSocialYoga')?.value, 10);
-    const other = parseInt(document.getElementById('wizardSocialOther')?.value, 10);
-    if (Number.isNaN(yoga) || Number.isNaN(other)) {
-      showToast('Yoga and other post counts are required', 'warning');
-      return;
-    }
-    const sm = { handles, yoga, other };
-    wizardData.socialMedia = sm;
-    updatePayload.submission_social_media = sm;
+    const smData = {};
+    wizardMembers.forEach(m => {
+      smData[m.id] = {
+        handles: document.getElementById(`sm-handles-${m.id}`)?.value?.trim() || '',
+        yoga: parseInt(document.getElementById(`sm-yoga-${m.id}`)?.value, 10) || 0,
+        other: parseInt(document.getElementById(`sm-other-${m.id}`)?.value, 10) || 0
+      };
+    });
+    wizardData.socialMediaData = smData;
   } else if (wizardStep === 9) {
-    const adheenavasis = parseInt(document.getElementById('wizardCoursingAdheenavasis')?.value, 10);
-    const pss = parseInt(document.getElementById('wizardCoursingPss')?.value, 10);
-    const sjp = parseInt(document.getElementById('wizardCoursingSjp')?.value, 10);
-    const business = parseInt(document.getElementById('wizardCoursingBusiness')?.value, 10);
-    if (Number.isNaN(adheenavasis) || Number.isNaN(pss) || Number.isNaN(sjp) || Number.isNaN(business)) {
-      showToast('All coursing counts are required', 'warning');
+    const causData = {};
+    wizardMembers.forEach(m => {
+      causData[m.id] = {
+        adheenavasis: parseInt(document.getElementById(`caus-adheenavasis-${m.id}`)?.value, 10) || 0,
+        pss: parseInt(document.getElementById(`caus-pss-${m.id}`)?.value, 10) || 0,
+        sjp: parseInt(document.getElementById(`caus-sjp-${m.id}`)?.value, 10) || 0
+      };
+    });
+    wizardData.causingData = causData;
+  }
+}
+
+function validateStep(stepOrder) {
+  const errors = [];
+  const type = String(wizardBudget?.budget_type || 'monthly').toLowerCase();
+  if (type !== 'monthly') return errors;
+
+  if (stepOrder === 1) {
+    if (wizardOpenBudgets.length > 0) {
+      const exp = wizardData.openBudgetsExplanation || [];
+      if (exp.length < wizardOpenBudgets.length || exp.some(e => !e.reason || !e.status || !e.closure)) {
+        errors.push("Step 1: All open budgets must have status, reason and expected closure completed.");
+      }
+    }
+  } else if (stepOrder === 2) {
+    if (!wizardData.expensesClosed) {
+      errors.push("Step 2: You must check the box to confirm that previous month expenses are frozen.");
+    }
+  } else if (stepOrder === 3) {
+    if (!wizardData.reconciliationConfirmed) {
+      errors.push("Step 3: You must check the box to confirm the reconciliation details are correct.");
+    }
+  } else if (stepOrder === 4) {
+    (wizardBudget.categories || []).forEach(cat => {
+      const categoryName = cat.name || cat.category;
+      const totalAmount = cat.usdAmount || cat.usd_amount || 0;
+      const allocs = wizardData.allocations?.[categoryName] || {};
+      const sum = Object.values(allocs).reduce((a, b) => a + b, 0);
+      if (Math.abs(sum - totalAmount) > 0.02) {
+        errors.push(`Step 4: Allocations for "${categoryName}" ($${sum.toFixed(2)}) must sum to total amount ($${totalAmount.toFixed(2)}).`);
+      }
+    });
+  } else if (stepOrder === 5) {
+    const h = wizardData.housingInfo || {};
+    if (!h.address) errors.push("Step 5: Housing address is required.");
+    if (!(h.rent > 0)) errors.push("Step 5: Rent is required.");
+    if (!h.ownerName) errors.push("Step 5: Housing owner name is required.");
+    if (!h.ownerPhone) errors.push("Step 5: Housing owner phone is required.");
+    if (!(h.bedrooms > 0)) errors.push("Step 5: Number of bedrooms is required.");
+    if (!(h.bathrooms > 0)) errors.push("Step 5: Number of bathrooms is required.");
+    if (!(h.occupants > 0)) errors.push("Step 5: Total occupants is required.");
+  } else if (stepOrder === 6) {
+    const acc = wizardData.accomplishmentsData || {};
+    wizardMembers.forEach(m => {
+      const val = acc[m.id] || {};
+      if (!val.accomplishments) errors.push(`Step 6: Accomplishments for ${m.name} is required.`);
+      if (!val.goals) errors.push(`Step 6: Goals for ${m.name} is required.`);
+    });
+  } else if (stepOrder === 7) {
+    const inc = wizardData.incomeData || {};
+    wizardMembers.forEach(m => {
+      const val = inc[m.id] || {};
+      if (val.sevas === undefined || val.business === undefined || val.donations === undefined) {
+        errors.push(`Step 7: All income fields for ${m.name} are required.`);
+      }
+    });
+  } else if (stepOrder === 8) {
+    const sm = wizardData.socialMediaData || {};
+    wizardMembers.forEach(m => {
+      const val = sm[m.id] || {};
+      if (val.yoga === undefined || val.other === undefined) {
+        errors.push(`Step 8: Social media post counts for ${m.name} are required.`);
+      }
+    });
+  } else if (stepOrder === 9) {
+    const caus = wizardData.causingData || {};
+    wizardMembers.forEach(m => {
+      const val = caus[m.id] || {};
+      if (val.adheenavasis === undefined || val.pss === undefined || val.sjp === undefined) {
+        errors.push(`Step 9: Causing outreach counts for ${m.name} are required.`);
+      }
+    });
+  }
+  return errors;
+}
+
+window.wizardNextStep = async function() {
+  saveStepData();
+  const steps = getWizardStepsForBudget(wizardBudget);
+
+  if (wizardStep === steps.length) {
+    // Perform final check of all steps
+    const allErrors = [];
+    for (let s = 1; s < steps.length; s++) {
+      allErrors.push(...validateStep(s));
+    }
+    if (allErrors.length > 0) {
+      showToast(allErrors[0], 'warning');
+      for (let s = 1; s < steps.length; s++) {
+        if (validateStep(s).length > 0) {
+          wizardStep = s;
+          window.renderWizardStep();
+          break;
+        }
+      }
       return;
     }
-    const crs = { adheenavasis, pss, sjp, business };
-    wizardData.coursing = crs;
-    updatePayload.submission_coursing = crs;
-  } else if (wizardStep === 10) {
+
     const btn = document.getElementById('wizardNextBtn');
     btn.textContent = 'Submitting...';
     btn.disabled = true;
@@ -1505,18 +1678,17 @@ window.wizardNextStep = async function() {
           recon_cash_balance: wizardData.cashBalance,
           recon_bank_balance: wizardData.bankBalance,
           recon_remaining_funds: wizardData.remainingFunds,
-          submission_team_info: { text: wizardData.teamInfo },
-          submission_housing_info: { text: wizardData.housingInfo },
-          submission_accomplishments: { text: wizardData.accomplishments },
-          submission_income_report: { text: wizardData.incomeReport },
-          submission_social_media: wizardData.socialMedia,
-          submission_coursing: wizardData.coursing
+          submission_team_info: { members: wizardMembers, allocations: wizardData.allocations },
+          submission_housing_info: wizardData.housingInfo,
+          submission_accomplishments: { data: wizardData.accomplishmentsData },
+          submission_income_report: { data: wizardData.incomeData },
+          submission_social_media: { data: wizardData.socialMediaData },
+          submission_coursing: { data: wizardData.causingData }
         })
         .eq('id', wizardBudget.id);
 
       if (updateErr) throw updateErr;
 
-      // Freeze all currently logged unfrozen expenses for this team
       const { error: freezeErr } = await supabaseClient
         .from('expenses')
         .update({ is_frozen: true })
@@ -1539,6 +1711,27 @@ window.wizardNextStep = async function() {
   }
 
   // Autosave intermediate step data to database
+  const updatePayload = {};
+  if (wizardStep === 1) {
+    updatePayload.open_budgets_explanation = wizardData.openBudgetsExplanation;
+  } else if (wizardStep === 3) {
+    updatePayload.recon_cash_balance = wizardData.cashBalance;
+    updatePayload.recon_bank_balance = wizardData.bankBalance;
+    updatePayload.recon_remaining_funds = wizardData.remainingFunds;
+  } else if (wizardStep === 4) {
+    updatePayload.submission_team_info = { members: wizardMembers, allocations: wizardData.allocations };
+  } else if (wizardStep === 5) {
+    updatePayload.submission_housing_info = wizardData.housingInfo;
+  } else if (wizardStep === 6) {
+    updatePayload.submission_accomplishments = { data: wizardData.accomplishmentsData };
+  } else if (wizardStep === 7) {
+    updatePayload.submission_income_report = { data: wizardData.incomeData };
+  } else if (wizardStep === 8) {
+    updatePayload.submission_social_media = { data: wizardData.socialMediaData };
+  } else if (wizardStep === 9) {
+    updatePayload.submission_coursing = { data: wizardData.causingData };
+  }
+
   if (Object.keys(updatePayload).length > 0) {
     try {
       await supabaseClient
@@ -1563,13 +1756,33 @@ window.renderWizardStep = function() {
 
   if (!container || !fill || !title) return;
 
-  const currentConfig = WIZARD_STEPS.find(s => s.step === wizardStep);
+  const steps = getWizardStepsForBudget(wizardBudget);
+  const currentConfig = steps.find(s => s.step === wizardStep);
   title.textContent = `${currentConfig.title}`;
-  fill.style.width = `${(wizardStep / 10) * 100}%`;
+  fill.style.width = `${(wizardStep / steps.length) * 100}%`;
   prevBtn.style.display = wizardStep === 1 ? 'none' : 'inline-block';
-  nextBtn.textContent = wizardStep === 10 ? 'Submit' : 'Next';
+  nextBtn.textContent = wizardStep === steps.length ? 'Submit' : 'Next';
 
   const todayStr = new Date().toISOString().split('T')[0];
+
+  const type = String(wizardBudget?.budget_type || 'monthly').toLowerCase();
+  if (type !== 'monthly') {
+    // Non-monthly fallback render
+    if (wizardStep === steps.length) {
+      container.innerHTML = `
+        <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+          <p>This is a ${type} budget plan proposal. Ready for submission review.</p>
+        </div>
+      `;
+    } else {
+      container.innerHTML = `
+        <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+          <p>Dynamic step content details for ${type} budgets.</p>
+        </div>
+      `;
+    }
+    return;
+  }
 
   let html = '';
   if (wizardStep === 1) {
@@ -1642,70 +1855,215 @@ window.renderWizardStep = function() {
     `;
   } else if (wizardStep === 4) {
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
-        <label>Team Members &amp; Assignments in this Period *</label>
-        <textarea id="wizardTeamInfo" placeholder="List active team members and their assignments" style="width: 100%; min-height: 120px;" required>${escapeHtmlAttr(wizardData.teamInfo ?? '')}</textarea>
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
+        <h4 style="margin-top: 0; margin-bottom: 10px;">Category Allocation Splits</h4>
+        <p class="section-hint" style="margin-bottom: 15px;">Define the budget split per person. Unmodified members share the remaining balance.</p>
+        ${(wizardBudget.categories || []).map((cat, catIdx) => {
+          const categoryName = cat.name || cat.category;
+          const total = cat.usdAmount || cat.usd_amount || 0;
+          const allocs = getCategoryAllocations(categoryName, total);
+          if (!wizardData.allocations) wizardData.allocations = {};
+          wizardData.allocations[categoryName] = allocs;
+
+          return `
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+              <h5 style="margin: 0 0 10px 0; color: #007bff;">${escapeHtmlAttr(categoryName)} (Total: $${total.toFixed(2)})</h5>
+              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;">
+                ${wizardMembers.map(m => `
+                  <div class="form-group" style="margin: 0;">
+                    <label style="font-size: 0.85rem;">${escapeHtmlAttr(m.name)}</label>
+                    <input type="number" step="0.01" min="0" max="${total}" 
+                           id="alloc-${catIdx}-${m.id}" 
+                           value="${(allocs[m.id] || 0).toFixed(2)}"
+                           oninput="window.onAllocationChange(${catIdx}, '${m.id}', this)"
+                           style="width: 100%;">
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `;
+        }).join('')}
       </div>
     `;
   } else if (wizardStep === 5) {
+    const h = wizardData.housingInfo || {};
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
-        <label>Housing Details &amp; Cost Responsibility *</label>
-        <textarea id="wizardHousingInfo" placeholder="Specify addresses, occupants, leaseholders, and rent / utility responsibilities" style="width: 100%; min-height: 120px;" required>${escapeHtmlAttr(wizardData.housingInfo ?? '')}</textarea>
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
+        <h4 style="margin-top: 0; margin-bottom: 15px;">Housing Details</h4>
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label>Address *</label>
+          <input type="text" id="house-address" value="${escapeHtmlAttr(h.address || '')}" required style="width: 100%;">
+        </div>
+        <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+          <div class="form-group">
+            <label>Rent (USD equivalent) *</label>
+            <input type="number" step="0.01" id="house-rent" value="${h.rent ?? ''}" required style="width: 100%;">
+          </div>
+          <div class="form-group">
+            <label>Location Map URL</label>
+            <input type="text" id="house-map" value="${escapeHtmlAttr(h.mapUrl || '')}" style="width: 100%;">
+          </div>
+        </div>
+        <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+          <div class="form-group">
+            <label>Owner Name *</label>
+            <input type="text" id="house-owner" value="${escapeHtmlAttr(h.ownerName || '')}" required style="width: 100%;">
+          </div>
+          <div class="form-group">
+            <label>Owner Phone *</label>
+            <input type="text" id="house-phone" value="${escapeHtmlAttr(h.ownerPhone || '')}" required style="width: 100%;">
+          </div>
+        </div>
+        <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+          <div class="form-group">
+            <label>Bedrooms *</label>
+            <input type="number" id="house-bedrooms" value="${h.bedrooms ?? ''}" required style="width: 100%;">
+          </div>
+          <div class="form-group">
+            <label>Bathrooms *</label>
+            <input type="number" step="0.5" id="house-bathrooms" value="${h.bathrooms ?? ''}" required style="width: 100%;">
+          </div>
+          <div class="form-group">
+            <label>Total Occupants *</label>
+            <input type="number" id="house-occupants" value="${h.occupants ?? ''}" required style="width: 100%;">
+          </div>
+        </div>
+        <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+          <div class="form-group">
+            <label style="display: inline-flex; align-items: center; gap: 6px;">
+              <input type="checkbox" id="house-agreement-chk" ${h.hasAgreement ? 'checked' : ''}>
+              Rental Agreement?
+            </label>
+          </div>
+          <div class="form-group">
+            <label>Agreement File / Link</label>
+            <input type="text" id="house-agreement-file" value="${escapeHtmlAttr(h.agreementFile || '')}" placeholder="File link or text note" style="width: 100%;">
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label style="font-weight: bold; display: block; margin-bottom: 5px;">Utilities Provided:</label>
+          <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+            <label><input type="checkbox" id="util-wifi" ${(h.utilities || []).includes('wifi') ? 'checked' : ''}> Wifi</label>
+            <label><input type="checkbox" id="util-gas" ${(h.utilities || []).includes('gas') ? 'checked' : ''}> Gas</label>
+            <label><input type="checkbox" id="util-electricity" ${(h.utilities || []).includes('electricity') ? 'checked' : ''}> Electricity</label>
+            <label><input type="checkbox" id="util-water" ${(h.utilities || []).includes('water') ? 'checked' : ''}> Water</label>
+            <label><input type="checkbox" id="util-garbage" ${(h.utilities || []).includes('garbage') ? 'checked' : ''}> Garbage</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Furnished State *</label>
+          <select id="house-furnished" style="width: 100%;">
+            <option value="no" ${h.furnished === 'no' ? 'selected' : ''}>No</option>
+            <option value="partial" ${h.furnished === 'partial' ? 'selected' : ''}>Partial</option>
+            <option value="full" ${h.furnished === 'full' ? 'selected' : ''}>Full</option>
+          </select>
+        </div>
       </div>
     `;
   } else if (wizardStep === 6) {
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
-        <label>Accomplishments &amp; Goals Met *</label>
-        <textarea id="wizardAccomplishments" placeholder="List goals achieved, completed tasks, and outcomes from the previous period" style="width: 100%; min-height: 120px;" required>${escapeHtmlAttr(wizardData.accomplishments ?? '')}</textarea>
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
+        <h4 style="margin-top: 0; margin-bottom: 15px;">Accomplishments &amp; Goals</h4>
+        ${wizardMembers.map((m) => {
+          const accVal = wizardData.accomplishmentsData?.[m.id] || {};
+          return `
+            <div style="margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
+              <h5 style="margin: 0 0 10px 0; color: #333;">${escapeHtmlAttr(m.name)}</h5>
+              <div class="form-group" style="margin-bottom: 10px;">
+                <label>Accomplishments *</label>
+                <textarea id="acc-text-${m.id}" placeholder="Enter accomplishments" style="width: 100%; min-height: 60px;" required>${escapeHtmlAttr(accVal.accomplishments || '')}</textarea>
+              </div>
+              <div class="form-group">
+                <label>Goals *</label>
+                <textarea id="goals-text-${m.id}" placeholder="Enter goals" style="width: 100%; min-height: 60px;" required>${escapeHtmlAttr(accVal.goals || '')}</textarea>
+              </div>
+            </div>
+          `;
+        }).join('')}
       </div>
     `;
   } else if (wizardStep === 7) {
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
-        <label>Income Generated *</label>
-        <textarea id="wizardIncomeReport" placeholder="Details of Seva, Business, and Donation contributions received" style="width: 100%; min-height: 120px;" required>${escapeHtmlAttr(wizardData.incomeReport ?? '')}</textarea>
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
+        <h4 style="margin-top: 0; margin-bottom: 15px;">Income Report</h4>
+        ${wizardMembers.map((m) => {
+          const incVal = wizardData.incomeData?.[m.id] || {};
+          return `
+            <div style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+              <h5 style="margin: 0 0 10px 0; color: #333;">${escapeHtmlAttr(m.name)}</h5>
+              <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                <div class="form-group">
+                  <label>Sevas *</label>
+                  <input type="number" step="0.01" id="inc-sevas-${m.id}" value="${incVal.sevas ?? 0}" required style="width: 100%;">
+                </div>
+                <div class="form-group">
+                  <label>Business *</label>
+                  <input type="number" step="0.01" id="inc-business-${m.id}" value="${incVal.business ?? 0}" required style="width: 100%;">
+                </div>
+                <div class="form-group">
+                  <label>Donations *</label>
+                  <input type="number" step="0.01" id="inc-donations-${m.id}" value="${incVal.donations ?? 0}" required style="width: 100%;">
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
       </div>
     `;
   } else if (wizardStep === 8) {
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
-        <h4 style="margin-top:0;">Social Media Tracking</h4>
-        <div class="form-group" style="margin-bottom: 15px;">
-          <label>Social Media Handles (URLs or Names)</label>
-          <input type="text" id="wizardSocialHandles" value="${escapeHtmlAttr(wizardData.socialMedia?.handles ?? '')}" placeholder="YouTube, Facebook, etc." style="width: 100%;">
-        </div>
-        <div class="form-group" style="margin-bottom: 15px;">
-          <label>Yoga Videos/Posts Created *</label>
-          <input type="number" min="0" id="wizardSocialYoga" value="${wizardData.socialMedia?.yoga ?? 0}" required style="width: 100%;">
-        </div>
-        <div class="form-group" style="margin-bottom: 5px;">
-          <label>Other Content/Posts *</label>
-          <input type="number" min="0" id="wizardSocialOther" value="${wizardData.socialMedia?.other ?? 0}" required style="width: 100%;">
-        </div>
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
+        <h4 style="margin-top: 0; margin-bottom: 15px;">Social Media Tracking</h4>
+        ${wizardMembers.map((m) => {
+          const smVal = wizardData.socialMediaData?.[m.id] || {};
+          return `
+            <div style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+              <h5 style="margin: 0 0 10px 0; color: #333;">${escapeHtmlAttr(m.name)}</h5>
+              <div class="form-grid-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px;">
+                <div class="form-group">
+                  <label>SM Handles</label>
+                  <input type="text" id="sm-handles-${m.id}" value="${escapeHtmlAttr(smVal.handles || '')}" placeholder="Handles" style="width: 100%;">
+                </div>
+                <div class="form-group">
+                  <label>Yoga Videos *</label>
+                  <input type="number" id="sm-yoga-${m.id}" value="${smVal.yoga ?? 0}" required style="width: 100%;">
+                </div>
+                <div class="form-group">
+                  <label>Other Posts *</label>
+                  <input type="number" id="sm-other-${m.id}" value="${smVal.other ?? 0}" required style="width: 100%;">
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
       </div>
     `;
   } else if (wizardStep === 9) {
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
-        <h4 style="margin-top:0;">Coursing / Outreach Tracking</h4>
-        <div class="form-group" style="margin-bottom: 15px;">
-          <label>Adheenavasis Contacted *</label>
-          <input type="number" min="0" id="wizardCoursingAdheenavasis" value="${wizardData.coursing?.adheenavasis ?? 0}" required style="width: 100%;">
-        </div>
-        <div class="form-group" style="margin-bottom: 15px;">
-          <label>PSS Contacts *</label>
-          <input type="number" min="0" id="wizardCoursingPss" value="${wizardData.coursing?.pss ?? 0}" required style="width: 100%;">
-        </div>
-        <div class="form-group" style="margin-bottom: 15px;">
-          <label>SJP Contacts *</label>
-          <input type="number" min="0" id="wizardCoursingSjp" value="${wizardData.coursing?.sjp ?? 0}" required style="width: 100%;">
-        </div>
-        <div class="form-group" style="margin-bottom: 5px;">
-          <label>Business Contacts *</label>
-          <input type="number" min="0" id="wizardCoursingBusiness" value="${wizardData.coursing?.business ?? 0}" required style="width: 100%;">
-        </div>
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
+        <h4 style="margin-top: 0; margin-bottom: 15px;">Causing</h4>
+        ${wizardMembers.map((m) => {
+          const causVal = wizardData.causingData?.[m.id] || {};
+          return `
+            <div style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+              <h5 style="margin: 0 0 10px 0; color: #333;">${escapeHtmlAttr(m.name)}</h5>
+              <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                <div class="form-group">
+                  <label>Adheenavasis *</label>
+                  <input type="number" id="caus-adheenavasis-${m.id}" value="${causVal.adheenavasis ?? 0}" required style="width: 100%;">
+                </div>
+                <div class="form-group">
+                  <label>PSS *</label>
+                  <input type="number" id="caus-pss-${m.id}" value="${causVal.pss ?? 0}" required style="width: 100%;">
+                </div>
+                <div class="form-group">
+                  <label>SJP *</label>
+                  <input type="number" id="caus-sjp-${m.id}" value="${causVal.sjp ?? 0}" required style="width: 100%;">
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
       </div>
     `;
   } else if (wizardStep === 10) {
@@ -1715,12 +2073,8 @@ window.renderWizardStep = function() {
         <p><strong>Budget Name:</strong> ${escapeHtmlAttr(wizardBudget.name)}</p>
         <p><strong>Explanations Filed:</strong> ${wizardData.openBudgetsExplanation?.length || 0}</p>
         <p><strong>Bank/Cash Total Balance:</strong> $${wizardData.bankBalance}</p>
-        <p><strong>Team Info:</strong> ${escapeHtmlAttr(wizardData.teamInfo)}</p>
-        <p><strong>Housing Info:</strong> ${escapeHtmlAttr(wizardData.housingInfo)}</p>
-        <p><strong>Accomplishments:</strong> ${escapeHtmlAttr(wizardData.accomplishments)}</p>
-        <p><strong>Income Report:</strong> ${escapeHtmlAttr(wizardData.incomeReport)}</p>
-        <p><strong>Social Media:</strong> Yoga: ${wizardData.socialMedia?.yoga}, Other: ${wizardData.socialMedia?.other}</p>
-        <p><strong>Coursing:</strong> Adheenavasis: ${wizardData.coursing?.adheenavasis}, PSS: ${wizardData.coursing?.pss}, SJP: ${wizardData.coursing?.sjp}, Business: ${wizardData.coursing?.business}</p>
+        <p><strong>Allocations Summed:</strong> $${(wizardBudget.total_amount || wizardBudget.totalAmount || 0).toFixed(2)}</p>
+        <p><strong>Housing Address:</strong> ${escapeHtmlAttr(wizardData.housingInfo?.address || 'None')}</p>
       </div>
       <p style="color: #666; font-size: 0.9rem; margin-top: 15px;">Please confirm all details are correct. Clicking Submit will record your accountability statistics and route this budget plan for approval.</p>
     `;
@@ -1751,7 +2105,7 @@ async function submitBudgetApprovalHandler(budgetId) {
 
   try {
     const teamId = budget.team_id;
-    const [{ data: openBudgets }, { data: buckets }] = await Promise.all([
+    const [openBudgetsRes, bucketsRes, userTeamsRes] = await Promise.all([
       supabaseClient
         .from('budget_plans')
         .select('id, name, status')
@@ -1763,27 +2117,53 @@ async function submitBudgetApprovalHandler(budgetId) {
         .from('buckets')
         .select('id, name, balance, currency')
         .eq('team_id', teamId)
-        .eq('is_deleted', false)
+        .eq('is_deleted', false),
+      supabaseClient
+        .from('user_teams')
+        .select('user_id, access_level, users(id, name)')
+        .eq('team_id', teamId)
+        .eq('is_active', true)
     ]);
+
+    const openBudgets = openBudgetsRes.data || [];
+    const buckets = bucketsRes.data || [];
+    const utMembers = userTeamsRes.data || [];
+
+    wizardMembers = utMembers.map(m => ({
+      id: m.user_id,
+      name: m.users?.name || 'Unknown User',
+      access_level: m.access_level
+    }));
+
+    if (wizardMembers.length === 0) {
+      wizardMembers.push({
+        id: state.user?.id,
+        name: state.user?.name || 'Current User',
+        access_level: 'opl'
+      });
+    }
 
     wizardBudget = budget;
     wizardStep = 1;
+    
+    // Load pre-existing data from columns
     wizardData = {
       openBudgetsExplanation: budget.open_budgets_explanation || [],
       cashBalance: budget.recon_cash_balance || 0,
       bankBalance: budget.recon_bank_balance || 0,
       remainingFunds: budget.recon_remaining_funds || 0,
-      teamInfo: budget.submission_team_info?.text || '',
-      housingInfo: budget.submission_housing_info?.text || '',
-      accomplishments: budget.submission_accomplishments?.text || '',
-      incomeReport: budget.submission_income_report?.text || '',
-      socialMedia: budget.submission_social_media || {},
-      coursing: budget.submission_coursing || {},
+      allocations: budget.submission_team_info?.allocations || {},
+      housingInfo: budget.submission_housing_info || {},
+      accomplishmentsData: budget.submission_accomplishments?.data || {},
+      incomeData: budget.submission_income_report?.data || {},
+      socialMediaData: budget.submission_social_media?.data || {},
+      causingData: budget.submission_coursing?.data || {},
       expensesClosed: false,
       reconciliationConfirmed: (budget.recon_bank_balance > 0)
     };
-    wizardOpenBudgets = openBudgets || [];
-    wizardBuckets = buckets || [];
+
+    wizardOpenBudgets = openBudgets;
+    wizardBuckets = buckets;
 
     document.getElementById('submissionWizardModal').classList.add('active');
     window.renderWizardStep();
