@@ -114,6 +114,13 @@ export function getCreateBudgetPage() {
               </select>
             </div>
 
+            <div class="form-group" id="copyBudgetGroup">
+              <label>Copy Categories from Previous Budget</label>
+              <select id="copyBudgetSelect" onchange="window.copyPreviousBudgetPlan(this)">
+                <option value="">— Select a budget to copy —</option>
+              </select>
+            </div>
+
             <div class="form-group" id="monthlyCalendarGroup">
               <label>Budget Period Date *</label>
               <select id="newBudgetCalendarEntry" onchange="window.onBudgetCalendarEntryChange()"><option value="">Select date…</option></select>
@@ -193,6 +200,68 @@ export async function initCreateBudgetPage() {
   window.onCreateBudgetCurrencyChange = onCreateBudgetCurrencyChange;
   window.onCreateBudgetRateChange = onCreateBudgetRateChange;
   window.onCreateBudgetLocalChange = onCreateBudgetLocalChange;
+  window.copyPreviousBudgetPlan = async function(select) {
+    const budgetId = select.value;
+    if (!budgetId) return;
+    try {
+      const { data: budget, error } = await supabaseClient
+        .from('budget_plans')
+        .select('categories')
+        .eq('id', budgetId)
+        .single();
+      if (error) throw error;
+      const categories = parseBudgetCategories(budget.categories);
+      if (!categories.length) {
+        showToast('Selected budget has no categories to copy', 'warning');
+        return;
+      }
+      const container = document.getElementById('budgetCategoriesContainer');
+      if (container) {
+        container.innerHTML = '';
+        categories.forEach(cat => {
+          const displayName = formatCategoryLabel(cat.category, cat.subcategory);
+          const row = document.createElement('div');
+          row.className = 'budget-line-card category-row';
+          if (!cat.category) row.dataset.custom = 'true';
+          else row.dataset.template = 'true';
+          row.innerHTML = buildCategoryRowHtml({
+            displayName,
+            category: cat.category || '',
+            subcategory: cat.subcategory || '',
+            localVal: formatLocalInput(cat.localAmount ?? cat.local_amount ?? ''),
+            usdVal: Number(cat.usdAmount ?? cat.usd_amount ?? 0).toFixed(2),
+            isTemplate: !!cat.category,
+            isCustom: !cat.category
+          });
+          container.appendChild(row);
+        });
+        recalculateAllBudgetUsdFromLocal('#budgetCategoriesContainer', getCreateBudgetHeaderCurrency);
+        showToast(`Copied ${categories.length} categories!`, 'success');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to copy categories', 'error');
+    }
+  };
+
+  const teamId = state.currentTeam?.team_id;
+  if (teamId) {
+    supabaseClient
+      .from('budget_plans')
+      .select('id, name')
+      .eq('team_id', teamId)
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        const select = document.getElementById('copyBudgetSelect');
+        if (select) {
+          select.innerHTML = '<option value="">— Select a budget to copy —</option>';
+          (data || []).forEach(b => {
+            select.innerHTML += `<option value="${b.id}">${escapeHtmlAttr(b.name)}</option>`;
+          });
+        }
+      });
+  }
 
   budgetFormMode = 'create';
   await onBudgetTypeChange();
@@ -848,6 +917,22 @@ export function getViewBudgetsPage() {
         </form>
       </div>
     </div>
+
+    <div id="submissionWizardModal" class="modal">
+      <div class="modal-content" style="max-width: 700px; padding: 25px;">
+        <button class="close-modal" onclick="window.closeWizardModal()">&times;</button>
+        <h2 style="margin-bottom: 20px;">Budget Submission Wizard</h2>
+        <div class="wizard-progress-bar" style="height: 6px; background: #eee; border-radius: 3px; margin-bottom: 25px; position: relative;">
+          <div id="wizardProgressBarFill" style="height: 100%; width: 10%; background: #28a745; border-radius: 3px; transition: width 0.3s ease;"></div>
+        </div>
+        <div id="wizardStepTitle" style="font-weight: bold; font-size: 1.1rem; margin-bottom: 15px; color: #333;">Step 1 of 10</div>
+        <div id="wizardStepsContainer" class="form-stack"></div>
+        <div class="wizard-footer" style="margin-top: 30px; display: flex; justify-content: space-between; align-items: center;">
+          <button type="button" class="secondary" id="wizardPrevBtn" onclick="window.wizardPrevStep()">Back</button>
+          <button type="button" class="success" id="wizardNextBtn" onclick="window.wizardNextStep()">Next</button>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -1255,6 +1340,341 @@ function renderBudgetDetailCards(container, budgets) {
   container.innerHTML = backBtn + (budgets || []).map(b => renderBudgetReviewHtml(b, { showActions: true })).join('');
 }
 
+let wizardBudget = null;
+let wizardStep = 1;
+let wizardData = {};
+let wizardOpenBudgets = [];
+
+const WIZARD_STEPS = [
+  { step: 1, title: 'Step 1: Open Budgets Review', id: 'step-open-budgets' },
+  { step: 2, title: 'Step 2: Close Previous Month Expenses', id: 'step-close-expenses' },
+  { step: 3, title: 'Step 3: Bank/Cash Reconciliation', id: 'step-reconciliation' },
+  { step: 4, title: 'Step 4: Team Information', id: 'step-team-info' },
+  { step: 5, title: 'Step 5: Housing Information', id: 'step-housing-info' },
+  { step: 6, title: 'Step 6: Accomplishments', id: 'step-accomplishments' },
+  { step: 7, title: 'Step 7: Income Report', id: 'step-income-report' },
+  { step: 8, title: 'Step 8: Social Media Tracking', id: 'step-social-media' },
+  { step: 9, title: 'Step 9: Coursing / Outreach Tracking', id: 'step-coursing' },
+  { step: 10, title: 'Step 10: Final Review & Submit', id: 'step-final-submit' }
+];
+
+window.closeWizardModal = function() {
+  document.getElementById('submissionWizardModal').classList.remove('active');
+  wizardBudget = null;
+  wizardStep = 1;
+  wizardData = {};
+  wizardOpenBudgets = [];
+};
+
+window.wizardPrevStep = function() {
+  if (wizardStep > 1) {
+    wizardStep--;
+    window.renderWizardStep();
+  }
+};
+
+window.wizardNextStep = async function() {
+  // Validate current step
+  const container = document.getElementById('wizardStepsContainer');
+  if (wizardStep === 1) {
+    const explanations = [];
+    let valid = true;
+    wizardOpenBudgets.forEach((ob, idx) => {
+      const reason = document.getElementById(`ob-reason-${idx}`)?.value?.trim();
+      const status = document.getElementById(`ob-status-${idx}`)?.value?.trim();
+      const closure = document.getElementById(`ob-closure-${idx}`)?.value?.trim();
+      if (!reason || !status || !closure) {
+        valid = false;
+        return;
+      }
+      explanations.push({ budgetId: ob.id, name: ob.name, reason, status, closure });
+    });
+    if (!valid && wizardOpenBudgets.length > 0) {
+      showToast('Please complete all open budget explanation fields', 'warning');
+      return;
+    }
+    wizardData.openBudgetsExplanation = explanations;
+  } else if (wizardStep === 2) {
+    const confirmChk = document.getElementById('confirmExpensesClosed')?.checked;
+    if (!confirmChk) {
+      showToast('You must confirm previous month expenses are frozen', 'warning');
+      return;
+    }
+    wizardData.expensesClosed = true;
+  } else if (wizardStep === 3) {
+    const cash = parseFloat(document.getElementById('wizardCashBalance')?.value);
+    const bank = parseFloat(document.getElementById('wizardBankBalance')?.value);
+    const remaining = parseFloat(document.getElementById('wizardRemainingFunds')?.value);
+    if (Number.isNaN(cash) || Number.isNaN(bank) || Number.isNaN(remaining)) {
+      showToast('Please fill in all reconciliation amounts', 'warning');
+      return;
+    }
+    wizardData.cashBalance = cash;
+    wizardData.bankBalance = bank;
+    wizardData.remainingFunds = remaining;
+  } else if (wizardStep === 4) {
+    const info = document.getElementById('wizardTeamInfo')?.value?.trim();
+    if (!info) {
+      showToast('Team information is required', 'warning');
+      return;
+    }
+    wizardData.teamInfo = info;
+  } else if (wizardStep === 5) {
+    const info = document.getElementById('wizardHousingInfo')?.value?.trim();
+    if (!info) {
+      showToast('Housing information is required', 'warning');
+      return;
+    }
+    wizardData.housingInfo = info;
+  } else if (wizardStep === 6) {
+    const info = document.getElementById('wizardAccomplishments')?.value?.trim();
+    if (!info) {
+      showToast('Accomplishments are required', 'warning');
+      return;
+    }
+    wizardData.accomplishments = info;
+  } else if (wizardStep === 7) {
+    const info = document.getElementById('wizardIncomeReport')?.value?.trim();
+    if (!info) {
+      showToast('Income report is required', 'warning');
+      return;
+    }
+    wizardData.incomeReport = info;
+  } else if (wizardStep === 8) {
+    const handles = document.getElementById('wizardSocialHandles')?.value?.trim();
+    const yoga = parseInt(document.getElementById('wizardSocialYoga')?.value, 10);
+    const other = parseInt(document.getElementById('wizardSocialOther')?.value, 10);
+    if (Number.isNaN(yoga) || Number.isNaN(other)) {
+      showToast('Yoga and other post counts are required', 'warning');
+      return;
+    }
+    wizardData.socialMedia = { handles, yoga, other };
+  } else if (wizardStep === 9) {
+    const adheenavasis = parseInt(document.getElementById('wizardCoursingAdheenavasis')?.value, 10);
+    const pss = parseInt(document.getElementById('wizardCoursingPss')?.value, 10);
+    const sjp = parseInt(document.getElementById('wizardCoursingSjp')?.value, 10);
+    const business = parseInt(document.getElementById('wizardCoursingBusiness')?.value, 10);
+    if (Number.isNaN(adheenavasis) || Number.isNaN(pss) || Number.isNaN(sjp) || Number.isNaN(business)) {
+      showToast('All coursing counts are required', 'warning');
+      return;
+    }
+    wizardData.coursing = { adheenavasis, pss, sjp, business };
+  } else if (wizardStep === 10) {
+    // Perform final submission save
+    const btn = document.getElementById('wizardNextBtn');
+    btn.textContent = 'Submitting...';
+    btn.disabled = true;
+    try {
+      const { error: updateErr } = await supabaseClient
+        .from('budget_plans')
+        .update({
+          open_budgets_explanation: wizardData.openBudgetsExplanation,
+          recon_cash_balance: wizardData.cashBalance,
+          recon_bank_balance: wizardData.bankBalance,
+          recon_remaining_funds: wizardData.remainingFunds,
+          submission_team_info: { text: wizardData.teamInfo },
+          submission_housing_info: { text: wizardData.housingInfo },
+          submission_accomplishments: { text: wizardData.accomplishments },
+          submission_income_report: { text: wizardData.incomeReport },
+          submission_social_media: wizardData.socialMedia,
+          submission_coursing: wizardData.coursing
+        })
+        .eq('id', wizardBudget.id);
+
+      if (updateErr) throw updateErr;
+
+      // Freeze all currently logged unfrozen expenses for this team
+      const { error: freezeErr } = await supabaseClient
+        .from('expenses')
+        .update({ is_frozen: true })
+        .eq('team_id', wizardBudget.team_id)
+        .eq('is_frozen', false);
+
+      if (freezeErr) console.warn('Non-blocking expenses freeze warning:', freezeErr);
+
+      const request = await submitBudgetForApproval(wizardBudget);
+      showToast(`Submitted as ${request.request_number}`, 'success');
+      window.closeWizardModal();
+      await initViewBudgetsPage();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Submission failed', 'error');
+      btn.textContent = 'Submit';
+      btn.disabled = false;
+    }
+    return;
+  }
+
+  wizardStep++;
+  window.renderWizardStep();
+};
+
+window.renderWizardStep = function() {
+  const container = document.getElementById('wizardStepsContainer');
+  const fill = document.getElementById('wizardProgressBarFill');
+  const title = document.getElementById('wizardStepTitle');
+  const prevBtn = document.getElementById('wizardPrevBtn');
+  const nextBtn = document.getElementById('wizardNextBtn');
+
+  if (!container || !fill || !title) return;
+
+  const currentConfig = WIZARD_STEPS.find(s => s.step === wizardStep);
+  title.textContent = `${currentConfig.title}`;
+  fill.style.width = `${(wizardStep / 10) * 100}%`;
+  prevBtn.style.display = wizardStep === 1 ? 'none' : 'inline-block';
+  nextBtn.textContent = wizardStep === 10 ? 'Submit' : 'Next';
+
+  let html = '';
+  if (wizardStep === 1) {
+    if (!wizardOpenBudgets.length) {
+      html = `
+        <div class="card" style="padding: 15px; border: 1px solid #ddd; border-radius: 8px;">
+          <p style="color: #28a745; font-weight: bold; margin: 0;">✓ All previous budgets are closed or received. No explanation required.</p>
+        </div>
+      `;
+    } else {
+      html = `
+        <p class="section-hint" style="margin-bottom: 15px;">The following budgets are still open. Please explain their current status:</p>
+        ${wizardOpenBudgets.map((ob, idx) => `
+          <div class="card" style="padding: 15px; margin-bottom: 15px; border: 1px solid #ffc107; border-radius: 8px; background: #fffdf5;">
+            <h4 style="margin: 0 0 10px 0; color: #856404;">Budget: ${escapeHtmlAttr(ob.name)} (${ob.status})</h4>
+            <div class="form-group" style="margin-bottom: 10px;">
+              <label>Reason Still Open *</label>
+              <textarea id="ob-reason-${idx}" placeholder="Enter reason" required style="width: 100%; min-height: 60px;"></textarea>
+            </div>
+            <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div class="form-group">
+                <label>Current Status *</label>
+                <input type="text" id="ob-status-${idx}" placeholder="e.g. Pending receipts" required style="width: 100%;">
+              </div>
+              <div class="form-group">
+                <label>Expected Closure *</label>
+                <input type="date" id="ob-closure-${idx}" required style="width: 100%;">
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      `;
+    }
+  } else if (wizardStep === 2) {
+    html = `
+      <div class="card" style="padding: 20px; text-align: center; border-radius: 8px; border: 1px solid #ddd;">
+        <p style="font-size: 1.1rem; margin-bottom: 20px;">Please verify that all previous month expenses and transactions are completely closed and receipts are uploaded.</p>
+        <label style="display: inline-flex; align-items: center; gap: 10px; font-weight: bold; cursor: pointer;">
+          <input type="checkbox" id="confirmExpensesClosed" style="transform: scale(1.3);">
+          I confirm that all previous month expenses are frozen and complete
+        </label>
+      </div>
+    `;
+  } else if (wizardStep === 3) {
+    html = `
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+        <h4 style="margin-top: 0;">Bank &amp; Cash Reconciliation</h4>
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label>Cash Available (USD equivalent) *</label>
+          <input type="number" step="0.01" min="0" id="wizardCashBalance" value="${wizardData.cashBalance ?? ''}" required style="width: 100%;">
+        </div>
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label>Bank Balance (USD equivalent) *</label>
+          <input type="number" step="0.01" min="0" id="wizardBankBalance" value="${wizardData.bankBalance ?? ''}" required style="width: 100%;">
+        </div>
+        <div class="form-group" style="margin-bottom: 5px;">
+          <label>Remaining Funds (USD equivalent) *</label>
+          <input type="number" step="0.01" min="0" id="wizardRemainingFunds" value="${wizardData.remainingFunds ?? ''}" required style="width: 100%;">
+        </div>
+      </div>
+    `;
+  } else if (wizardStep === 4) {
+    html = `
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+        <label>Team Members &amp; Assignments in this Period *</label>
+        <textarea id="wizardTeamInfo" placeholder="List active team members and their assignments" style="width: 100%; min-height: 120px;" required>${wizardData.teamInfo ?? ''}</textarea>
+      </div>
+    `;
+  } else if (wizardStep === 5) {
+    html = `
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+        <label>Housing Details &amp; Cost Responsibility *</label>
+        <textarea id="wizardHousingInfo" placeholder="Specify addresses, occupants, leaseholders, and rent / utility responsibilities" style="width: 100%; min-height: 120px;" required>${wizardData.housingInfo ?? ''}</textarea>
+      </div>
+    `;
+  } else if (wizardStep === 6) {
+    html = `
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+        <label>Accomplishments &amp; Goals Met *</label>
+        <textarea id="wizardAccomplishments" placeholder="List goals achieved, completed tasks, and outcomes from the previous period" style="width: 100%; min-height: 120px;" required>${wizardData.accomplishments ?? ''}</textarea>
+      </div>
+    `;
+  } else if (wizardStep === 7) {
+    html = `
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+        <label>Income Generated *</label>
+        <textarea id="wizardIncomeReport" placeholder="Details of Seva, Business, and Donation contributions received" style="width: 100%; min-height: 120px;" required>${wizardData.incomeReport ?? ''}</textarea>
+      </div>
+    `;
+  } else if (wizardStep === 8) {
+    html = `
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+        <h4 style="margin-top:0;">Social Media Tracking</h4>
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label>Social Media Handles (URLs or Names)</label>
+          <input type="text" id="wizardSocialHandles" value="${wizardData.socialMedia?.handles ?? ''}" placeholder="YouTube, Facebook, etc." style="width: 100%;">
+        </div>
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label>Yoga Videos/Posts Created *</label>
+          <input type="number" min="0" id="wizardSocialYoga" value="${wizardData.socialMedia?.yoga ?? 0}" required style="width: 100%;">
+        </div>
+        <div class="form-group" style="margin-bottom: 5px;">
+          <label>Other Content/Posts *</label>
+          <input type="number" min="0" id="wizardSocialOther" value="${wizardData.socialMedia?.other ?? 0}" required style="width: 100%;">
+        </div>
+      </div>
+    `;
+  } else if (wizardStep === 9) {
+    html = `
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+        <h4 style="margin-top:0;">Coursing / Outreach Tracking</h4>
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label>Adheenavasis Contacted *</label>
+          <input type="number" min="0" id="wizardCoursingAdheenavasis" value="${wizardData.coursing?.adheenavasis ?? 0}" required style="width: 100%;">
+        </div>
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label>PSS Contacts *</label>
+          <input type="number" min="0" id="wizardCoursingPss" value="${wizardData.coursing?.pss ?? 0}" required style="width: 100%;">
+        </div>
+        <div class="form-group" style="margin-bottom: 15px;">
+          <label>SJP Contacts *</label>
+          <input type="number" min="0" id="wizardCoursingSjp" value="${wizardData.coursing?.sjp ?? 0}" required style="width: 100%;">
+        </div>
+        <div class="form-group" style="margin-bottom: 5px;">
+          <label>Business Contacts *</label>
+          <input type="number" min="0" id="wizardCoursingBusiness" value="${wizardData.coursing?.business ?? 0}" required style="width: 100%;">
+        </div>
+      </div>
+    `;
+  } else if (wizardStep === 10) {
+    html = `
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 380px; overflow-y: auto;">
+        <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 8px;">Submission Summary</h4>
+        <p><strong>Budget Name:</strong> ${escapeHtmlAttr(wizardBudget.name)}</p>
+        <p><strong>Explanations Filed:</strong> ${wizardData.openBudgetsExplanation?.length || 0}</p>
+        <p><strong>Cash Balance:</strong> $${wizardData.cashBalance}</p>
+        <p><strong>Bank Balance:</strong> $${wizardData.bankBalance}</p>
+        <p><strong>Remaining Funds:</strong> $${wizardData.remainingFunds}</p>
+        <p><strong>Team Info:</strong> ${escapeHtmlAttr(wizardData.teamInfo)}</p>
+        <p><strong>Housing Info:</strong> ${escapeHtmlAttr(wizardData.housingInfo)}</p>
+        <p><strong>Accomplishments:</strong> ${escapeHtmlAttr(wizardData.accomplishments)}</p>
+        <p><strong>Income Report:</strong> ${escapeHtmlAttr(wizardData.incomeReport)}</p>
+        <p><strong>Social Media:</strong> Yoga: ${wizardData.socialMedia?.yoga}, Other: ${wizardData.socialMedia?.other}</p>
+        <p><strong>Coursing:</strong> Adheenavasis: ${wizardData.coursing?.adheenavasis}, PSS: ${wizardData.coursing?.pss}, SJP: ${wizardData.coursing?.sjp}, Business: ${wizardData.coursing?.business}</p>
+      </div>
+      <p style="color: #666; font-size: 0.9rem; margin-top: 15px;">Please confirm all details are correct. Clicking Submit will record your accountability statistics and route this budget plan for approval.</p>
+    `;
+  }
+
+  container.innerHTML = html;
+};
+
 async function submitBudgetApprovalHandler(budgetId) {
   const budget = (state.budgetPlans || []).find(b => b.id === budgetId);
   if (!budget) {
@@ -1269,19 +1689,34 @@ async function submitBudgetApprovalHandler(budgetId) {
     showToast('Only draft or rejected budgets can be submitted', 'warning');
     return;
   }
+  if (!state.user?.request_alias) {
+    showToast('Set your request alias in My Profile first', 'warning');
+    window.showPage?.('profile');
+    return;
+  }
 
   try {
-    if (!state.user?.request_alias) {
-      showToast('Set your request alias in My Profile first', 'warning');
-      window.showPage?.('profile');
-      return;
-    }
+    const teamId = budget.team_id;
+    const { data: openBudgets, error: openErr } = await supabaseClient
+      .from('budget_plans')
+      .select('id, name, status')
+      .eq('team_id', teamId)
+      .eq('is_deleted', false)
+      .neq('id', budget.id)
+      .not('status', 'in', '("closed","received")');
 
-    const request = await submitBudgetForApproval(budget);
-    showToast(`Submitted as ${request.request_number}`, 'success');
-    await initViewBudgetsPage();
+    if (openErr) throw openErr;
+
+    wizardBudget = budget;
+    wizardStep = 1;
+    wizardData = {};
+    wizardOpenBudgets = openBudgets || [];
+
+    document.getElementById('submissionWizardModal').classList.add('active');
+    window.renderWizardStep();
   } catch (err) {
-    showToast(err.message || 'Submit failed', 'error');
+    console.error('Wizard open error:', err);
+    showToast('Could not initialize submission wizard', 'error');
   }
 }
 

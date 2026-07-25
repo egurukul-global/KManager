@@ -97,6 +97,23 @@ Stores customized application logos pinned on the user's home screen.
 * `app_code` (`TEXT`, PK): Allowed values: `'finance'`, `'gurukul'`, `'utilities'`, `'tasks'`, `'konnect'`.
 * `sort_order` (`INTEGER`): Order of display.
 
+### `public.budget_plans`
+Stores budget plan proposals, transaction reconciliations, and submission wizard data.
+* `id` (`UUID`, PK)
+* `team_id` (`UUID`): References `public.teams(id)`.
+* `name` (`TEXT`): Proposed budget name.
+* `status` (`TEXT`): Workflow state.
+* `budget_type` (`TEXT`): `'monthly'` or `'adhoc'`.
+* `calendar_entry_id` (`UUID`): Period calendar link.
+* `budget_period_date` (`DATE`)
+* `categories` (`JSONB`): Proposed line-item breakdown.
+* `total_amount` (`NUMERIC`), `spent_amount` (`NUMERIC`)
+* `open_budgets_explanation` (`JSONB`): Explanations for unresolved budgets.
+* `recon_cash_balance` (`NUMERIC`), `recon_bank_balance` (`NUMERIC`), `recon_remaining_funds` (`NUMERIC`)
+* `submission_team_info` (`JSONB`), `submission_housing_info` (`JSONB`)
+* `submission_accomplishments` (`JSONB`), `submission_income_report` (`JSONB`)
+* `submission_social_media` (`JSONB`), `submission_coursing` (`JSONB`)
+
 ---
 
 ## 2. Core Custom Functions

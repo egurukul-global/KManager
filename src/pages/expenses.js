@@ -50,6 +50,8 @@ function canViewAllExpenses() {
 function canEditExpense(expense) {
   if (state.isReadOnlyTeamAccess) return false;
   if (!state.canManageExpenses) return false;
+  if (expense.is_frozen) return false;
+
   if (canViewAllExpenses()) return true;
   return expense.created_by === state.user?.id;
 }
