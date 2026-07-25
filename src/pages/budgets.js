@@ -1969,106 +1969,144 @@ window.renderWizardStep = function() {
     html = `
       <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
         <h4 style="margin-top: 0; margin-bottom: 15px;">Accomplishments &amp; Goals</h4>
-        ${wizardMembers.map((m) => {
-          const accVal = wizardData.accomplishmentsData?.[m.id] || {};
-          return `
-            <div style="margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
-              <h5 style="margin: 0 0 10px 0; color: #333;">${escapeHtmlAttr(m.name)}</h5>
-              <div class="form-group" style="margin-bottom: 10px;">
-                <label>Accomplishments *</label>
-                <textarea id="acc-text-${m.id}" placeholder="Enter accomplishments" style="width: 100%; min-height: 60px;" required>${escapeHtmlAttr(accVal.accomplishments || '')}</textarea>
-              </div>
-              <div class="form-group">
-                <label>Goals *</label>
-                <textarea id="goals-text-${m.id}" placeholder="Enter goals" style="width: 100%; min-height: 60px;" required>${escapeHtmlAttr(accVal.goals || '')}</textarea>
-              </div>
-            </div>
-          `;
-        }).join('')}
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; min-width: 500px;">
+            <thead>
+              <tr style="background: #f1f1f1; text-align: left;">
+                <th style="padding: 8px; border: 1px solid #ddd;">Member</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Accomplishments *</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Goals *</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${wizardMembers.map(m => {
+                const accVal = wizardData.accomplishmentsData?.[m.id] || {};
+                return `
+                  <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; width: 20%;">${escapeHtmlAttr(m.name)}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <textarea id="acc-text-${m.id}" placeholder="Accomplishments" required style="width: 100%; min-height: 50px; margin: 0; box-sizing: border-box;">${escapeHtmlAttr(accVal.accomplishments || '')}</textarea>
+                    </td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <textarea id="goals-text-${m.id}" placeholder="Goals" required style="width: 100%; min-height: 50px; margin: 0; box-sizing: border-box;">${escapeHtmlAttr(accVal.goals || '')}</textarea>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   } else if (wizardStep === 7) {
     html = `
       <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
         <h4 style="margin-top: 0; margin-bottom: 15px;">Income Report</h4>
-        ${wizardMembers.map((m) => {
-          const incVal = wizardData.incomeData?.[m.id] || {};
-          return `
-            <div style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-              <h5 style="margin: 0 0 10px 0; color: #333;">${escapeHtmlAttr(m.name)}</h5>
-              <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-                <div class="form-group">
-                  <label>Sevas *</label>
-                  <input type="number" step="0.01" id="inc-sevas-${m.id}" value="${incVal.sevas ?? 0}" required style="width: 100%;">
-                </div>
-                <div class="form-group">
-                  <label>Business *</label>
-                  <input type="number" step="0.01" id="inc-business-${m.id}" value="${incVal.business ?? 0}" required style="width: 100%;">
-                </div>
-                <div class="form-group">
-                  <label>Donations *</label>
-                  <input type="number" step="0.01" id="inc-donations-${m.id}" value="${incVal.donations ?? 0}" required style="width: 100%;">
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('')}
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; min-width: 500px;">
+            <thead>
+              <tr style="background: #f1f1f1; text-align: left;">
+                <th style="padding: 8px; border: 1px solid #ddd;">Member</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Sevas *</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Business *</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Donations *</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${wizardMembers.map(m => {
+                const incVal = wizardData.incomeData?.[m.id] || {};
+                return `
+                  <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; width: 20%;">${escapeHtmlAttr(m.name)}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <input type="number" step="0.01" id="inc-sevas-${m.id}" value="${incVal.sevas ?? 0}" required style="width: 100%; margin: 0; box-sizing: border-box;">
+                    </td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <input type="number" step="0.01" id="inc-business-${m.id}" value="${incVal.business ?? 0}" required style="width: 100%; margin: 0; box-sizing: border-box;">
+                    </td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <input type="number" step="0.01" id="inc-donations-${m.id}" value="${incVal.donations ?? 0}" required style="width: 100%; margin: 0; box-sizing: border-box;">
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   } else if (wizardStep === 8) {
     html = `
       <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
         <h4 style="margin-top: 0; margin-bottom: 15px;">Social Media Tracking</h4>
-        ${wizardMembers.map((m) => {
-          const smVal = wizardData.socialMediaData?.[m.id] || {};
-          return `
-            <div style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-              <h5 style="margin: 0 0 10px 0; color: #333;">${escapeHtmlAttr(m.name)}</h5>
-              <div class="form-grid-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px;">
-                <div class="form-group">
-                  <label>SM Handles</label>
-                  <input type="text" id="sm-handles-${m.id}" value="${escapeHtmlAttr(smVal.handles || '')}" placeholder="Handles" style="width: 100%;">
-                </div>
-                <div class="form-group">
-                  <label>Yoga Videos *</label>
-                  <input type="number" id="sm-yoga-${m.id}" value="${smVal.yoga ?? 0}" required style="width: 100%;">
-                </div>
-                <div class="form-group">
-                  <label>Other Posts *</label>
-                  <input type="number" id="sm-other-${m.id}" value="${smVal.other ?? 0}" required style="width: 100%;">
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('')}
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; min-width: 550px;">
+            <thead>
+              <tr style="background: #f1f1f1; text-align: left;">
+                <th style="padding: 8px; border: 1px solid #ddd;">Member</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">SM Handles</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Yoga Videos *</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Other Posts *</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${wizardMembers.map(m => {
+                const smVal = wizardData.socialMediaData?.[m.id] || {};
+                return `
+                  <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; width: 20%;">${escapeHtmlAttr(m.name)}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <input type="text" id="sm-handles-${m.id}" value="${escapeHtmlAttr(smVal.handles || '')}" placeholder="Handles" style="width: 100%; margin: 0; box-sizing: border-box;">
+                    </td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <input type="number" id="sm-yoga-${m.id}" value="${smVal.yoga ?? 0}" required style="width: 100%; margin: 0; box-sizing: border-box;">
+                    </td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <input type="number" id="sm-other-${m.id}" value="${smVal.other ?? 0}" required style="width: 100%; margin: 0; box-sizing: border-box;">
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   } else if (wizardStep === 9) {
     html = `
       <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
         <h4 style="margin-top: 0; margin-bottom: 15px;">Causing</h4>
-        ${wizardMembers.map((m) => {
-          const causVal = wizardData.causingData?.[m.id] || {};
-          return `
-            <div style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-              <h5 style="margin: 0 0 10px 0; color: #333;">${escapeHtmlAttr(m.name)}</h5>
-              <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
-                <div class="form-group">
-                  <label>Adheenavasis *</label>
-                  <input type="number" id="caus-adheenavasis-${m.id}" value="${causVal.adheenavasis ?? 0}" required style="width: 100%;">
-                </div>
-                <div class="form-group">
-                  <label>PSS *</label>
-                  <input type="number" id="caus-pss-${m.id}" value="${causVal.pss ?? 0}" required style="width: 100%;">
-                </div>
-                <div class="form-group">
-                  <label>SJP *</label>
-                  <input type="number" id="caus-sjp-${m.id}" value="${causVal.sjp ?? 0}" required style="width: 100%;">
-                </div>
-              </div>
-            </div>
-          `;
-        }).join('')}
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; min-width: 500px;">
+            <thead>
+              <tr style="background: #f1f1f1; text-align: left;">
+                <th style="padding: 8px; border: 1px solid #ddd;">Member</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">Adheenavasis *</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">PSS *</th>
+                <th style="padding: 8px; border: 1px solid #ddd;">SJP *</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${wizardMembers.map(m => {
+                const causVal = wizardData.causingData?.[m.id] || {};
+                return `
+                  <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; width: 20%;">${escapeHtmlAttr(m.name)}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <input type="number" id="caus-adheenavasis-${m.id}" value="${causVal.adheenavasis ?? 0}" required style="width: 100%; margin: 0; box-sizing: border-box;">
+                    </td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <input type="number" id="caus-pss-${m.id}" value="${causVal.pss ?? 0}" required style="width: 100%; margin: 0; box-sizing: border-box;">
+                    </td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">
+                      <input type="number" id="caus-sjp-${m.id}" value="${causVal.sjp ?? 0}" required style="width: 100%; margin: 0; box-sizing: border-box;">
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
       </div>
     `;
   } else if (wizardStep === 10) {
