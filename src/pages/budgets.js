@@ -37,6 +37,8 @@ let calendarEntriesCache = [];
 let editTemplateRowKeys = null;
 /** Active form mode: 'create' | 'edit' */
 let budgetFormMode = 'create';
+let launchWizardAfterCreate = false;
+let launchWizardAfterEdit = false;
 
 async function ensureEditTemplateRowKeys() {
   if (editTemplateRowKeys) return editTemplateRowKeys;
@@ -180,7 +182,8 @@ export function getCreateBudgetPage() {
 
         <div class="btn-group">
           <button type="button" class="secondary" onclick="window.addCategoryRow()">+ Add Category</button>
-          <button type="submit">Create Budget</button>
+          <button type="submit" id="createBudgetSaveBtn">Save Budget</button>
+          <button type="button" class="success" id="createBudgetSaveSubmitBtn" onclick="window.createBudgetAndSubmit(event)">Save &amp; Submit</button>
         </div>
       </form>
     </div>
@@ -200,6 +203,12 @@ export async function initCreateBudgetPage() {
   window.onCreateBudgetCurrencyChange = onCreateBudgetCurrencyChange;
   window.onCreateBudgetRateChange = onCreateBudgetRateChange;
   window.onCreateBudgetLocalChange = onCreateBudgetLocalChange;
+  window.createBudgetAndSubmit = function(e) {
+    if (e) e.preventDefault();
+    launchWizardAfterCreate = true;
+    const form = document.getElementById('createBudgetForm');
+    if (form) form.requestSubmit();
+  };
   window.copyPreviousBudgetPlan = async function(select) {
     const budgetId = select.value;
     if (!budgetId) return;
@@ -251,6 +260,7 @@ export async function initCreateBudgetPage() {
       .select('id, name')
       .eq('team_id', teamId)
       .eq('is_deleted', false)
+      .in('status', ['approved', 'received', 'closed'])
       .order('created_at', { ascending: false })
       .then(({ data }) => {
         const select = document.getElementById('copyBudgetSelect');
@@ -805,6 +815,7 @@ window.createBudget = async function(e) {
       const result = await sbInsert('budget_plans', budget);
       if (result && !result.error) {
         showToast(`Budget "${resolvedName}" created successfully!`, 'success');
+        const insertedBudget = result.data?.[0] || budget;
         document.getElementById('createBudgetForm').reset();
         await seedCreateBudgetCategoryRows();
         populateCreateBudgetCurrencySelect();
@@ -813,6 +824,12 @@ window.createBudget = async function(e) {
         const all = await localGetAll('budget_plans');
         state.budgetPlans = all.filter(b => b.team_id === teamId);
         window.showPage('view-budgets');
+        if (launchWizardAfterCreate) {
+          launchWizardAfterCreate = false;
+          setTimeout(() => {
+            window.submitBudgetApproval(insertedBudget.id);
+          }, 100);
+        }
       } else {
         showToast(result?.error?.message || 'Failed to create budget', 'error');
       }
@@ -912,6 +929,7 @@ export function getViewBudgetsPage() {
           <div class="btn-group">
             <button type="button" class="secondary" id="addEditCatBtn" onclick="window.addEditCategoryRow()">+ Add Category</button>
             <button type="submit" class="success" id="saveEditBudgetBtn">Save Changes</button>
+            <button type="button" class="success" id="saveEditBudgetSubmitBtn" onclick="window.saveEditedBudgetAndSubmit(event)">Save &amp; Submit</button>
             <button type="button" class="secondary" onclick="window.closeEditBudgetModal()">Cancel</button>
           </div>
         </form>
@@ -1344,11 +1362,12 @@ let wizardBudget = null;
 let wizardStep = 1;
 let wizardData = {};
 let wizardOpenBudgets = [];
+let wizardBuckets = [];
 
 const WIZARD_STEPS = [
   { step: 1, title: 'Step 1: Open Budgets Review', id: 'step-open-budgets' },
   { step: 2, title: 'Step 2: Close Previous Month Expenses', id: 'step-close-expenses' },
-  { step: 3, title: 'Step 3: Bank/Cash Reconciliation', id: 'step-reconciliation' },
+  { step: 3, title: 'Step 3: Bank & Cash Reconciliation', id: 'step-reconciliation' },
   { step: 4, title: 'Step 4: Team Information', id: 'step-team-info' },
   { step: 5, title: 'Step 5: Housing Information', id: 'step-housing-info' },
   { step: 6, title: 'Step 6: Accomplishments', id: 'step-accomplishments' },
@@ -1364,6 +1383,7 @@ window.closeWizardModal = function() {
   wizardStep = 1;
   wizardData = {};
   wizardOpenBudgets = [];
+  wizardBuckets = [];
 };
 
 window.wizardPrevStep = function() {
@@ -1374,8 +1394,9 @@ window.wizardPrevStep = function() {
 };
 
 window.wizardNextStep = async function() {
-  // Validate current step
   const container = document.getElementById('wizardStepsContainer');
+  let updatePayload = {};
+
   if (wizardStep === 1) {
     const explanations = [];
     let valid = true;
@@ -1394,6 +1415,7 @@ window.wizardNextStep = async function() {
       return;
     }
     wizardData.openBudgetsExplanation = explanations;
+    updatePayload.open_budgets_explanation = explanations;
   } else if (wizardStep === 2) {
     const confirmChk = document.getElementById('confirmExpensesClosed')?.checked;
     if (!confirmChk) {
@@ -1402,16 +1424,20 @@ window.wizardNextStep = async function() {
     }
     wizardData.expensesClosed = true;
   } else if (wizardStep === 3) {
-    const cash = parseFloat(document.getElementById('wizardCashBalance')?.value);
-    const bank = parseFloat(document.getElementById('wizardBankBalance')?.value);
-    const remaining = parseFloat(document.getElementById('wizardRemainingFunds')?.value);
-    if (Number.isNaN(cash) || Number.isNaN(bank) || Number.isNaN(remaining)) {
-      showToast('Please fill in all reconciliation amounts', 'warning');
+    const confirmChk = document.getElementById('confirmReconciliation')?.checked;
+    if (!confirmChk) {
+      showToast('You must confirm the reconciliation details are correct', 'warning');
       return;
     }
-    wizardData.cashBalance = cash;
-    wizardData.bankBalance = bank;
-    wizardData.remainingFunds = remaining;
+    const total = wizardBuckets.reduce((sum, b) => sum + (b.balance || 0), 0);
+    wizardData.cashBalance = 0;
+    wizardData.bankBalance = total;
+    wizardData.remainingFunds = total;
+    wizardData.reconciliationConfirmed = true;
+
+    updatePayload.recon_cash_balance = 0;
+    updatePayload.recon_bank_balance = total;
+    updatePayload.recon_remaining_funds = total;
   } else if (wizardStep === 4) {
     const info = document.getElementById('wizardTeamInfo')?.value?.trim();
     if (!info) {
@@ -1419,6 +1445,7 @@ window.wizardNextStep = async function() {
       return;
     }
     wizardData.teamInfo = info;
+    updatePayload.submission_team_info = { text: info };
   } else if (wizardStep === 5) {
     const info = document.getElementById('wizardHousingInfo')?.value?.trim();
     if (!info) {
@@ -1426,6 +1453,7 @@ window.wizardNextStep = async function() {
       return;
     }
     wizardData.housingInfo = info;
+    updatePayload.submission_housing_info = { text: info };
   } else if (wizardStep === 6) {
     const info = document.getElementById('wizardAccomplishments')?.value?.trim();
     if (!info) {
@@ -1433,6 +1461,7 @@ window.wizardNextStep = async function() {
       return;
     }
     wizardData.accomplishments = info;
+    updatePayload.submission_accomplishments = { text: info };
   } else if (wizardStep === 7) {
     const info = document.getElementById('wizardIncomeReport')?.value?.trim();
     if (!info) {
@@ -1440,6 +1469,7 @@ window.wizardNextStep = async function() {
       return;
     }
     wizardData.incomeReport = info;
+    updatePayload.submission_income_report = { text: info };
   } else if (wizardStep === 8) {
     const handles = document.getElementById('wizardSocialHandles')?.value?.trim();
     const yoga = parseInt(document.getElementById('wizardSocialYoga')?.value, 10);
@@ -1448,7 +1478,9 @@ window.wizardNextStep = async function() {
       showToast('Yoga and other post counts are required', 'warning');
       return;
     }
-    wizardData.socialMedia = { handles, yoga, other };
+    const sm = { handles, yoga, other };
+    wizardData.socialMedia = sm;
+    updatePayload.submission_social_media = sm;
   } else if (wizardStep === 9) {
     const adheenavasis = parseInt(document.getElementById('wizardCoursingAdheenavasis')?.value, 10);
     const pss = parseInt(document.getElementById('wizardCoursingPss')?.value, 10);
@@ -1458,9 +1490,10 @@ window.wizardNextStep = async function() {
       showToast('All coursing counts are required', 'warning');
       return;
     }
-    wizardData.coursing = { adheenavasis, pss, sjp, business };
+    const crs = { adheenavasis, pss, sjp, business };
+    wizardData.coursing = crs;
+    updatePayload.submission_coursing = crs;
   } else if (wizardStep === 10) {
-    // Perform final submission save
     const btn = document.getElementById('wizardNextBtn');
     btn.textContent = 'Submitting...';
     btn.disabled = true;
@@ -1505,6 +1538,18 @@ window.wizardNextStep = async function() {
     return;
   }
 
+  // Autosave intermediate step data to database
+  if (Object.keys(updatePayload).length > 0) {
+    try {
+      await supabaseClient
+        .from('budget_plans')
+        .update(updatePayload)
+        .eq('id', wizardBudget.id);
+    } catch (err) {
+      console.warn('Autosave failed:', err);
+    }
+  }
+
   wizardStep++;
   window.renderWizardStep();
 };
@@ -1524,6 +1569,8 @@ window.renderWizardStep = function() {
   prevBtn.style.display = wizardStep === 1 ? 'none' : 'inline-block';
   nextBtn.textContent = wizardStep === 10 ? 'Submit' : 'Next';
 
+  const todayStr = new Date().toISOString().split('T')[0];
+
   let html = '';
   if (wizardStep === 1) {
     if (!wizardOpenBudgets.length) {
@@ -1535,81 +1582,90 @@ window.renderWizardStep = function() {
     } else {
       html = `
         <p class="section-hint" style="margin-bottom: 15px;">The following budgets are still open. Please explain their current status:</p>
-        ${wizardOpenBudgets.map((ob, idx) => `
-          <div class="card" style="padding: 15px; margin-bottom: 15px; border: 1px solid #ffc107; border-radius: 8px; background: #fffdf5;">
-            <h4 style="margin: 0 0 10px 0; color: #856404;">Budget: ${escapeHtmlAttr(ob.name)} (${ob.status})</h4>
-            <div class="form-group" style="margin-bottom: 10px;">
-              <label>Reason Still Open *</label>
-              <textarea id="ob-reason-${idx}" placeholder="Enter reason" required style="width: 100%; min-height: 60px;"></textarea>
-            </div>
-            <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-              <div class="form-group">
-                <label>Current Status *</label>
-                <input type="text" id="ob-status-${idx}" placeholder="e.g. Pending receipts" required style="width: 100%;">
+        ${wizardOpenBudgets.map((ob, idx) => {
+          const draftVal = wizardData.openBudgetsExplanation?.find(x => x.budgetId === ob.id) || {};
+          return `
+            <div class="card" style="padding: 15px; margin-bottom: 15px; border: 1px solid #ffc107; border-radius: 8px; background: #fffdf5;">
+              <h4 style="margin: 0 0 10px 0; color: #856404;">Budget: ${escapeHtmlAttr(ob.name)} (${ob.status})</h4>
+              <div class="form-group" style="margin-bottom: 10px;">
+                <label>Reason Still Open *</label>
+                <textarea id="ob-reason-${idx}" placeholder="Enter reason" required style="width: 100%; min-height: 60px;">${escapeHtmlAttr(draftVal.reason || '')}</textarea>
               </div>
-              <div class="form-group">
-                <label>Expected Closure *</label>
-                <input type="date" id="ob-closure-${idx}" required style="width: 100%;">
+              <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="form-group">
+                  <label>Current Status *</label>
+                  <input type="text" id="ob-status-${idx}" placeholder="e.g. Pending receipts" value="${escapeHtmlAttr(draftVal.status || '')}" required style="width: 100%;">
+                </div>
+                <div class="form-group">
+                  <label>Expected Closure *</label>
+                  <input type="date" id="ob-closure-${idx}" value="${draftVal.closure || todayStr}" required style="width: 100%;">
+                </div>
               </div>
             </div>
-          </div>
-        `).join('')}
+          `;
+        }).join('')}
       `;
     }
   } else if (wizardStep === 2) {
     html = `
       <div class="card" style="padding: 20px; text-align: center; border-radius: 8px; border: 1px solid #ddd;">
-        <p style="font-size: 1.1rem; margin-bottom: 20px;">Please verify that all previous month expenses and transactions are completely closed and receipts are uploaded.</p>
+        <p style="font-size: 1.1rem; margin-bottom: 20px; color: #555;">Please verify and confirm all receipts and expense amounts entered against your budgets up to this moment. Upon final submission at the end of this wizard, these records will be locked and frozen for Finance review.</p>
         <label style="display: inline-flex; align-items: center; gap: 10px; font-weight: bold; cursor: pointer;">
-          <input type="checkbox" id="confirmExpensesClosed" style="transform: scale(1.3);">
-          I confirm that all previous month expenses are frozen and complete
+          <input type="checkbox" id="confirmExpensesClosed" style="transform: scale(1.3);" ${wizardData.expensesClosed ? 'checked' : ''}>
+          I confirm that all previous month expenses and receipts are finalized
         </label>
       </div>
     `;
   } else if (wizardStep === 3) {
+    const totalBalance = wizardBuckets.reduce((sum, b) => sum + (b.balance || 0), 0);
     html = `
       <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
-        <h4 style="margin-top: 0;">Bank &amp; Cash Reconciliation</h4>
-        <div class="form-group" style="margin-bottom: 15px;">
-          <label>Cash Available (USD equivalent) *</label>
-          <input type="number" step="0.01" min="0" id="wizardCashBalance" value="${wizardData.cashBalance ?? ''}" required style="width: 100%;">
+        <h4 style="margin-top: 0; margin-bottom: 15px;">Bank &amp; Cash Reconciliation</h4>
+        <p class="section-hint" style="margin-bottom: 15px;">Below is the current balance of all active buckets associated with this budget Proposal:</p>
+        <div style="margin-bottom: 15px; border: 1px solid #eee; padding: 10px; border-radius: 6px; background: #fafafa;">
+          ${wizardBuckets.map(b => `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 6px 0;">
+              <span>${escapeHtmlAttr(b.name)} (${escapeHtmlAttr(b.currency || 'USD')})</span>
+              <span style="font-weight: bold;">$${Number(b.balance || 0).toFixed(2)}</span>
+            </div>
+          `).join('')}
+          <div style="display: flex; justify-content: space-between; border-top: 2px solid #ccc; padding-top: 10px; margin-top: 10px; font-weight: bold; font-size: 1.1rem; color: #28a745;">
+            <span>Total Balance</span>
+            <span>$${totalBalance.toFixed(2)}</span>
+          </div>
         </div>
-        <div class="form-group" style="margin-bottom: 15px;">
-          <label>Bank Balance (USD equivalent) *</label>
-          <input type="number" step="0.01" min="0" id="wizardBankBalance" value="${wizardData.bankBalance ?? ''}" required style="width: 100%;">
-        </div>
-        <div class="form-group" style="margin-bottom: 5px;">
-          <label>Remaining Funds (USD equivalent) *</label>
-          <input type="number" step="0.01" min="0" id="wizardRemainingFunds" value="${wizardData.remainingFunds ?? ''}" required style="width: 100%;">
-        </div>
+        <label style="display: inline-flex; align-items: center; gap: 10px; font-weight: bold; cursor: pointer; margin-top: 10px;">
+          <input type="checkbox" id="confirmReconciliation" style="transform: scale(1.3);" ${wizardData.reconciliationConfirmed ? 'checked' : ''}>
+          I confirm the reconciliation details are correct
+        </label>
       </div>
     `;
   } else if (wizardStep === 4) {
     html = `
       <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
         <label>Team Members &amp; Assignments in this Period *</label>
-        <textarea id="wizardTeamInfo" placeholder="List active team members and their assignments" style="width: 100%; min-height: 120px;" required>${wizardData.teamInfo ?? ''}</textarea>
+        <textarea id="wizardTeamInfo" placeholder="List active team members and their assignments" style="width: 100%; min-height: 120px;" required>${escapeHtmlAttr(wizardData.teamInfo ?? '')}</textarea>
       </div>
     `;
   } else if (wizardStep === 5) {
     html = `
       <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
         <label>Housing Details &amp; Cost Responsibility *</label>
-        <textarea id="wizardHousingInfo" placeholder="Specify addresses, occupants, leaseholders, and rent / utility responsibilities" style="width: 100%; min-height: 120px;" required>${wizardData.housingInfo ?? ''}</textarea>
+        <textarea id="wizardHousingInfo" placeholder="Specify addresses, occupants, leaseholders, and rent / utility responsibilities" style="width: 100%; min-height: 120px;" required>${escapeHtmlAttr(wizardData.housingInfo ?? '')}</textarea>
       </div>
     `;
   } else if (wizardStep === 6) {
     html = `
       <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
         <label>Accomplishments &amp; Goals Met *</label>
-        <textarea id="wizardAccomplishments" placeholder="List goals achieved, completed tasks, and outcomes from the previous period" style="width: 100%; min-height: 120px;" required>${wizardData.accomplishments ?? ''}</textarea>
+        <textarea id="wizardAccomplishments" placeholder="List goals achieved, completed tasks, and outcomes from the previous period" style="width: 100%; min-height: 120px;" required>${escapeHtmlAttr(wizardData.accomplishments ?? '')}</textarea>
       </div>
     `;
   } else if (wizardStep === 7) {
     html = `
       <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
         <label>Income Generated *</label>
-        <textarea id="wizardIncomeReport" placeholder="Details of Seva, Business, and Donation contributions received" style="width: 100%; min-height: 120px;" required>${wizardData.incomeReport ?? ''}</textarea>
+        <textarea id="wizardIncomeReport" placeholder="Details of Seva, Business, and Donation contributions received" style="width: 100%; min-height: 120px;" required>${escapeHtmlAttr(wizardData.incomeReport ?? '')}</textarea>
       </div>
     `;
   } else if (wizardStep === 8) {
@@ -1618,7 +1674,7 @@ window.renderWizardStep = function() {
         <h4 style="margin-top:0;">Social Media Tracking</h4>
         <div class="form-group" style="margin-bottom: 15px;">
           <label>Social Media Handles (URLs or Names)</label>
-          <input type="text" id="wizardSocialHandles" value="${wizardData.socialMedia?.handles ?? ''}" placeholder="YouTube, Facebook, etc." style="width: 100%;">
+          <input type="text" id="wizardSocialHandles" value="${escapeHtmlAttr(wizardData.socialMedia?.handles ?? '')}" placeholder="YouTube, Facebook, etc." style="width: 100%;">
         </div>
         <div class="form-group" style="margin-bottom: 15px;">
           <label>Yoga Videos/Posts Created *</label>
@@ -1658,9 +1714,7 @@ window.renderWizardStep = function() {
         <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 8px;">Submission Summary</h4>
         <p><strong>Budget Name:</strong> ${escapeHtmlAttr(wizardBudget.name)}</p>
         <p><strong>Explanations Filed:</strong> ${wizardData.openBudgetsExplanation?.length || 0}</p>
-        <p><strong>Cash Balance:</strong> $${wizardData.cashBalance}</p>
-        <p><strong>Bank Balance:</strong> $${wizardData.bankBalance}</p>
-        <p><strong>Remaining Funds:</strong> $${wizardData.remainingFunds}</p>
+        <p><strong>Bank/Cash Total Balance:</strong> $${wizardData.bankBalance}</p>
         <p><strong>Team Info:</strong> ${escapeHtmlAttr(wizardData.teamInfo)}</p>
         <p><strong>Housing Info:</strong> ${escapeHtmlAttr(wizardData.housingInfo)}</p>
         <p><strong>Accomplishments:</strong> ${escapeHtmlAttr(wizardData.accomplishments)}</p>
@@ -1697,20 +1751,39 @@ async function submitBudgetApprovalHandler(budgetId) {
 
   try {
     const teamId = budget.team_id;
-    const { data: openBudgets, error: openErr } = await supabaseClient
-      .from('budget_plans')
-      .select('id, name, status')
-      .eq('team_id', teamId)
-      .eq('is_deleted', false)
-      .neq('id', budget.id)
-      .not('status', 'in', '("closed","received")');
-
-    if (openErr) throw openErr;
+    const [{ data: openBudgets }, { data: buckets }] = await Promise.all([
+      supabaseClient
+        .from('budget_plans')
+        .select('id, name, status')
+        .eq('team_id', teamId)
+        .eq('is_deleted', false)
+        .neq('id', budget.id)
+        .not('status', 'in', '("closed","received")'),
+      supabaseClient
+        .from('buckets')
+        .select('id, name, balance, currency')
+        .eq('team_id', teamId)
+        .eq('is_deleted', false)
+    ]);
 
     wizardBudget = budget;
     wizardStep = 1;
-    wizardData = {};
+    wizardData = {
+      openBudgetsExplanation: budget.open_budgets_explanation || [],
+      cashBalance: budget.recon_cash_balance || 0,
+      bankBalance: budget.recon_bank_balance || 0,
+      remainingFunds: budget.recon_remaining_funds || 0,
+      teamInfo: budget.submission_team_info?.text || '',
+      housingInfo: budget.submission_housing_info?.text || '',
+      accomplishments: budget.submission_accomplishments?.text || '',
+      incomeReport: budget.submission_income_report?.text || '',
+      socialMedia: budget.submission_social_media || {},
+      coursing: budget.submission_coursing || {},
+      expensesClosed: false,
+      reconciliationConfirmed: (budget.recon_bank_balance > 0)
+    };
     wizardOpenBudgets = openBudgets || [];
+    wizardBuckets = buckets || [];
 
     document.getElementById('submissionWizardModal').classList.add('active');
     window.renderWizardStep();
@@ -2113,6 +2186,12 @@ window.saveEditedBudget = async function() {
     document.getElementById('editBudgetModal').classList.remove('active');
     showToast('Budget updated', 'success');
     await initViewBudgetsPage();
+    if (launchWizardAfterEdit) {
+      launchWizardAfterEdit = false;
+      setTimeout(() => {
+        window.submitBudgetApproval(id);
+      }, 100);
+    }
   } catch (err) {
     console.error('Save budget error:', err);
     showToast(err.message || 'Failed to save budget', 'error');
@@ -2126,6 +2205,12 @@ window.saveEditedBudget = async function() {
 window.closeEditBudgetModal = function() {
   document.getElementById('editBudgetModal').classList.remove('active');
   budgetFormMode = 'create';
+};
+
+window.saveEditedBudgetAndSubmit = function(e) {
+  if (e) e.preventDefault();
+  launchWizardAfterEdit = true;
+  window.saveEditedBudget();
 };
 
 // ========== DELETE BUDGET ==========
