@@ -68,6 +68,24 @@ export function getKonnectPage() {
         align-items: center;
         position: relative;
       }
+      .konnect-chat-item {
+        display: flex;
+        flex-direction: column;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+        transition: background 0.15s;
+        background: transparent;
+      }
+      .konnect-chat-item:hover {
+        background: rgba(0, 0, 0, 0.03);
+      }
+      body.dark .konnect-chat-item:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .konnect-chat-item.selected {
+        background: rgba(59, 130, 246, 0.15) !important;
+      }
       @media (max-width: 768px) {
         .konnect-container {
           height: calc(100vh - 170px);
@@ -455,10 +473,10 @@ function renderConversations() {
     const pinHtml = c.isPinned ? `<span style="font-size:0.8em; color:var(--text-secondary);">📌</span>` : '';
 
     return `
-      <div onclick="window.selectConversation('${c.type}', '${c.id}', '${escapeHtml(c.name)}')" style="display:flex; flex-direction:column; padding:10px 12px; border-bottom:1px solid #f3f4f6; cursor:pointer; background:${isSelected ? '#eff6ff' : 'transparent'}; hover:background:#f9fafb; transition:background 0.15s;">
+      <div onclick="window.selectConversation('${c.type}', '${c.id}', '${escapeHtml(c.name)}')" class="konnect-chat-item${isSelected ? ' selected' : ''}">
         <!-- Row 1: Name and Metadata -->
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-          <span style="font-weight:600; font-size:0.85em; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px;">${escapeHtml(c.name)}</span>
+          <span style="font-weight:600; font-size:0.85em; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px;">${escapeHtml(c.name)}</span>
           <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
             ${pinHtml}
             ${unreadHtml}
@@ -600,10 +618,10 @@ async function openSettingsModal() {
           <button onclick="window.closeKonnectModals(); window.openNewChatModal();" class="primary" style="margin:0; width:100%;">➕ Start New Chat</button>
           <button onclick="window.closeKonnectModals(); window.openNewGroupModal();" class="secondary" style="margin:0; width:100%;">👥 Create Group Chat</button>
         </div>
-        <div style="background:#f3f4f6; padding:10px; border-radius:6px;">
+        <div style="background:var(--bg-secondary); padding:10px; border-radius:6px; border:1px solid var(--border); color:var(--text);">
           <strong>Gender clearance:</strong> ${allowOpposite ? '✅ Allowed' : '❌ Opposite gender messages blocked'}
         </div>
-        <div style="background:#f3f4f6; padding:10px; border-radius:6px;">
+        <div style="background:var(--bg-secondary); padding:10px; border-radius:6px; border:1px solid var(--border); color:var(--text);">
           <strong>Cross-team access:</strong> <span style="text-transform:capitalize;">${crossTeam}</span>
         </div>
         <p style="font-size:0.8em; color:var(--text-secondary); margin:0;">Gender rules and cross-team clearance tiers can be adjusted by Global Administrators.</p>
@@ -701,11 +719,11 @@ async function selectConversation(type, id, name) {
 
   area.innerHTML = `
     <!-- Top Bar -->
-    <div style="padding:12px 20px; background:white; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; z-index:10;">
+    <div style="padding:12px 20px; background:var(--card-bg); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; z-index:10; color:var(--text);">
       <div style="display:flex; align-items:center; gap:10px;">
         <button id="konnectMobileBackBtn" onclick="window.backToChatsList()" class="secondary" style="display:none; padding:4px 8px; margin:0; font-size:0.85em; border-radius:6px; border:1px solid var(--border); font-weight:600; cursor:pointer;">&larr; Back</button>
         <div>
-          <h2 style="margin:0; font-size:1.05em; font-weight:600; color:var(--text-main);">${escapeHtml(name)}</h2>
+          <h2 style="margin:0; font-size:1.05em; font-weight:600; color:var(--text);">${escapeHtml(name)}</h2>
           <span style="font-size:0.75em; color:var(--text-secondary); text-transform:uppercase;">${type} conversation</span>
         </div>
       </div>
@@ -720,10 +738,10 @@ async function selectConversation(type, id, name) {
     </div>
 
     <!-- Reply Context Bar -->
-    <div id="konnectReplyBar" style="display:none; padding:8px 16px; background:#e0f2fe; border-top:1px solid var(--border); border-left:4px solid var(--primary); justify-content:space-between; align-items:center;">
+    <div id="konnectReplyBar" style="display:none; padding:8px 16px; background:var(--bg-secondary); border-top:1px solid var(--border); border-left:4px solid var(--primary); justify-content:space-between; align-items:center; color:var(--text);">
       <div style="font-size:0.8em;">
         <strong>Replying to <span id="konnectReplySender"></span></strong>
-        <p id="konnectReplyText" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px; color:#0369a1;"></p>
+        <p id="konnectReplyText" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px; color:var(--text-secondary);"></p>
       </div>
       <button onclick="window.cancelReply()" style="background:none; border:none; color:#ef4444; font-weight:700; cursor:pointer; font-size:1.1em;">&times;</button>
     </div>
@@ -731,10 +749,10 @@ async function selectConversation(type, id, name) {
     <!-- Bottom Input -->
     <div class="konnect-input-bar">
       <!-- Floating Self Destruct Panel -->
-      <div id="selfDestructConfigPanel" style="display:none; position:absolute; bottom:65px; left:16px; background:white; border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); padding:12px; z-index:100; width:220px; flex-direction:column; gap:8px;">
+      <div id="selfDestructConfigPanel" style="display:none; position:absolute; bottom:65px; left:16px; background:var(--card-bg); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); padding:12px; z-index:100; width:220px; flex-direction:column; gap:8px; color:var(--text);">
         <div style="font-weight:600; font-size:0.85em; display:flex; justify-content:space-between; align-items:center;">
           <span>⏱️ Timed Message</span>
-          <button type="button" onclick="window.toggleSelfDestructPanel()" style="background:none; border:none; cursor:pointer; font-weight:700;">×</button>
+          <button type="button" onclick="window.toggleSelfDestructPanel()" style="background:none; border:none; cursor:pointer; font-weight:700; color:var(--text);">×</button>
         </div>
         <div style="display:flex; align-items:center; gap:8px; font-size:0.8em; margin:4px 0;">
           <input type="checkbox" id="selfDestructEnabled" onchange="window.handleSelfDestructToggle()">
@@ -897,7 +915,7 @@ async function loadMessages() {
       let attachHtml = '';
       if (msg.attachment_url) {
         attachHtml = `
-          <div style="background:white; border:1px solid var(--border); border-radius:4px; padding:2px 6px; display:inline-flex; align-items:center; gap:6px; font-size:0.8em; color:var(--primary); vertical-align:middle;">
+          <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:4px; padding:2px 6px; display:inline-flex; align-items:center; gap:6px; font-size:0.8em; color:var(--primary); vertical-align:middle;">
             <span>📎</span>
             <a href="${msg.attachment_url}" target="_blank" style="color:inherit; font-weight:600; text-decoration:underline; word-break:break-all;">
               ${escapeHtml(msg.attachment_name || 'Attached file')}

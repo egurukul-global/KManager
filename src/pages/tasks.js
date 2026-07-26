@@ -140,7 +140,7 @@ export function getTasksPage() {
             </div>
             <div class="form-group" style="margin-top: 10px;">
               <label>Additional Assignees</label>
-              <div id="additionalAssigneesList" style="display:flex; flex-direction:column; gap:6px; max-height:100px; overflow-y:auto; border:1px solid var(--border); padding:8px; border-radius:6px; background:#fafafa;"></div>
+              <div id="additionalAssigneesList" style="display:flex; flex-direction:column; gap:6px; max-height:100px; overflow-y:auto; border:1px solid var(--border); padding:8px; border-radius:6px; background:var(--bg-secondary); color:var(--text);"></div>
             </div>
           </div>
 
@@ -148,7 +148,7 @@ export function getTasksPage() {
           <div id="panelAttachments" style="display:none; margin-top:12px;">
             <label style="font-weight:600; font-size:0.9em; margin-bottom:8px; display:block;">Attachments</label>
             <div id="taskAttachmentsList" style="display:flex; flex-direction:column; gap:6px; margin-bottom:10px;"></div>
-            <div id="taskUploadDropzone" style="border:2px dashed var(--border); border-radius:6px; padding:15px; text-align:center; cursor:pointer; background:#fafafa; font-size:0.85em; color:var(--text-secondary);">
+            <div id="taskUploadDropzone" style="border:2px dashed var(--border); border-radius:6px; padding:15px; text-align:center; cursor:pointer; background:var(--bg-secondary); font-size:0.85em; color:var(--text-secondary);">
               <span id="taskUploadDropzoneText">📁 Click to choose file, drag-and-drop, or paste screenshot</span>
               <input type="file" id="taskAttachmentFileInput" style="display:none;" multiple>
             </div>
@@ -157,9 +157,9 @@ export function getTasksPage() {
           <!-- Panel: Discussions -->
           <div id="panelDiscussions" style="display:none; margin-top:12px;">
             <label style="font-weight:600; font-size:0.9em; margin-bottom:8px; display:block;">Discussions</label>
-            <div id="taskDiscussionTimeline" style="max-height: 200px; overflow-y: auto; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; background:#f9fafb; padding:10px; border-radius:6px; border:1px solid var(--border);"></div>
+            <div id="taskDiscussionTimeline" style="max-height: 200px; overflow-y: auto; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; background:var(--bg-secondary); padding:10px; border-radius:6px; border:1px solid var(--border); color:var(--text);"></div>
             <div style="display:flex; gap:8px;">
-              <input type="text" id="taskDiscussionInput" placeholder="Write a comment..." style="flex:1; height:36px; padding:6px 12px; border-radius:6px; border:1px solid var(--border);">
+              <input type="text" id="taskDiscussionInput" placeholder="Write a comment..." style="flex:1; height:36px; padding:6px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg-secondary); color:var(--text);">
               <button type="button" class="primary" style="height:36px; padding:6px 16px; margin:0;" onclick="window.sendTaskComment()">Send</button>
             </div>
           </div>
@@ -729,7 +729,7 @@ async function renderTaskAttachmentsList() {
     }
 
     const row = document.createElement('div');
-    row.style = 'display:flex; justify-content:space-between; align-items:center; background:#f9fafb; padding:6px 10px; border-radius:6px; border:1px solid #e5e7eb; font-size:0.85em; margin-bottom:4px;';
+    row.style = 'display:flex; justify-content:space-between; align-items:center; background:var(--bg-secondary); padding:6px 10px; border-radius:6px; border:1px solid var(--border); font-size:0.85em; margin-bottom:4px; color:var(--text);';
     row.innerHTML = `
       <a href="${escapeHtml(viewUrl)}" target="_blank" style="color:var(--primary); text-decoration:underline; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:80%;">${escapeHtml(att.name)}</a>
       <button type="button" class="danger" style="padding:2px 6px; font-size:0.8em; margin:0;" onclick="window.removeTaskAttachment(${i})">🗑️</button>
@@ -783,12 +783,12 @@ async function loadTaskDiscussions(taskId) {
       const senderName = sender ? sender.name : 'System';
       const timeStr = new Date(c.created_at).toLocaleString();
       return `
-        <div style="background:white; padding:8px; border-radius:6px; border:1px solid #e5e7eb; font-size:0.85em; display:flex; flex-direction:column; gap:4px;">
+        <div style="background:var(--card-bg); padding:8px; border-radius:6px; border:1px solid var(--border); font-size:0.85em; display:flex; flex-direction:column; gap:4px; color:var(--text);">
           <div style="display:flex; justify-content:space-between; color:var(--text-secondary); font-size:0.8em; font-weight:600;">
             <span>👤 ${escapeHtml(senderName)}</span>
             <span>${timeStr}</span>
           </div>
-          <div style="color:var(--text-main); font-weight:500;">${escapeHtml(c.body)}</div>
+          <div style="color:var(--text); font-weight:500;">${escapeHtml(c.body)}</div>
         </div>
       `;
     }).join('');
