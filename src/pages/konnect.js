@@ -1011,7 +1011,7 @@ async function loadMessages() {
 
       return `
         <div class="msg-bubble-container" data-msg-id="${msg.id}" style="display:flex; flex-direction:column; align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:80%; position:relative; margin:2px 0;">
-          <div style="background:white; color:var(--text-main); border:${isMe ? '2px solid var(--primary)' : '1px solid var(--border)'}; border-radius:${isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px'}; padding:4px 8px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; width:100%; box-sizing:border-box;">
+          <div class="msg-bubble" style="background:var(--card-bg); color:var(--text); border:${isMe ? '2px solid var(--primary)' : '1px solid var(--border)'}; border-radius:${isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px'}; padding:4px 8px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; width:100%; box-sizing:border-box;">
             ${quoteHtml}
             <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:0.85em; width:100%;">
               <div style="min-width:0; flex:1;">
@@ -1027,12 +1027,12 @@ async function loadMessages() {
             </div>
 
             <!-- Floating Actions Dropdown Card -->
-            <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:24px; background:white; border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.1); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:#1f2937;">
-              <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">💬 Reply</div>
-              ${isMe ? `<div onclick="window.showReadReceipts('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">ℹ️ Info</div>` : ''}
-              ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#1f2937;">📩 Mark Unread</div>` : ''}
-              <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid #f3f4f6; text-align:left; background:white; color:#ef4444;">🗑️ Delete for me</div>
-              ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:white; color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
+            <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:24px; background:var(--card-bg); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.15); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:var(--text);">
+              <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:var(--text);">💬 Reply</div>
+              ${isMe ? `<div onclick="window.showReadReceipts('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:var(--text);">ℹ️ Info</div>` : ''}
+              ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:var(--text);">📩 Mark Unread</div>` : ''}
+              <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:#ef4444;">🗑️ Delete for me</div>
+              ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:var(--card-bg); color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
             </div>
           </div>
         </div>

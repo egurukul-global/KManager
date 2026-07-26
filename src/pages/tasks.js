@@ -334,13 +334,13 @@ function renderKanbanBoard() {
 
     const card = document.createElement('div');
     card.className = 'kanban-card card';
-    card.style = 'margin:0; padding:8px 12px; cursor:pointer; background:white; border-left:4px solid ' + statusColors[t.status] + '; display:flex; justify-content:space-between; align-items:center; gap:8px;';
+    card.style = 'margin:0; padding:8px 12px; cursor:pointer; background:var(--card-bg); color:var(--text); border:1px solid var(--border); border-left:4px solid ' + statusColors[t.status] + '; display:flex; justify-content:space-between; align-items:center; gap:8px;';
     card.onclick = () => openEditTaskModal(t.id);
     
     const hasAttachments = !!(t.metadata?.attachment_url || (t.metadata?.attachments && t.metadata.attachments.length > 0));
     
     card.innerHTML = `
-      <span style="font-weight:600; font-size:0.85em; color:var(--text-main); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;">
+      <span style="font-weight:600; font-size:0.85em; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;">
         <span style="color:var(--text-secondary); font-weight:500; font-size:0.9em; margin-right:4px;">${escapeHtml(t.task_number)}</span>
         ${escapeHtml(t.title)}
         ${teamBadge}
