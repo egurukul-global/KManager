@@ -1,7 +1,7 @@
-/* ===== CSS VARIABLES ===== */
 @import './styles/mobile.css';
 @import './styles/ui-components.css';
 
+/* ===== CSS VARIABLES ===== */
 :root {
   /* Kailasa burgundy & gold - Default Light Theme */
   --primary: #9A4452;
@@ -109,12 +109,11 @@ body {
   font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background: var(--bg);
   overflow-x: hidden;
+  min-height: 100vh;
+  color: var(--text);
 }
 .main-area {
   overflow-x: hidden;
-}
-  min-height: 100vh;
-  color: var(--text);
 }
 
 /* ===== LOGIN SCREEN ===== */
