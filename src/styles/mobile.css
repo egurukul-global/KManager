@@ -544,4 +544,13 @@
     flex: 1;
     min-width: 0;
   }
+
+  .kanban-board {
+    flex-direction: column !important;
+    overflow-x: hidden !important;
+  }
+  .kanban-column {
+    min-width: 100% !important;
+    width: 100% !important;
+  }
 }

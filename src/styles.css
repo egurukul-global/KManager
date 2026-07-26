@@ -108,6 +108,11 @@ body.dark .glass {
 body {
   font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   background: var(--bg);
+  overflow-x: hidden;
+}
+.main-area {
+  overflow-x: hidden;
+}
   min-height: 100vh;
   color: var(--text);
 }
@@ -2717,5 +2722,155 @@ tr.selected { background: #F5EDE8 !important; }
   animation: receipt-spin 0.8s linear infinite;
   margin-right: 6px;
   vertical-align: middle;
+}
+
+/* ===== KANBAN BOARD ===== */
+.kanban-board {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  padding-bottom: 16px;
+  align-items: flex-start;
+}
+.kanban-column {
+  flex: 1;
+  min-width: 260px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 12px;
+}
+body.dark .kanban-column {
+  background: #1e293b;
+  border: 1px solid var(--border);
+}
+
+/* ===== NEXTGEN DARK MODE CONTRAST OVERRIDES ===== */
+body.dark .app-topbar {
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+}
+body.dark .app-topbar-title {
+  color: var(--text) !important;
+}
+body.dark .card {
+  background: var(--card-bg);
+  border-color: var(--border);
+}
+body.dark .card h2 {
+  color: var(--text) !important;
+}
+body.dark .card h3 {
+  color: var(--text-secondary) !important;
+}
+body.dark .card p, body.dark .card span, body.dark .card label {
+  color: var(--text-secondary);
+}
+
+/* Forms & Fields */
+body.dark input, 
+body.dark select, 
+body.dark textarea,
+body.dark .form-group input, 
+body.dark .form-group select, 
+body.dark .form-group textarea {
+  background: var(--bg-secondary) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+body.dark input:focus, 
+body.dark select:focus, 
+body.dark textarea:focus {
+  border-color: var(--primary) !important;
+  outline: none;
+}
+body.dark option {
+  background: var(--bg-secondary);
+  color: var(--text);
+}
+
+/* Tables */
+body.dark th {
+  background: var(--bg-secondary) !important;
+  color: var(--text) !important;
+  border-bottom: 1px solid var(--border);
+}
+body.dark td {
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+body.dark tr:hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+body.dark tr.selected {
+  background: rgba(59, 130, 246, 0.15) !important;
+}
+
+/* Alerts */
+body.dark .dash-alert--warning {
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #fde68a !important;
+  border-left-color: var(--warning) !important;
+}
+body.dark .dash-alert--danger {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #fca5a5 !important;
+  border-left-color: var(--danger) !important;
+}
+body.dark .dash-alert--success {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #a7f3d0 !important;
+  border-left-color: var(--success) !important;
+}
+body.dark .dash-alert--neutral {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: #93c5fd !important;
+  border-left-color: var(--primary) !important;
+}
+body.dark .dash-alerts-loading {
+  color: var(--text-muted);
+}
+
+/* Modals */
+body.dark .modal-content {
+  background: var(--card-bg) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border);
+}
+body.dark .modal-content h2, 
+body.dark .modal-content h3 {
+  color: var(--text) !important;
+}
+body.dark .close-modal {
+  color: var(--text-secondary) !important;
+}
+body.dark .close-modal:hover {
+  color: var(--text) !important;
+}
+
+/* Badges */
+body.dark .badge-secondary {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+/* Money Buckets & Data cards */
+body.dark .data-card {
+  background: var(--bg-secondary);
+  border-color: var(--border);
+}
+body.dark .data-card-row-label {
+  color: var(--text-muted);
+}
+body.dark .data-card-row-value {
+  color: var(--text);
+}
+body.dark .bucket-card-balance {
+  color: var(--text) !important;
+}
+body.dark .bucket-card-title {
+  color: var(--text) !important;
+}
+body.dark .empty-state {
+  color: var(--text-muted);
 }
 

@@ -30,22 +30,34 @@ export function getOkProfilePage() {
 
   const notifMode = state.user?.notification_mode === 'detail' ? 'detail' : 'summary';
 
-  return renderOkShell({
-    activePath: '/profile',
-    title: 'Profile',
-    bottomTab: 'profile',
-    mainHtml: `
-      <h1 class="page-title">Profile</h1>
+      const isDark = document.body.classList.contains('dark');
 
-      <div class="card">
-        <h2>Account</h2>
-        <div class="data-card-list">
-          <article class="data-card data-card--compact">
-            <div class="data-card-row"><span class="data-card-row-label">Name</span><span class="data-card-row-value">${escapeHtml(state.user?.name || '—')}</span></div>
-            <div class="data-card-row"><span class="data-card-row-label">Email</span><span class="data-card-row-value">${escapeHtml(state.user?.email || '—')}</span></div>
-          </article>
-        </div>
-      </div>
+      return renderOkShell({
+        activePath: '/profile',
+        title: 'Profile',
+        bottomTab: 'profile',
+        mainHtml: `
+          <h1 class="page-title">Profile</h1>
+    
+          <div class="card">
+            <h2>Account</h2>
+            <div class="data-card-list">
+              <article class="data-card data-card--compact">
+                <div class="data-card-row"><span class="data-card-row-label">Name</span><span class="data-card-row-value">${escapeHtml(state.user?.name || '—')}</span></div>
+                <div class="data-card-row"><span class="data-card-row-label">Email</span><span class="data-card-row-value">${escapeHtml(state.user?.email || '—')}</span></div>
+              </article>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Theme</h2>
+            <p class="page-intro">Switch between light and dark modes.</p>
+            <button type="button" onclick="window.toggleTheme()" class="card-hover" style="display: flex; align-items: center; gap: 10px; padding: 10px 20px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); color: var(--text); cursor: pointer; font-size: 0.9rem; font-weight: 500; text-align: left; width: fit-content; min-height: 40px;">
+              <i class="fas fa-moon" id="themeMoonIcon" style="display: ${isDark ? 'none' : 'inline-block'}; text-align: center; width: 16px;"></i>
+              <i class="fas fa-sun text-amber-400" id="themeSunIcon" style="display: ${isDark ? 'inline-block' : 'none'}; text-align: center; width: 16px;"></i>
+              <span id="themeToggleLabel">${isDark ? 'Light Mode' : 'Dark Mode'}</span>
+            </button>
+          </div>
 
       <div class="card">
         <h2>Notifications</h2>

@@ -349,11 +349,8 @@ function updateSyncStatus(status) {
   };
 
   document.querySelectorAll('.sync-status').forEach(indicator => {
-    if (indicator.classList.contains('bottom-nav-status') || indicator.id === 'syncIndicator') {
-      indicator.className = `bottom-nav-item bottom-nav-status sync-status ${status}`;
-    } else {
-      indicator.className = `sync-status ${status}`;
-    }
+    indicator.classList.remove('online', 'offline', 'syncing', 'error');
+    indicator.classList.add(status);
     const iconEl = indicator.querySelector('.sync-status-icon');
     const labelEl = indicator.querySelector('.sync-status-label');
     if (iconEl) iconEl.textContent = icons[status] || '⚪';
@@ -548,17 +545,7 @@ function renderAppShell() {
               <div class="nav-subitem" data-page="tasks" onclick="window.showPage('tasks')">Task Board</div>
             </div>
           </div>
-          <div class="nav-item" data-section="gurukul">
-            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
-              <span class="icon">🎓</span>
-              <span>Gurukul LMS</span>
-              <span class="arrow">▶</span>
-            </div>
-            <div class="nav-subitems">
-              <div class="nav-subitem" data-page="gurukul-lms" onclick="window.showPage('gurukul-lms')">Student Roster</div>
-              <div class="nav-subitem" data-page="courses" onclick="window.showPage('courses')">Course Catalog</div>
-            </div>
-          </div>
+
 
           <div class="nav-item" data-section="setup">
             <div class="nav-item-header" onclick="window.toggleNavItem(this)">
@@ -837,9 +824,11 @@ export function showPage(pageName) {
     }
   });
 
-  // Close mobile sidebar
-  if (window.innerWidth <= 768) {
-    toggleSidebar();
+  // Close mobile sidebar if open
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar && sidebar.classList.contains('active')) {
+    sidebar.classList.remove('active');
+    document.querySelector('.overlay')?.classList.remove('active');
   }
 
   updateShellPageTitle(pageName);

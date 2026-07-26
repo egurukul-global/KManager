@@ -39,28 +39,29 @@ export function getKonnectPage() {
       .konnect-container {
         display: flex;
         height: calc(100vh - 120px);
-        background: #f9fafb;
+        background: var(--bg);
         border-radius: 12px;
         border: 1px solid var(--border);
         overflow: hidden;
+        color: var(--text);
       }
       .konnect-sidebar {
         width: 320px;
         border-right: 1px solid var(--border);
         display: flex;
         flex-direction: column;
-        background: white;
+        background: var(--card-bg);
       }
       .konnect-chat-area {
         flex: 1;
         display: flex;
         flex-direction: column;
-        background: #f3f4f6;
+        background: var(--bg-secondary);
         position: relative;
       }
       .konnect-input-bar {
         padding: 16px;
-        background: white;
+        background: var(--card-bg);
         border-top: 1px solid var(--border);
         display: flex;
         gap: 10px;
@@ -106,7 +107,8 @@ export function getKonnectPage() {
         }
         .konnect-send-btn {
           height: 36px !important;
-          padding: 0 12px !important;
+          width: 36px !important;
+          padding: 0 !important;
           font-size: 0.85em !important;
         }
       }
@@ -752,8 +754,8 @@ async function selectConversation(type, id, name) {
         <span id="selfDestructActiveBadge" style="display:none; position:absolute; top:4px; right:4px; background:var(--success); width:8px; height:8px; border-radius:50%;"></span>
       </button>
 
-      <input type="text" id="konnectMsgInput" placeholder="Type a message..." style="flex:1; height:40px; border-radius:8px; border:1px solid var(--border); padding:6px 12px; font-size:0.9em;" onkeydown="if(event.key==='Enter') window.sendKonnectMessage()">
-      <button onclick="window.sendKonnectMessage()" class="primary konnect-send-btn" style="height:40px; margin:0; padding:0 20px; font-size:0.9em; font-weight:600;">Send</button>
+      <input type="text" id="konnectMsgInput" placeholder="Type a message..." style="flex:1; height:40px; border-radius:8px; border:1px solid var(--border); padding:6px 12px; font-size:0.9em; background:var(--bg-secondary); color:var(--text);" onkeydown="if(event.key==='Enter') window.sendKonnectMessage()">
+      <button onclick="window.sendKonnectMessage()" class="primary konnect-send-btn" style="height:40px; width:40px; margin:0; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.1em; border-radius:8px;" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
     </div>
   `;
 

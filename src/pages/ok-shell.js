@@ -128,14 +128,7 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
         </nav>
 
         <!-- Sidebar Footer -->
-        <div style="padding: 15px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px;">
-          <!-- Theme Toggle Switch -->
-          <button type="button" onclick="window.toggleTheme()" class="card-hover" style="width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); color: var(--text); cursor: pointer; font-size: 0.85rem; font-weight: 500; text-align: left;">
-            <i class="fas fa-moon" id="themeMoonIcon" style="display: ${isDark ? 'none' : 'inline-block'}; text-align: center; width: 16px;"></i>
-            <i class="fas fa-sun text-amber-400" id="themeSunIcon" style="display: ${isDark ? 'inline-block' : 'none'}; text-align: center; width: 16px;"></i>
-            <span id="themeToggleLabel">${isDark ? 'Light Mode' : 'Dark Mode'}</span>
-          </button>
-          
+        <div style="padding: 15px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 10px;">
           <!-- Sign Out Button -->
           <button type="button" onclick="window.handleLogout()" class="card-hover" style="width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--radius-sm); background: rgba(239, 68, 68, 0.08); color: var(--danger); cursor: pointer; font-size: 0.85rem; font-weight: 600; text-align: left;">
             <i class="fa-solid fa-arrow-right-from-bracket" style="width: 16px; text-align: center;"></i>
@@ -149,7 +142,6 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
         <header class="app-topbar glass fade-in" style="position: sticky; top: 0; z-index: 100; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 15px 30px; height: 70px;">
           <div>
             <h2 style="font-size: 1.2rem; font-weight: 700; color: var(--text); margin: 0;">${escapeHtml(title)}</h2>
-            <p style="font-size: 0.75rem; color: var(--text-muted); margin: 2px 0 0 0;">OneKailasa management system</p>
           </div>
           <div style="display: flex; align-items: center; gap: 15px;">
             <div style="display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 12px; background: var(--card-bg); width: 220px;">
@@ -186,7 +178,7 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
         <span class="bottom-nav-icon">⚙️</span>
         <span class="bottom-nav-label">Admin</span>
       </button>` : ''}
-      <button type="button" class="bottom-nav-item${bottomTab === 'more' ? ' id="okBottomMore" data-tab="more"': ' id="okBottomMore" data-tab="more"'}>
+      <button type="button" class="bottom-nav-item${bottomTab === 'more' ? ' active' : ''}" id="okBottomMore" data-tab="more">
         <span class="bottom-nav-icon">☰</span>
         <span class="bottom-nav-label">Menu</span>
       </button>

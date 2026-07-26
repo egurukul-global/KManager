@@ -54,20 +54,20 @@ export function getTasksPage() {
     </div>
 
     <!-- Kanban Board -->
-    <div class="kanban-board" style="display:flex; gap:16px; overflow-x:auto; padding-bottom:16px; align-items:flex-start;">
-      <div class="kanban-column" data-status="backlog" style="flex:1; min-width:260px; background:#f3f4f6; border-radius:8px; padding:12px;">
+    <div class="kanban-board">
+      <div class="kanban-column" data-status="backlog">
         <h3 style="margin-top:0; font-size:1em; color:#4b5563; border-bottom:2px solid #9ca3af; padding-bottom:6px;">📥 Backlog</h3>
         <div class="kanban-cards-list" id="col-backlog" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
-      <div class="kanban-column" data-status="todo" style="flex:1; min-width:260px; background:#f3f4f6; border-radius:8px; padding:12px;">
+      <div class="kanban-column" data-status="todo">
         <h3 style="margin-top:0; font-size:1em; color:#1e3a8a; border-bottom:2px solid #3b82f6; padding-bottom:6px;">📋 To Do</h3>
         <div class="kanban-cards-list" id="col-todo" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
-      <div class="kanban-column" data-status="in_progress" style="flex:1; min-width:260px; background:#f3f4f6; border-radius:8px; padding:12px;">
+      <div class="kanban-column" data-status="in_progress">
         <h3 style="margin-top:0; font-size:1em; color:#854d0e; border-bottom:2px solid #eab308; padding-bottom:6px;">⚡ In Progress</h3>
         <div class="kanban-cards-list" id="col-in_progress" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
-      <div class="kanban-column" data-status="completed" style="flex:1; min-width:260px; background:#f3f4f6; border-radius:8px; padding:12px;">
+      <div class="kanban-column" data-status="completed">
         <h3 style="margin-top:0; font-size:1em; color:#166534; border-bottom:2px solid #22c55e; padding-bottom:6px;">✅ Completed</h3>
         <div class="kanban-cards-list" id="col-completed" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
