@@ -2858,9 +2858,30 @@ body.dark .close-modal:hover {
 }
 
 /* Badges */
+body.dark .badge-success {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #a7f3d0 !important;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+body.dark .badge-warning {
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #fde68a !important;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+body.dark .badge-danger {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: #fca5a5 !important;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+body.dark .badge-info {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: #93c5fd !important;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
 body.dark .badge-secondary {
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-secondary) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 /* Money Buckets & Data cards */
@@ -2905,5 +2926,10 @@ body.dark .empty-state {
   border-radius: 16px;
   position: relative;
   z-index: 1;
+}
+
+body.dark .status-total {
+  background: var(--bg-secondary) !important;
+  color: var(--text) !important;
 }
 
