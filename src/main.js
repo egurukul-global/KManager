@@ -48,6 +48,7 @@ import { getOkHomePage, initOkHomePage } from './pages/ok-home.js';
 import { getOkAdminPage, initOkAdminPage } from './pages/ok-admin.js';
 import { getOkProfilePage, initOkProfilePage } from './pages/ok-profile.js';
 import { getComingSoonPage, initComingSoonPage } from './pages/ok-coming-soon.js';
+import { getDesignPreviewPage, initDesignPreviewPage } from './pages/design-preview.js';
 import {
   loadOkAccess,
   parseAppPath,
@@ -862,7 +863,8 @@ export function showPage(pageName) {
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
     'user-mgmt': { html: getUserMgmtPage, init: initUserMgmtPage },
     'team-mgmt': { html: getTeamMgmtPage, init: initTeamMgmtPage },
-    'tasks': { html: getTasksPage, init: initTasksPage }
+    'tasks': { html: getTasksPage, init: initTasksPage },
+    'design-preview': { html: getDesignPreviewPage, init: initDesignPreviewPage }
   };
 
   updateBottomNavActive(pageName);

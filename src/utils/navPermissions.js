@@ -120,6 +120,7 @@ function canAccessTeamsPage() {
 }
 
 export function canAccessPage(pageName) {
+  if (pageName === 'design-preview') return true;
   if (pageName === 'team-roster') pageName = 'team-mgmt';
 
   if (isSystemAdmin()) return true;

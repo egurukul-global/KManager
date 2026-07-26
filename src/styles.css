@@ -3,6 +3,11 @@
 
 /* ===== CSS VARIABLES ===== */
 :root {
+  --bg-dark-red: #8B0000;
+  --bg-cream: #FAF4EC;
+  --brand-saffron: #FFA500;
+  --brand-gold: #D4AF37;
+
   /* Kailasa burgundy & gold - Default Light Theme */
   --primary: #9A4452;
   --primary-dark: #7B3540;
@@ -2877,5 +2882,28 @@ body.dark .bucket-card-title {
 }
 body.dark .empty-state {
   color: var(--text-muted);
+}
+
+/* ===== PREMIUM GLASS PANEL CLASSES ===== */
+.glass-panel-dark {
+  background: rgba(25, 0, 5, 0.45);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  border-radius: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.glass-panel-light {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 165, 0, 0.35);
+  box-shadow: 0 10px 25px rgba(139, 0, 0, 0.08);
+  border-radius: 16px;
+  position: relative;
+  z-index: 1;
 }
 

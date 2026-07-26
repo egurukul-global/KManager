@@ -1,0 +1,365 @@
+export function getDesignPreviewPage() {
+  return `
+    <div class="dp-container dp-dark" id="dpContainer">
+      <style>
+        .dp-container {
+          --dp-gold: #D4AF37;
+          --dp-accent-red: #8B0000;
+          --dp-cream: #FAF4EC;
+          --dp-dark-red-bg: #5a000d;
+          --dp-orange: #FFA500;
+          --dp-border-light: rgba(255, 165, 0, 0.35);
+          --dp-border-dark: rgba(212, 175, 55, 0.3);
+          
+          padding: 30px;
+          border-radius: 16px;
+          min-height: 80vh;
+          transition: all 0.3s ease;
+          font-family: 'Inter', sans-serif;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+          position: relative;
+          overflow: hidden;
+          box-sizing: border-box;
+        }
+        
+        .dp-container.dp-light {
+          background: radial-gradient(circle at 50% 20%, #FAF4EC 0%, #F3E5D8 100%);
+          color: var(--dp-accent-red);
+        }
+        
+        .dp-container.dp-dark {
+          background: radial-gradient(circle at 50% 20%, #8B0000 0%, #3a0008 100%);
+          color: #ffffff;
+        }
+
+        /* Ambient Glow Spheres */
+        .dp-glow {
+          pointer-events: none;
+          border-radius: 50%;
+          position: absolute;
+          z-index: 0;
+          transition: all 0.3s ease;
+        }
+        
+        .dp-glow-1 {
+          top: 5%;
+          left: 10%;
+          width: 320px;
+          height: 320px;
+          background: rgba(255, 165, 0, 0.35);
+          filter: blur(85px);
+        }
+        
+        .dp-glow-2 {
+          top: 35%;
+          right: 8%;
+          width: 350px;
+          height: 350px;
+          background: rgba(212, 175, 55, 0.25);
+          filter: blur(95px);
+        }
+        
+        .dp-glow-3 {
+          bottom: 5%;
+          left: 12%;
+          width: 300px;
+          height: 300px;
+          background: rgba(255, 165, 0, 0.22);
+          filter: blur(80px);
+        }
+
+        /* 12-Column Grid Framework */
+        .dp-layout-grid {
+          display: grid;
+          grid-template-columns: repeat(12, 1fr);
+          gap: 20px;
+          position: relative;
+          z-index: 1;
+        }
+
+        /* Spanning helpers */
+        .dp-col-12 { grid-column: span 12; }
+        .dp-col-8 { grid-column: span 8; }
+        .dp-col-4 { grid-column: span 4; }
+
+        @media (max-width: 992px) {
+          .dp-col-8, .dp-col-4 {
+            grid-column: span 12;
+          }
+        }
+
+        /* Glass Card Rules */
+        .dp-glass-card {
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border-radius: 16px;
+          padding: 24px;
+          position: relative;
+          z-index: 1;
+          transition: transform 0.3s ease, box-shadow 0.3s ease;
+          box-sizing: border-box;
+        }
+
+        .dp-glass-card:hover {
+          transform: translateY(-4px);
+        }
+
+        .dp-light .dp-glass-card {
+          background: rgba(255, 255, 255, 0.55);
+          border: 1px solid var(--dp-border-light);
+          box-shadow: 0 10px 25px rgba(139, 0, 0, 0.08);
+        }
+
+        .dp-dark .dp-glass-card {
+          background: rgba(25, 0, 5, 0.45);
+          border: 1px solid var(--dp-border-dark);
+          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Header Layout */
+        .dp-header-bar {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 20px;
+          padding: 16px 24px;
+        }
+
+        .dp-title {
+          font-size: 1.3rem;
+          font-weight: 800;
+          margin: 0;
+          letter-spacing: -0.5px;
+          white-space: nowrap;
+        }
+
+        .dp-search-box {
+          flex: 1;
+          max-width: 400px;
+          position: relative;
+        }
+
+        .dp-search-input {
+          width: 100%;
+          padding: 8px 12px;
+          border-radius: 8px;
+          font-size: 0.85rem;
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          background: rgba(255, 255, 255, 0.1);
+          color: inherit;
+          box-sizing: border-box;
+          outline: none;
+        }
+
+        .dp-light .dp-search-input {
+          border-color: rgba(139, 0, 0, 0.15);
+          background: rgba(0, 0, 0, 0.05);
+        }
+
+        .dp-btn-toggle {
+          padding: 8px 16px;
+          border-radius: 8px;
+          font-weight: 700;
+          cursor: pointer;
+          font-size: 0.85rem;
+          border: none;
+          transition: all 0.2s ease;
+          white-space: nowrap;
+        }
+
+        .dp-light .dp-btn-toggle {
+          background: var(--dp-accent-red);
+          color: #ffffff;
+        }
+
+        .dp-dark .dp-btn-toggle {
+          background: var(--dp-gold);
+          color: #1a0003;
+        }
+
+        /* KPI elements */
+        .dp-kpi-title {
+          font-size: 0.85rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin: 0 0 10px 0;
+          opacity: 0.8;
+        }
+
+        .dp-kpi-stat {
+          font-size: 2rem;
+          font-weight: 800;
+          margin: 0 0 4px 0;
+        }
+
+        .dp-light .dp-kpi-stat { color: var(--dp-accent-red); }
+        .dp-dark .dp-kpi-stat { color: var(--dp-gold); }
+
+        .dp-kpi-desc {
+          font-size: 0.75rem;
+          opacity: 0.75;
+          margin: 0;
+        }
+
+        .dp-badge {
+          display: inline-block;
+          padding: 2px 8px;
+          border-radius: 6px;
+          font-size: 0.7rem;
+          font-weight: 700;
+          text-transform: uppercase;
+        }
+
+        .dp-light .dp-badge-status { background: rgba(139, 0, 0, 0.1); color: var(--dp-accent-red); }
+        .dp-dark .dp-badge-status { background: rgba(212, 175, 55, 0.2); color: var(--dp-gold); }
+
+        /* Tables */
+        .dp-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 0.85rem;
+          text-align: left;
+        }
+
+        .dp-table th, .dp-table td {
+          padding: 12px;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .dp-light .dp-table th, .dp-light .dp-table td {
+          border-bottom-color: rgba(139, 0, 0, 0.08);
+        }
+
+        .dp-table th {
+          font-weight: 700;
+          opacity: 0.7;
+        }
+
+        .dp-table tr:hover td {
+          background: rgba(255, 255, 255, 0.03);
+        }
+
+        .dp-light .dp-table tr:hover td {
+          background: rgba(0, 0, 0, 0.02);
+        }
+
+        /* Buttons */
+        .dp-btn-action {
+          width: 100%;
+          padding: 10px;
+          border-radius: 8px;
+          font-weight: 700;
+          font-size: 0.85rem;
+          cursor: pointer;
+          border: none;
+          transition: all 0.2s ease;
+          margin-bottom: 10px;
+        }
+
+        .dp-light .dp-btn-primary { background: var(--dp-orange); color: #ffffff; }
+        .dp-dark .dp-btn-primary { background: var(--dp-gold); color: #1a0003; }
+
+        .dp-light .dp-btn-secondary { background: rgba(139, 0, 0, 0.08); color: var(--dp-accent-red); border: 1px solid rgba(139, 0, 0, 0.15); }
+        .dp-dark .dp-btn-secondary { background: rgba(255, 255, 255, 0.08); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.15); }
+
+        .dp-btn-action:hover {
+          transform: translateY(-1px);
+          opacity: 0.95;
+        }
+      </style>
+
+      <!-- Fixed Ambient Glowing Spheres -->
+      <div class="dp-glow dp-glow-1"></div>
+      <div class="dp-glow dp-glow-2"></div>
+      <div class="dp-glow dp-glow-3"></div>
+
+      <div class="dp-layout-grid">
+        <!-- Top Row (12-cols): Header Glass Bar -->
+        <header class="dp-glass-card dp-header-bar dp-col-12">
+          <h2 class="dp-title">OneKailasa Portal</h2>
+          <div class="dp-search-box">
+            <input type="text" class="dp-search-input" placeholder="Search preview data...">
+          </div>
+          <button type="button" class="dp-btn-toggle" onclick="window.toggleDpTheme()">Toggle Theme</button>
+        </header>
+
+        <!-- KPI Row: 3 Cards (4 columns each) -->
+        <section class="dp-glass-card dp-col-4">
+          <h3 class="dp-kpi-title">Total Members</h3>
+          <div class="dp-kpi-stat">128</div>
+          <p class="dp-kpi-desc">Registered monastic staff members</p>
+        </section>
+
+        <section class="dp-glass-card dp-col-4">
+          <h3 class="dp-kpi-title">Active Orders</h3>
+          <div class="dp-kpi-stat">42 <span class="dp-badge dp-badge-status">Running</span></div>
+          <p class="dp-kpi-desc">Budgets currently active & funded</p>
+        </section>
+
+        <section class="dp-glass-card dp-col-4">
+          <h3 class="dp-kpi-title">Pending Reviews</h3>
+          <div class="dp-kpi-stat">7 <span class="dp-badge dp-badge-status">Action</span></div>
+          <p class="dp-kpi-desc">Expense lines awaiting clearance</p>
+        </section>
+
+        <!-- Main Content Grid split -->
+        <!-- Left Container (8 columns): Primary Activity Log -->
+        <main class="dp-glass-card dp-col-8">
+          <h3 style="margin: 0 0 15px 0; font-size: 1.1rem; font-weight: 700;">Primary Activity Log</h3>
+          <div style="overflow-x: auto;">
+            <table class="dp-table">
+              <thead>
+                <tr>
+                  <th>Event Description</th>
+                  <th>Responsible Party</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Reconciled Cash Box (Main Staging)</td>
+                  <td>Treasurer Clerk</td>
+                  <td>Just Now</td>
+                </tr>
+                <tr>
+                  <td>Rollover processed for Budget #B203</td>
+                  <td>System Daemon</td>
+                  <td>2 hours ago</td>
+                </tr>
+                <tr>
+                  <td>Record Income sweep to Unallocated</td>
+                  <td>Financial Trustee</td>
+                  <td>4 hours ago</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </main>
+
+        <!-- Right Container (4 columns): Quick Actions -->
+        <aside class="dp-glass-card dp-col-4">
+          <h3 style="margin: 0 0 15px 0; font-size: 1.1rem; font-weight: 700;">Quick Actions</h3>
+          <p style="font-size: 0.8rem; opacity: 0.8; margin-bottom: 20px;">Execute quick monastic management workflows from this panel.</p>
+          <button type="button" class="dp-btn-action dp-btn-primary">Initiate Audit</button>
+          <button type="button" class="dp-btn-action dp-btn-secondary">Export Log</button>
+        </aside>
+      </div>
+    </div>
+  `;
+}
+
+export function initDesignPreviewPage() {
+  window.toggleDpTheme = function() {
+    const container = document.getElementById('dpContainer');
+    if (container) {
+      if (container.classList.contains('dp-dark')) {
+        container.classList.remove('dp-dark');
+        container.classList.add('dp-light');
+      } else {
+        container.classList.remove('dp-light');
+        container.classList.add('dp-dark');
+      }
+    }
+  };
+}
