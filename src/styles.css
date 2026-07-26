@@ -112,13 +112,56 @@ body.dark .glass {
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: var(--bg);
   overflow-x: hidden;
   min-height: 100vh;
   color: var(--text);
+  transition: background 0.3s ease, color 0.3s ease;
 }
+
+body.dark {
+  background: radial-gradient(circle at 50% 20%, #8B0000 0%, #3a0008 100%) !important;
+}
+
+body:not(.dark) {
+  background: radial-gradient(circle at 50% 20%, #FAF4EC 0%, #F3E5D8 100%) !important;
+}
+
 .main-area {
   overflow-x: hidden;
+  background: transparent !important;
+}
+
+/* ===== GLOBAL AMBIENT GLOW SYSTEM ===== */
+.ok-glow {
+  pointer-events: none;
+  border-radius: 50%;
+  position: absolute;
+  z-index: 0;
+  transition: all 0.3s ease;
+}
+.ok-glow-1 {
+  top: 5%;
+  left: 10%;
+  width: 320px;
+  height: 320px;
+  background: rgba(255, 165, 0, 0.35);
+  filter: blur(85px);
+}
+.ok-glow-2 {
+  top: 35%;
+  right: 8%;
+  width: 350px;
+  height: 350px;
+  background: rgba(212, 175, 55, 0.25);
+  filter: blur(95px);
+}
+.ok-glow-3 {
+  bottom: 5%;
+  left: 12%;
+  width: 300px;
+  height: 300px;
+  background: rgba(255, 165, 0, 0.22);
+  filter: blur(80px);
 }
 
 /* ===== LOGIN SCREEN ===== */
