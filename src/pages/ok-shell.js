@@ -89,26 +89,26 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
     <div class="overlay" id="okOverlay"></div>
 
     <div class="app-shell active">
-      <aside class="sidebar" id="sidebar" style="background: var(--sidebar-bg); border-right: 1px solid var(--border); color: var(--text); display: flex; flex-direction: column;">
+      <aside class="sidebar" id="sidebar" style="background: var(--sidebar-bg); border-right: 1px solid var(--border); color: #ffffff; display: flex; flex-direction: column;">
         
         <!-- Logo & Branding -->
-        <div style="display: flex; align-items: center; gap: 12px; padding: 20px; border-bottom: 1px solid var(--border);">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.08);">
           <div style="width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 1.25rem; shadow: 0 4px 10px rgba(0,0,0,0.15)">OK</div>
           <div>
-            <h1 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--text); line-height: 1.2;">OneKailasa</h1>
-            <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">Monastery Operations</p>
+            <h1 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: #ffffff; line-height: 1.2;">OneKailasa</h1>
+            <p style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin: 0;">Monastery Operations</p>
           </div>
         </div>
 
         <!-- User Profile Badge -->
         <div style="padding: 15px; border-bottom: 1px solid var(--border);">
-          <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--radius-sm); background: var(--bg-secondary);">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: var(--radius-sm); background: rgba(255,255,255,0.06);">
             <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #10b981 0%, #059669 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.9rem;">
               ${initials}
             </div>
             <div style="flex: 1; min-width: 0;">
-              <p style="font-size: 0.85rem; font-weight: 600; color: var(--text); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(displayName)}</p>
-              <p style="font-size: 0.75rem; color: var(--text-muted); margin: 0;">Adheenavasi</p>
+              <p style="font-size: 0.85rem; font-weight: 600; color: #ffffff; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(displayName)}</p>
+              <p style="font-size: 0.75rem; color: rgba(255,255,255,0.6); margin: 0;">Adheenavasi</p>
             </div>
           </div>
         </div>
