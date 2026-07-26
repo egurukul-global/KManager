@@ -1,8 +1,9 @@
 /* ===== CSS VARIABLES ===== */
 @import './styles/mobile.css';
 @import './styles/ui-components.css';
+
 :root {
-  /* Kailasa burgundy & gold */
+  /* Kailasa burgundy & gold - Default Light Theme */
   --primary: #9A4452;
   --primary-dark: #7B3540;
   --primary-light: #B85A68;
@@ -23,13 +24,13 @@
   --text-secondary: #5C4A42;
   --text-muted: #6B5B54;
   --border: #E8DFD9;
-  --sidebar-bg: linear-gradient(180deg, #5A2830 0%, #452028 100%);
-  --header-bg: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  --sidebar-bg: #5A2830;
+  --header-bg: #ffffff;
   --radius: 12px;
   --radius-sm: 8px;
-  --shadow: 0 2px 15px rgba(44, 24, 16, 0.08);
-  --shadow-hover: 0 8px 25px rgba(44, 24, 16, 0.12);
-  --sidebar-width: 220px;
+  --shadow: 0 4px 20px rgba(44, 24, 16, 0.05);
+  --shadow-hover: 0 10px 40px -10px rgba(44, 24, 16, 0.15);
+  --sidebar-width: 250px;
 
   /* Mobile & a11y */
   --touch-min: 44px;
@@ -37,11 +38,6 @@
   --focus-ring: 0 0 0 3px rgba(212, 175, 55, 0.5);
   --breakpoint-md: 768px;
 
-  /*
-   * Form field widths (Phase 1 — locked on Exchange Rates pilot)
-   * Date: native picker needs min-width + right padding for calendar icon
-   * Currency: 3-letter ISO codes only (INR, AED, EUR)
-   */
   --field-date-min: 11rem;
   --field-date-pad-right: 2.5rem;
   --field-currency-min: 6rem;
@@ -49,6 +45,62 @@
   --field-amount-min: 9rem;
   --field-select-min: 11rem;
   --form-gap: 1.25rem;
+}
+
+body.dark {
+  --primary: #3b82f6;
+  --primary-dark: #1d4ed8;
+  --primary-light: #60a5fa;
+  --secondary: #1e3a8a;
+  --accent-gold: #fbbf24;
+  --accent-gold-light: #fde68a;
+  --accent-gold-dark: #d97706;
+  --success: #22c55e;
+  --danger: #ef4444;
+  --warning: #f59e0b;
+  --info: #38bdf8;
+  --bg: #0f172a;
+  --bg-secondary: #1e293b;
+  --card-bg: #1e293b;
+  --text: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --border: #334155;
+  --sidebar-bg: #1e293b;
+  --header-bg: #1e293b;
+  --shadow: 0 4px 20px rgba(0,0,0,0.4);
+  --shadow-hover: 0 10px 40px -10px rgba(0,0,0,0.6);
+}
+
+/* ===== GLOBAL SCROLLBARS ===== */
+* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+body.dark * { scrollbar-color: #475569 transparent; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+body.dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+/* ===== NEXTGEN ANIMATIONS & UTILITIES ===== */
+.fade-in { animation: fadeIn 0.3s ease-in-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.slide-in { animation: slideIn 0.3s ease-out; }
+@keyframes slideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+body.dark .glass {
+  background: rgba(15, 23, 42, 0.75);
+}
+
+.card-hover {
+  transition: all 0.2s ease-in-out;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
 }
 
 /* ===== RESET & BASE ===== */

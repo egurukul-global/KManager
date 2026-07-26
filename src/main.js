@@ -59,6 +59,14 @@ import swamijiImg from './Swamiji.png';
 // ==================== APP CONTAINER ====================
 const app = document.getElementById('app');
 
+// Apply stored theme on startup
+const storedTheme = localStorage.getItem('ok-theme') || 'light';
+if (storedTheme === 'dark') {
+  document.body.classList.add('dark');
+} else {
+  document.body.classList.remove('dark');
+}
+
 // ==================== AUTH FUNCTIONS ====================
 
 export async function handleLogin(e) {

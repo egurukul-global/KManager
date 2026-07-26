@@ -34,35 +34,87 @@ export function getDashboardPage() {
   const userName = state.user?.name || 'User';
 
   return `
-    <h1 class="page-title">Dashboard</h1>
-    <p class="dash-welcome">Welcome ${userName} to Team ${teamName}</p>
+    <div style="margin-bottom: 25px; display: flex; flex-direction: column; gap: 4px;">
+      <h1 class="page-title" style="display: none;">Dashboard</h1>
+      <p class="dash-welcome" style="font-size: 1.1rem; color: var(--text-secondary); margin: 0; font-weight: 500;">Welcome, ${escapeHtmlAttr(userName)}!</p>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Operational overview for <strong>${escapeHtmlAttr(teamName)}</strong></p>
+    </div>
 
-    <div class="stats-grid dash-stats">
-      <div class="stat-card stat-card--info">
-        <h3 id="dashBalance">—</h3>
-        <p id="dashBalanceLabel">Team balance (USD)</p>
+    <div class="stats-grid dash-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 25px;">
+      <!-- Team Balance -->
+      <div class="card card-hover glass" style="padding: 20px; border-radius: var(--radius); display: flex; flex-direction: column; gap: 15px; border: 1px solid var(--border); box-shadow: var(--shadow); position: relative; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">Team Balance</span>
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(59, 130, 246, 0.1); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
+            <i class="fa-solid fa-wallet"></i>
+          </div>
+        </div>
+        <div>
+          <h3 id="dashBalance" style="font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text);">—</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 4px 0 0 0;">Total USD across money buckets</p>
+        </div>
       </div>
-      <div class="stat-card stat-card--income">
-        <h3 id="dashIncome">—</h3>
-        <p>Income (allocated)</p>
+
+      <!-- Allocated Income -->
+      <div class="card card-hover glass" style="padding: 20px; border-radius: var(--radius); display: flex; flex-direction: column; gap: 15px; border: 1px solid var(--border); box-shadow: var(--shadow); position: relative; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">Allocated Income</span>
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(16, 185, 129, 0.1); color: var(--success); display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
+            <i class="fa-solid fa-arrow-trend-up"></i>
+          </div>
+        </div>
+        <div>
+          <h3 id="dashIncome" style="font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text);">—</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 4px 0 0 0;">Funds registered this period</p>
+        </div>
       </div>
-      <div class="stat-card stat-card--expense">
-        <h3 id="dashExpenses">—</h3>
-        <p>Expenses</p>
+
+      <!-- Booked Expenses -->
+      <div class="card card-hover glass" style="padding: 20px; border-radius: var(--radius); display: flex; flex-direction: column; gap: 15px; border: 1px solid var(--border); box-shadow: var(--shadow); position: relative; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">Booked Expenses</span>
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); color: var(--danger); display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
+            <i class="fa-solid fa-arrow-trend-down"></i>
+          </div>
+        </div>
+        <div>
+          <h3 id="dashExpenses" style="font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text);">—</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 4px 0 0 0;">Outflows logged against budgets</p>
+        </div>
       </div>
-      <div class="stat-card stat-card--gold" id="dashSubmissionCard">
-        <h3 id="dashNextSubmission">—</h3>
-        <p id="dashSubmissionLabel">Next Budget Submission</p>
+
+      <!-- Next Submission -->
+      <div class="card card-hover glass" id="dashSubmissionCard" style="padding: 20px; border-radius: var(--radius); display: flex; flex-direction: column; gap: 15px; border: 1px solid var(--border); box-shadow: var(--shadow); position: relative; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);" id="dashSubmissionLabel">Next Submission</span>
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(245, 158, 11, 0.1); color: var(--warning); display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
+            <i class="fa-solid fa-calendar-day"></i>
+          </div>
+        </div>
+        <div>
+          <h3 id="dashNextSubmission" style="font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text);">—</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 4px 0 0 0;">Budget plan submission deadline</p>
+        </div>
       </div>
     </div>
 
-    <div class="card dash-alerts-card">
-      <h2>Alerts</h2>
+    <div class="card dash-alerts-card glass" style="padding: 24px; border-radius: var(--radius); border: 1px solid var(--border); box-shadow: var(--shadow);">
+      <h2 style="font-size: 1.15rem; font-weight: 700; color: var(--text); margin: 0 0 15px 0; display: flex; align-items: center; gap: 8px;">
+        <i class="fa-solid fa-circle-exclamation text-primary"></i>
+        <span>Operational Alerts</span>
+      </h2>
       <div id="dashAlerts" class="dash-alerts">
-        <p class="dash-alerts-loading">Loading alerts…</p>
+        <p class="dash-alerts-loading" style="color: var(--text-muted); font-size: 0.9rem;">Loading alerts…</p>
       </div>
     </div>
   `;
+}
+
+function escapeHtmlAttr(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;');
 }
 
 export async function initDashboardPage() {
