@@ -145,7 +145,7 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
 
       <div class="main-area" style="color: var(--text); display: flex; flex-direction: column;">
         <!-- Sticky Glass Header -->
-        <header class="app-topbar glass fade-in" style="position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 15px 30px; height: 70px;">
+        <header class="app-topbar glass fade-in" style="position: sticky; top: 0; z-index: 100; padding: 15px 30px; height: 70px;">
           <div>
             <h2 style="font-size: 1.2rem; font-weight: 700; color: var(--text); margin: 0;">${escapeHtml(title)}</h2>
           </div>
@@ -162,7 +162,7 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
           </div>
         </header>
 
-        <main class="main-content fade-in" id="mainContent" style="padding: 30px;">
+        <main class="main-content fade-in" id="mainContent">
           ${mainHtml}
         </main>
       </div>
