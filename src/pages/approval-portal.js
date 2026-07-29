@@ -170,6 +170,20 @@ export function getApprovalPortalPage() {
               </div>
               <input type="url" id="approvalActionAttachmentUrl" placeholder="Or paste reference URL (https://...)">
             </div>
+
+            <div id="approvalPaymentFields" style="display: none; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 6px;">
+              <label style="font-weight: 600; font-size: 0.85rem; color: var(--primary);">💰 Payment & Fund Allocation</label>
+              <div style="display: flex; gap: 10px;">
+                <div class="form-group" style="flex: 1;">
+                  <label style="font-size: 0.75rem; color: var(--text-secondary);">Paid Amount (USD)</label>
+                  <input type="number" id="approvalPaymentAmount" step="0.01" style="width: 100%;">
+                </div>
+                <div class="form-group" style="flex: 1;">
+                  <label style="font-size: 0.75rem; color: var(--text-secondary);">Funding Notes</label>
+                  <input type="text" id="approvalPaymentNotes" placeholder="e.g. KMOF full payment" style="width: 100%;">
+                </div>
+              </div>
+            </div>
           </div>
         </form>
     </div>
@@ -776,6 +790,22 @@ function openApprovalActionModal(requestId, actionType) {
     }
   }
 
+  const paymentFields = document.getElementById('approvalPaymentFields');
+  if (paymentFields) {
+    const request = inboxCache.find(r => r.id === requestId);
+    const isBudget = request?.request_type === 'budget';
+    const isApprover = myStepCodes.includes('FIP') || myStepCodes.includes('FIH') || myStepCodes.includes('FIN') || state.user?.role === 'admin';
+    if (actionType === 'approve' && isBudget && isApprover) {
+      paymentFields.style.display = 'flex';
+      const amountInput = document.getElementById('approvalPaymentAmount');
+      if (amountInput) amountInput.value = request.amount_usd || '';
+      const notesInput = document.getElementById('approvalPaymentNotes');
+      if (notesInput) notesInput.value = '';
+    } else {
+      paymentFields.style.display = 'none';
+    }
+  }
+
   modal.classList.add('active');
   modal.style.display = 'flex';
 }
@@ -828,12 +858,23 @@ async function submitApprovalAction() {
     if (comment || finalAttachmentUrl) {
       const { data: requestData } = await supabaseClient
         .from('approval_requests')
-        .select('team_id')
+        .select('team_id, request_number, title')
         .eq('id', id)
         .single();
       const teamId = requestData?.team_id;
 
       if (!teamId) throw new Error('Could not find team associated with this request');
+
+      let actionLabel = 'Commented';
+      if (action === 'reject') actionLabel = 'Rejected';
+      else if (action === 'approve') actionLabel = 'Approved';
+      else if (action === 'clarify') actionLabel = 'Requested Clarification';
+      else if (action === 'reply') actionLabel = 'Replied';
+
+      const reqNum = requestData?.request_number || 'Request';
+      const reqTitle = requestData?.title || '';
+      const commentText = comment || (finalAttachmentUrl ? 'Attachment shared' : '');
+      const formattedBody = `[Approval System] ${actionLabel} on ${reqNum} "${reqTitle}"${commentText ? `: ${commentText}` : ''}`;
 
       const { error: commentErr } = await supabaseClient
         .from('messages')
@@ -841,7 +882,7 @@ async function submitApprovalAction() {
           sender_id: state.user.id,
           recipient_type: 'team',
           recipient_id: teamId,
-          body: comment || (finalAttachmentUrl ? 'Attachment shared' : ''),
+          body: formattedBody,
           attachment_url: finalAttachmentUrl || null,
           attachment_name: finalAttachmentName || null,
           metadata: {
@@ -855,6 +896,24 @@ async function submitApprovalAction() {
 
     const { approveAndSendRequest, rejectRequest, clarifyRequest, replyClarification } = await import('../utils/approvalEngine.js');
     if (action === 'approve') {
+      const request = inboxCache.find(r => r.id === id);
+      const isBudget = request?.request_type === 'budget';
+      const isApprover = myStepCodes.includes('FIP') || myStepCodes.includes('FIH') || myStepCodes.includes('FIN') || state.user?.role === 'admin';
+      if (isBudget && isApprover) {
+        const paidAmount = parseFloat(document.getElementById('approvalPaymentAmount')?.value) || 0;
+        const fundingNotes = document.getElementById('approvalPaymentNotes')?.value?.trim() || '';
+        if (paidAmount > 0 && request.budget_plan_id) {
+          const { error: updateErr } = await supabaseClient
+            .from('budget_plans')
+            .update({
+              paid_amount: paidAmount,
+              funding_notes: fundingNotes
+            })
+            .eq('id', request.budget_plan_id);
+          if (updateErr) console.warn('Failed to update paid_amount on budget plan:', updateErr.message);
+        }
+      }
+
       await approveAndSendRequest(id, comment);
       showToast('1 request approved', 'success');
     } else if (action === 'reject') {

@@ -44,7 +44,8 @@ export function showAlert(message, type = 'info', options = {}) {
       </div>
     </div>
   `;
-  document.body.appendChild(modal);
+  const container = document.getElementById('okShellThemeWrapper') || document.body;
+  container.appendChild(modal);
   activeAlert = modal;
 
   return new Promise(resolve => {
@@ -85,7 +86,8 @@ export function showConfirm(message, onConfirm, onCancel) {
       </div>
     </div>
   `;
-  document.body.appendChild(modal);
+  const container = document.getElementById('okShellThemeWrapper') || document.body;
+  container.appendChild(modal);
 
   return new Promise(resolve => {
     const close = (ok, cb) => {
@@ -157,7 +159,8 @@ export function showPrompt(message, options = {}) {
       </div>
     </div>
   `;
-  document.body.appendChild(modal);
+  const container = document.getElementById('okShellThemeWrapper') || document.body;
+  container.appendChild(modal);
   activeAlert = modal;
 
   const input = modal.querySelector('#appPromptInput');

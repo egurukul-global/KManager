@@ -303,7 +303,7 @@ async function loadUserMgmtList() {
   try {
     const { data: users, error } = await supabaseClient
       .from('users')
-      .select('id, email, name, role, on_hold, request_alias')
+      .select('id, email, name, role, on_hold, request_alias, gender')
       .order('name');
 
     if (error) throw error;
@@ -437,7 +437,11 @@ async function openUserSelect(userId) {
   openModal(USER_SELECT_MODAL_ID);
 
   try {
-    const [{ data: memberships, error: memError }, { data: assignments, error: assignError }] = await Promise.all([
+    const [
+      { data: memberships, error: memError }, 
+      { data: assignments, error: assignError },
+      { data: chatPerm, error: permError }
+    ] = await Promise.all([
       supabaseClient
         .from('user_teams')
         .select('access_level, team_id, teams:team_id(id, name, is_personal_team)')
@@ -447,11 +451,17 @@ async function openUserSelect(userId) {
         .select('role_code, team_id, request_type, teams:team_id(name)')
         .eq('user_id', userId)
         .eq('is_active', true)
-        .order('role_code')
+        .order('role_code'),
+      supabaseClient
+        .from('chat_permissions')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle()
     ]);
 
     if (memError) throw memError;
     if (assignError) throw assignError;
+    if (permError) throw permError;
 
     const workTeams = (memberships || [])
       .filter(m => !m.teams?.is_personal_team)
@@ -460,6 +470,15 @@ async function openUserSelect(userId) {
     const displayName = escapeHtml(user.name || 'User');
     const displayEmail = escapeHtml(user.email || '—');
     editOnHoldValue = !!user.on_hold;
+
+    const allowOpposite = chatPerm ? chatPerm.allow_opposite_gender : false;
+    const crossTeam = chatPerm ? chatPerm.cross_team_access : 'none';
+    const allowedUsersList = chatPerm?.allowed_users || [];
+
+    const myGender = user.gender || '';
+    const oppositeGenderUsers = myGender
+      ? allUsersData.filter(u => u.gender && u.gender !== myGender && !u.on_hold)
+      : [];
 
     const content = `
       <div class="user-select-modal">
@@ -485,6 +504,42 @@ async function openUserSelect(userId) {
               <p class="section-hint" style="margin-top:6px;">Applies when you click Save changes.</p>
             </div>
           </div>
+
+          <div style="border-top:1px solid var(--border); margin:16px 0; padding-top:16px;">
+            <h4 style="margin:0 0 12px; font-size:0.95em; color:var(--text);">Konnect Permissions</h4>
+            <div class="form-grid">
+              <div class="form-group" style="display:flex; align-items:center; gap:8px; margin:0;">
+                <input type="checkbox" id="editUserAllowOpposite" ${allowOpposite ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px;">
+                <label for="editUserAllowOpposite" style="cursor:pointer; font-weight:600; margin:0; user-select:none; font-size:0.9em; color:var(--text);">Allow opposite gender messaging</label>
+              </div>
+              <div class="form-group">
+                <label>Cross-team clearance</label>
+                <select id="editUserCrossTeam" style="width:100%; height:38px; border-radius:6px; border:1px solid var(--border); padding:6px; font-size:0.9em; background:var(--card-bg); color:var(--text);">
+                  <option value="none" ${crossTeam === 'none' ? 'selected' : ''}>None (Shared teams only)</option>
+                  <option value="team" ${crossTeam === 'team' ? 'selected' : ''}>Team (All team channels visible)</option>
+                  <option value="global" ${crossTeam === 'global' ? 'selected' : ''}>Global (All users visible)</option>
+                </select>
+              </div>
+            </div>
+            
+            <div style="margin-top:12px;">
+              <label style="font-weight:600; font-size:0.85em; display:block; margin-bottom:4px; color:var(--text);">Allowed opposite-gender contacts</label>
+              <p class="section-hint" style="margin-bottom:8px;">Check specific users of the opposite gender that this user is explicitly allowed to message directly.</p>
+              <div id="oppositeGenderClearanceList" style="max-height:120px; overflow-y:auto; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px;">
+                ${oppositeGenderUsers.length === 0 
+                  ? '<p class="empty-state" style="font-size:0.8em; margin:0; color:var(--text-secondary);">No opposite gender users found (make sure gender is set on profiles).</p>' 
+                  : oppositeGenderUsers.map(u => {
+                      const isChecked = allowedUsersList.includes(u.id);
+                      return `
+                        <label style="display:flex; align-items:center; gap:6px; font-size:0.85em; cursor:pointer; color:var(--text);">
+                          <input type="checkbox" data-opposite-user-id="${u.id}" ${isChecked ? 'checked' : ''}> ${escapeHtml(u.name)} (${escapeHtml(u.role || 'user')})
+                        </label>
+                      `;
+                    }).join('')}
+              </div>
+            </div>
+          </div>
+
           <div class="btn-group">
             <button type="submit" id="editUserSubmitBtn">Save changes</button>
             <button type="button" class="secondary" onclick="window.sendUserPasswordReset()">Send password reset email</button>
@@ -725,6 +780,22 @@ async function saveUserProfile(e) {
       .eq('id', userId);
 
     if (error) throw error;
+
+    // Save chat permissions
+    const allowOpposite = document.getElementById('editUserAllowOpposite')?.checked || false;
+    const crossTeam = document.getElementById('editUserCrossTeam')?.value || 'none';
+    const checkedOppositeUserIds = [...document.querySelectorAll('#oppositeGenderClearanceList input[data-opposite-user-id]:checked')].map(el => el.dataset.oppositeUserId);
+
+    const { error: permError } = await supabaseClient
+      .from('chat_permissions')
+      .upsert({
+        user_id: userId,
+        allow_opposite_gender: allowOpposite,
+        cross_team_access: crossTeam,
+        allowed_users: checkedOppositeUserIds
+      });
+
+    if (permError) throw permError;
 
     const idx = allUsersData.findIndex(u => u.id === userId);
     if (idx >= 0) {

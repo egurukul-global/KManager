@@ -42,6 +42,8 @@ let exchangeRatesCache = [];
 let teamExpensesCache = [];
 let pendingExpensePayload = null;
 let selectedExpenseIds = new Set();
+let teamAttachmentsCache = [];
+let stagedAttachments = [];
 
 function canViewAllExpenses() {
   return state.canViewAllExpenses;
@@ -115,6 +117,10 @@ async function loadTeamExpenses() {
     rows = rows.filter(e => e.created_by === state.user?.id);
   }
   teamExpensesCache = rows;
+
+  const attachResult = await sbSelect('expense_attachments', { teamId });
+  teamAttachmentsCache = (attachResult.data || []).filter(a => !a.is_deleted);
+
   return teamExpensesCache;
 }
 
@@ -147,9 +153,20 @@ function populateBudgetSelect(selectEl, currentOnly = true) {
   const current = selectEl.value;
   selectEl.innerHTML = '<option value="">Select budget</option>';
   teamBudgetsCache.forEach(b => {
+    const status = getBudgetStatus(b);
     if (currentOnly) {
-      const status = getBudgetStatus(b);
-      if (status !== BUDGET_STATUS.APPROVED && status !== BUDGET_STATUS.RECEIVED) return;
+      if (
+        status !== BUDGET_STATUS.APPROVED &&
+        status !== BUDGET_STATUS.RECEIVED &&
+        status !== BUDGET_STATUS.PAID
+      ) return;
+    } else {
+      if (
+        status !== BUDGET_STATUS.APPROVED &&
+        status !== BUDGET_STATUS.RECEIVED &&
+        status !== BUDGET_STATUS.PAID &&
+        status !== BUDGET_STATUS.ARCHIVED
+      ) return;
     }
     selectEl.innerHTML += `<option value="${b.id}">${b.name}</option>`;
   });
@@ -301,14 +318,21 @@ function validateAndWarnExpense(payload, excludeId, onSuccess) {
     label: categoryLabel,
     categoryId: payload.category_id,
     budgetedUsd: (budget?.categories || []).find(c => {
-      const n = c.name || c.category;
-      return n === categoryLabel || `${n} — ${c.subcategory}` === categoryLabel;
-    })?.usdAmount || 0
+      const n = (c.name || c.category || '').toLowerCase();
+      const target = categoryLabel.toLowerCase();
+      const sub = (c.subcategory || '').toLowerCase();
+      return n === target || `${n} — ${sub}` === target;
+    })?.usdAmount ?? (budget?.categories || []).find(c => {
+      const n = (c.name || c.category || '').toLowerCase();
+      const target = categoryLabel.toLowerCase();
+      const sub = (c.subcategory || '').toLowerCase();
+      return n === target || `${n} — ${sub}` === target;
+    })?.usd_amount ?? 0
   };
 
   if (budget && categoryLabel) {
     const lines = getBudgetCategoryOptions(budget, teamCategoriesCache);
-    const match = lines.find(l => l.label === categoryLabel);
+    const match = lines.find(l => (l.label || '').toLowerCase() === categoryLabel.toLowerCase());
     if (match) categoryOption.budgetedUsd = match.budgetedUsd;
   }
 
@@ -408,7 +432,7 @@ export function getAddExpensePage() {
                 <button type="button" class="secondary" id="expReceiptCameraBtn">Scan with camera</button>
                 <button type="button" class="secondary" id="expReceiptFileBtn">Choose file</button>
               </div>
-              <input type="file" id="expReceiptFileInput" accept="image/*,application/pdf" style="display:none">
+              <input type="file" id="expReceiptFileInput" accept="image/*,application/pdf" multiple style="display:none">
             </div>
             <div id="expReceiptLocalPreview" style="margin-top:10px;"></div>
             <div id="expReceiptOcrProgress" class="receipt-ocr-progress" style="display:none;margin-top:10px;">
@@ -430,6 +454,9 @@ export function getAddExpensePage() {
 
 export async function initAddExpensePage() {
   if (!state.canManageExpenses) return;
+
+  stagedAttachments = [];
+  setTimeout(() => renderStagedAttachments('expReceiptPreview'), 50);
 
   await Promise.all([
     loadTeamBuckets(),
@@ -549,6 +576,16 @@ function wireReceiptUpload({
   const dropzone = dropzoneId ? document.getElementById(dropzoneId) : null;
   if (!urlInput || !fileBtn || !fileInput) return;
   if (!cameraBtn && !useJscanifyCamera) return;
+
+  urlInput.oninput = () => {
+    const val = urlInput.value.trim();
+    if (val) {
+      stagedAttachments.push({ id: crypto.randomUUID(), file_url: val, unsaved: true });
+      urlInput.value = '';
+      if (hint) hint.textContent = 'Link added to receipts';
+      if (previewId) renderStagedAttachments(previewId);
+    }
+  };
 
   const setBusy = (busy, phase = '') => {
     if (cameraBtn) {
@@ -730,10 +767,44 @@ function wireReceiptUpload({
     const isImage = file.type?.startsWith('image/');
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
 
-    if (isImage && !isPdf && !file.isCropped) {
-      openCropModal(file, async (croppedFile) => {
-        await runPipeline(croppedFile);
-      });
+    if (isImage && !isPdf && !file.isCropped && !file.skipCrop) {
+      const choiceModal = document.createElement('div');
+      choiceModal.className = 'modal active';
+      choiceModal.style.zIndex = 10000;
+      choiceModal.innerHTML = `
+        <div class="modal-content small" style="text-align: center; max-width: 400px; padding: 24px;">
+          <h3 style="margin-bottom: 12px;">🖼️ Upload Receipt Image</h3>
+          <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 20px;">
+            Would you like to crop the receipt before uploading?
+          </p>
+          <div class="btn-stack" style="display: flex; flex-direction: column; gap: 8px;">
+            <button type="button" class="primary" id="btnChoiceCrop">Crop & Upload</button>
+            <button type="button" class="success" id="btnChoiceDirect">Direct Upload (As-is)</button>
+            <button type="button" class="secondary" id="btnChoiceCancel">Cancel</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(choiceModal);
+
+      choiceModal.querySelector('#btnChoiceCrop').onclick = () => {
+        choiceModal.remove();
+        openCropModal(file, async (croppedFile) => {
+          await runPipeline(croppedFile);
+        });
+      };
+
+      choiceModal.querySelector('#btnChoiceDirect').onclick = () => {
+        choiceModal.remove();
+        file.skipCrop = true;
+        runPipeline(file);
+      };
+
+      choiceModal.querySelector('#btnChoiceCancel').onclick = () => {
+        choiceModal.remove();
+        if (fileInput) fileInput.value = '';
+        const editFileInput = document.getElementById('editExpReceiptFileInput');
+        if (editFileInput) editFileInput.value = '';
+      };
       return;
     }
 
@@ -769,9 +840,9 @@ function wireReceiptUpload({
       setBusy(true, 'Uploading…');
       if (hint && !hint.textContent) hint.textContent = 'Uploading receipt…';
       const { objectKey } = await uploadReceipt(file);
-      urlInput.value = objectKey;
+      stagedAttachments.push({ id: crypto.randomUUID(), file_url: objectKey, unsaved: true });
       if (hint) hint.textContent = `Saved: ${objectKey}`;
-      await showReceiptPreview(preview, objectKey);
+      if (previewId) await renderStagedAttachments(previewId);
       showToast('Receipt uploaded', 'success');
     } catch (err) {
       showToast(err.message || 'Upload failed', 'error');
@@ -824,7 +895,13 @@ function wireReceiptUpload({
 
   fileBtn.onclick = () => fileInput.click();
   if (cameraInput) cameraInput.onchange = () => runPipeline(cameraInput.files?.[0]);
-  fileInput.onchange = () => runPipeline(fileInput.files?.[0]);
+  fileInput.onchange = () => {
+    if (fileInput.files) {
+      for (const file of fileInput.files) {
+        runPipeline(file);
+      }
+    }
+  };
 
   if (dropzone) {
     const prevent = (e) => {
@@ -838,8 +915,11 @@ function wireReceiptUpload({
     dropzone.addEventListener('dragleave', () => dropzone.classList.remove('receipt-dropzone--active'));
     dropzone.addEventListener('drop', (e) => {
       dropzone.classList.remove('receipt-dropzone--active');
-      const file = e.dataTransfer?.files?.[0];
-      if (file) runPipeline(file);
+      if (e.dataTransfer?.files) {
+        for (const file of e.dataTransfer.files) {
+          runPipeline(file);
+        }
+      }
     });
   }
 }
@@ -866,52 +946,166 @@ async function showReceiptPreview(container, stored) {
   }
   container.innerHTML = '<p class="form-hint">Loading preview…</p>';
   try {
+    let content = '';
     if (isExternalReceiptUrl(stored)) {
-      container.innerHTML = `<a href="${stored}" target="_blank" rel="noopener">Open receipt</a>`;
-      return;
-    }
-    const viewUrl = await resolveReceiptViewUrl(stored);
-    const key = extractReceiptObjectKey(stored);
-    const isPdf = /\.pdf($|\?)/i.test(key) || /\.pdf($|\?)/i.test(viewUrl);
-    if (isPdf) {
-      container.innerHTML = `<a href="${viewUrl}" target="_blank" rel="noopener">Open PDF receipt</a>`;
+      content = `<a href="${stored}" target="_blank" rel="noopener">Open receipt</a>`;
     } else {
-      container.innerHTML = `<a href="${viewUrl}" target="_blank" rel="noopener"><img src="${viewUrl}" alt="Receipt" style="max-width:220px;max-height:160px;border-radius:6px;border:1px solid var(--border);"></a>`;
+      const viewUrl = await resolveReceiptViewUrl(stored);
+      const key = extractReceiptObjectKey(stored);
+      const isPdf = /\.pdf($|\?)/i.test(key) || /\.pdf($|\?)/i.test(viewUrl);
+      if (isPdf) {
+        content = `<a href="${viewUrl}" target="_blank" rel="noopener">Open PDF receipt</a>`;
+      } else {
+        content = `<a href="${viewUrl}" target="_blank" rel="noopener"><img src="${viewUrl}" alt="Receipt" style="max-width:220px;max-height:160px;border-radius:6px;border:1px solid var(--border);"></a>`;
+      }
     }
+
+    container.innerHTML = `
+      <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 8px;">
+        ${content}
+        <button type="button" class="danger btn-xs" style="padding: 4px 8px; font-size: 0.75rem; border: none; border-radius: 4px; cursor: pointer; color: white;" id="btnRemoveReceipt-${container.id}">❌ Remove Receipt</button>
+      </div>
+    `;
+
+    container.querySelector(`#btnRemoveReceipt-${container.id}`).onclick = (e) => {
+      e.preventDefault();
+      const isEdit = container.id.toLowerCase().includes('edit');
+      const urlInputId = isEdit ? 'editExpReceiptUrl' : 'expReceiptUrl';
+      const hintId = isEdit ? 'editExpReceiptHint' : 'expReceiptHint';
+
+      const urlInput = document.getElementById(urlInputId);
+      const hint = document.getElementById(hintId);
+
+      if (urlInput) urlInput.value = '';
+      if (hint) hint.textContent = 'Receipt removed';
+      container.innerHTML = '';
+    };
   } catch (err) {
     container.innerHTML = `<p class="form-hint" style="color:#dc3545;">${err.message || 'Could not load receipt'}</p>`;
   }
 }
 
+async function renderStagedAttachments(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  if (!stagedAttachments.length) {
+    container.innerHTML = '<p class="form-hint">No files uploaded yet.</p>';
+    return;
+  }
+
+  const htmls = await Promise.all(stagedAttachments.map(async (attach, idx) => {
+    let previewHtml = '';
+    const key = attach.file_url;
+    if (isExternalReceiptUrl(key)) {
+      previewHtml = `<a href="${key}" target="_blank" rel="noopener">Receipt Link ${idx + 1}</a>`;
+    } else {
+      try {
+        const viewUrl = await resolveReceiptViewUrl(key);
+        const objKey = extractReceiptObjectKey(key);
+        const isPdf = /\.pdf($|\?)/i.test(objKey) || /\.pdf($|\?)/i.test(viewUrl);
+        if (isPdf) {
+          previewHtml = `<a href="${viewUrl}" target="_blank" rel="noopener">📄 PDF Receipt ${idx + 1}</a>`;
+        } else {
+          previewHtml = `<a href="${viewUrl}" target="_blank" rel="noopener"><img src="${viewUrl}" alt="Receipt" style="max-width:100px;max-height:80px;border-radius:4px;border:1px solid var(--border);"></a>`;
+        }
+      } catch {
+        previewHtml = `<span style="color:var(--danger);">Error loading file</span>`;
+      }
+    }
+
+    return `
+      <div class="attachment-preview-card" style="display:flex;flex-direction:column;align-items:center;border:1px solid var(--border);border-radius:6px;padding:8px;position:relative;background:var(--bg-card);gap:6px;min-width:110px;">
+        ${previewHtml}
+        <button type="button" class="danger btn-xs" style="padding:2px 6px;font-size:0.7rem;margin-top:2px;border:none;border-radius:4px;color:white;cursor:pointer;" onclick="window.removeStagedAttachment('${containerId}', '${attach.id}')">❌ Remove</button>
+      </div>
+    `;
+  }));
+
+  container.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;">
+      ${htmls.join('')}
+    </div>
+  `;
+}
+
+window.removeStagedAttachment = function(containerId, attachId) {
+  stagedAttachments = stagedAttachments.filter(a => a.id !== attachId);
+  renderStagedAttachments(containerId);
+};
+
+async function saveExpenseAttachments(expenseId) {
+  const teamId = state.currentTeam.team_id;
+  const now = new Date().toISOString();
+
+  // 1. Fetch existing active attachments in DB for this expense
+  const dbAttachResult = await sbSelect('expense_attachments', { teamId });
+  const dbAttach = (dbAttachResult.data || []).filter(a => !a.is_deleted && a.expense_id === expenseId);
+
+  // 2. Identify attachments to delete (in DB but not in stagedAttachments)
+  const stagedIds = new Set(stagedAttachments.map(a => a.id));
+  for (const a of dbAttach) {
+    if (!stagedIds.has(a.id)) {
+      await sbUpdate('expense_attachments', { is_deleted: true, deleted_at: now, updated_at: now }, { id: a.id });
+    }
+  }
+
+  // 3. Insert new attachments
+  for (const a of stagedAttachments) {
+    const exists = dbAttach.some(db => db.id === a.id);
+    if (!exists) {
+      await sbInsert('expense_attachments', {
+        id: a.id,
+        team_id: teamId,
+        expense_id: expenseId,
+        file_url: a.file_url,
+        created_by: state.user.id,
+        is_deleted: false,
+        updated_at: now
+      });
+    }
+  }
+}
+
 function receiptCellHtml(exp) {
-  if (!exp.receipt_url) return '—';
+  const keys = [exp.receipt_url].filter(Boolean);
+  const childAttachments = (teamAttachmentsCache || []).filter(a => a.expense_id === exp.id && !a.is_deleted).map(a => a.file_url);
+  const allKeys = [...new Set([...keys, ...childAttachments])];
+  if (!allKeys.length) return '—';
   const id = `receipt-${exp.id}`;
-  return `<span class="receipt-cell" data-receipt-stored="${String(exp.receipt_url).replace(/"/g, '&quot;')}" id="${id}">…</span>`;
+  return `<span class="receipt-cell" data-receipt-stored="${String(allKeys.join(',')).replace(/"/g, '&quot;')}" id="${id}">…</span>`;
 }
 
 async function hydrateReceiptCells() {
   const cells = document.querySelectorAll('.receipt-cell[data-receipt-stored]');
   await Promise.all([...cells].map(async (el) => {
-    const stored = el.getAttribute('data-receipt-stored') || '';
-    if (!stored) {
+    const storedStr = el.getAttribute('data-receipt-stored') || '';
+    const storedKeys = storedStr.split(',').filter(Boolean);
+    if (!storedKeys.length) {
       el.textContent = '—';
       return;
     }
+    
     try {
-      if (isExternalReceiptUrl(stored)) {
-        el.innerHTML = `<a href="${stored}" target="_blank" rel="noopener">📎</a>`;
-        return;
-      }
-      const viewUrl = await resolveReceiptViewUrl(stored);
-      const key = extractReceiptObjectKey(stored);
-      const isPdf = /\.pdf($|\?)/i.test(key);
-      if (isPdf) {
-        el.innerHTML = `<a href="${viewUrl}" target="_blank" rel="noopener">📎 PDF</a>`;
-      } else {
-        el.innerHTML = `<a href="${viewUrl}" target="_blank" rel="noopener" title="Open receipt"><img src="${viewUrl}" alt="Receipt" style="width:36px;height:36px;object-fit:cover;border-radius:4px;vertical-align:middle;"></a>`;
-      }
+      const linksHtmls = await Promise.all(storedKeys.map(async (key, idx) => {
+        try {
+          if (isExternalReceiptUrl(key)) {
+            return `<a href="${key}" target="_blank" rel="noopener" style="font-size: 1.1rem; text-decoration: none;">📎</a>`;
+          }
+          const viewUrl = await resolveReceiptViewUrl(key);
+          const objKey = extractReceiptObjectKey(key);
+          const isPdf = /\.pdf($|\?)/i.test(objKey) || /\.pdf($|\?)/i.test(viewUrl);
+          if (isPdf) {
+            return `<a href="${viewUrl}" target="_blank" rel="noopener" style="text-decoration: none; font-size: 0.8rem; font-weight: bold; color: var(--primary);">📎 PDF</a>`;
+          } else {
+            return `<a href="${viewUrl}" target="_blank" rel="noopener" title="Open receipt"><img src="${viewUrl}" alt="Receipt" style="width:30px;height:30px;object-fit:cover;border-radius:4px;vertical-align:middle;margin-right:2px;border:1px solid var(--border);"></a>`;
+          }
+        } catch {
+          return '<span title="Could not load">📎</span>';
+        }
+      }));
+      el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">${linksHtmls.join('')}</div>`;
     } catch {
-      el.innerHTML = '<span title="Could not load">📎</span>';
+      el.innerHTML = '—';
     }
   }));
 }
@@ -1024,10 +1218,16 @@ async function handleAddExpenseSubmit(e) {
   validateAndWarnExpense(payload, null, async () => {
     try {
       await saveExpenseRecord(payload, false);
+      await saveExpenseAttachments(payload.id);
       showToast('Expense added', 'success');
       form.reset();
       document.getElementById('expDate').valueAsDate = new Date();
       applyExpenseDefaults();
+      stagedAttachments = [];
+      const expReceiptHint = document.getElementById('expReceiptHint');
+      const expReceiptPreview = document.getElementById('expReceiptPreview');
+      if (expReceiptHint) expReceiptHint.textContent = '';
+      if (expReceiptPreview) expReceiptPreview.innerHTML = '';
       window.showPage('expense-manager');
     } catch (err) {
       showToast(err.message || 'Failed to save expense', 'error');
@@ -1126,7 +1326,7 @@ export function getExpenseManagerPage() {
               <div class="btn-group" style="margin-top:8px;flex-wrap:wrap;">
                 <button type="button" class="secondary" id="editExpReceiptCameraBtn">Scan with camera</button>
                 <button type="button" class="secondary" id="editExpReceiptFileBtn">Choose file</button>
-                <input type="file" id="editExpReceiptFileInput" accept="image/*,application/pdf" style="display:none">
+                <input type="file" id="editExpReceiptFileInput" accept="image/*,application/pdf" multiple style="display:none">
               </div>
               <p class="form-hint" id="editExpReceiptHint" style="margin-top:6px;"></p>
               <div id="editExpReceiptPreview" style="margin-top:8px;"></div>
@@ -1417,7 +1617,21 @@ function editExpense(id) {
   document.getElementById('editExpLocalAmount').value = exp.local_amount;
   document.getElementById('editExpDescription').value = exp.description || '';
   document.getElementById('editExpReceiptUrl').value = exp.receipt_url || '';
-  showReceiptPreview(document.getElementById('editExpReceiptPreview'), exp.receipt_url || '');
+  
+  const keys = [exp.receipt_url].filter(Boolean);
+  const childAttachments = (teamAttachmentsCache || []).filter(a => a.expense_id === id && !a.is_deleted).map(a => a.file_url);
+  const allKeys = [...new Set([...keys, ...childAttachments])];
+  
+  stagedAttachments = allKeys.map(key => {
+    const dbItem = (teamAttachmentsCache || []).find(a => a.expense_id === id && a.file_url === key);
+    return {
+      id: dbItem?.id || crypto.randomUUID(),
+      file_url: key,
+      unsaved: false
+    };
+  });
+  
+  renderStagedAttachments('editExpReceiptPreview');
 
   populateBudgetSelect(document.getElementById('editExpBudget'), false);
   document.getElementById('editExpBudget').value = exp.budget_id;
@@ -1452,6 +1666,10 @@ function editExpense(id) {
 
 function closeEditExpenseModal() {
   document.getElementById('editExpenseModal')?.classList.remove('active');
+  const editHint = document.getElementById('editExpReceiptHint');
+  const editPreview = document.getElementById('editExpReceiptPreview');
+  if (editHint) editHint.textContent = '';
+  if (editPreview) editPreview.innerHTML = '';
 }
 
 async function handleEditExpenseSubmit(e) {
@@ -1470,6 +1688,7 @@ async function handleEditExpenseSubmit(e) {
   validateAndWarnExpense(payload, id, async () => {
     try {
       await saveExpenseRecord(payload, true, id);
+      await saveExpenseAttachments(id);
       showToast('Expense updated', 'success');
       closeEditExpenseModal();
       refreshExpenseList();

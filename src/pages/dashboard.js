@@ -291,11 +291,22 @@ export async function initDashboardPage() {
     // Pending approval requests awaiting this user's turn
     try {
       const { fetchApprovalInboxRaw } = await import('../utils/approvalEngine.js');
-      const { userCanActOnRequest } = await import('../utils/approvalAccess.js');
+      const { getUserApprovalRoleCodes, clarifyRoleFromStatus } = await import('../utils/approvalAccess.js');
       const approvals = await fetchApprovalInboxRaw();
       
       for (const req of approvals) {
-        if (await userCanActOnRequest(req)) {
+        const userCodes = await getUserApprovalRoleCodes(state.user?.id, req.team_id);
+        const upperCodes = userCodes.map(c => String(c).toUpperCase());
+        const currentRole = String(req.current_role_code || '').toUpperCase();
+        
+        const isClarifyTarget = req.status.startsWith('CLARIFY-') && 
+          (clarifyRoleFromStatus(req.status) === 'REQUESTER' 
+            ? req.created_by === state.user?.id 
+            : upperCodes.includes(String(clarifyRoleFromStatus(req.status)).toUpperCase()));
+          
+        const isCurrentAssignee = req.current_role_code && upperCodes.includes(currentRole);
+        
+        if (isCurrentAssignee || isClarifyTarget) {
           alerts.unshift({
             level: 'warning',
             icon: '📝',

@@ -9,13 +9,13 @@ export { SUPABASE_URL, SUPABASE_ANON_KEY };
 
 // ==================== INDEXEDDB SETUP ====================
 let db = null;
-const LOCAL_DB_VERSION = 5;
+const LOCAL_DB_VERSION = 7;
 
 function ensureAllObjectStores(idb) {
   const required = [
     'buckets', 'categories', 'budget_plans', 'exchange_rates',
     'pending_changes', 'sync_meta', 'income', 'expenses', 'transfers',
-    'users', 'teams', 'user_teams', 'expense_receipts'
+    'users', 'teams', 'user_teams', 'expense_receipts', 'expense_attachments', 'report_logs'
   ];
   return required.every(name => idb.objectStoreNames.contains(name));
 }
@@ -52,6 +52,12 @@ export async function initLocalDB() {
       // v4 added expense_receipts; v5 re-runs if store was missing at v4
       if (!db.objectStoreNames.contains('expense_receipts')) {
         db.createObjectStore('expense_receipts', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('expense_attachments')) {
+        db.createObjectStore('expense_attachments', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('report_logs')) {
+        db.createObjectStore('report_logs', { keyPath: 'id' });
       }
     }
   });
@@ -155,7 +161,7 @@ export async function syncTable(tableName, teamId, options = {}) {
 }
 
 export async function syncAll(teamId) {
-  const tables = ['buckets', 'categories', 'budget_plans', 'exchange_rates', 'expenses', 'expense_receipts'];
+  const tables = ['buckets', 'categories', 'budget_plans', 'exchange_rates', 'expenses', 'expense_receipts', 'expense_attachments', 'report_logs'];
   const results = {};
 
   for (const table of tables) {
@@ -319,13 +325,13 @@ export async function sbSelect(table, options = {}) {
   if (!navigator.onLine) {
     const local = await localGetAll(table);
     let filtered = local;
-    if (teamId) filtered = filtered.filter(item => item.team_id === teamId);
+    if (teamId && teamId !== 'all' && teamId !== 'ALL') filtered = filtered.filter(item => item.team_id === teamId);
     if (!includeDeleted) filtered = filtered.filter(item => !item.is_deleted);
     return { data: filtered, error: null, offline: true };
   }
 
   let query = supabaseClient.from(table).select('*');
-  if (teamId) query = query.eq('team_id', teamId);
+  if (teamId && teamId !== 'all' && teamId !== 'ALL') query = query.eq('team_id', teamId);
   if (!includeDeleted) query = query.eq('is_deleted', false);
   query = query.order(orderBy, { ascending });
 

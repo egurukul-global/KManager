@@ -60,7 +60,7 @@ export function getTasksPage() {
         <div class="kanban-cards-list" id="col-backlog" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
       <div class="kanban-column" data-status="todo">
-        <h3 style="margin-top:0; font-size:1em; color:#1e3a8a; border-bottom:2px solid #3b82f6; padding-bottom:6px;">📋 To Do</h3>
+        <h3 style="margin-top:0; font-size:1em; color:var(--brand-saffron, #FFA500); border-bottom:2px solid var(--brand-saffron, #FFA500); padding-bottom:6px;">📋 To Do</h3>
         <div class="kanban-cards-list" id="col-todo" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
       <div class="kanban-column" data-status="in_progress">
@@ -300,7 +300,7 @@ function renderKanbanBoard() {
 
   const statusColors = {
     backlog: '#ef4444',
-    todo: '#3b82f6',
+    todo: '#FFA500',
     in_progress: '#eab308',
     completed: '#22c55e'
   };
@@ -547,12 +547,28 @@ async function saveTaskFormSubmit(e) {
       const selectedTeam = state.teams.find(t => t.team_id === teamId);
       const teamPrefix = (selectedTeam?.team_name || selectedTeam?.name || 'TSK').slice(0, 3).toUpperCase();
       
-      const { count } = await supabaseClient
+      const { data: allTasks } = await supabaseClient
         .from('tasks')
-        .select('*', { count: 'exact', head: true })
+        .select('task_number')
         .eq('team_id', teamId);
 
-      const taskNo = `${teamPrefix}-${100000 + (count || 0) + 1}`;
+      let nextNum = 100001;
+      if (allTasks && allTasks.length > 0) {
+        const nums = allTasks.map(t => {
+          const parts = (t.task_number || '').split('-');
+          if (parts.length > 1) {
+            const parsed = parseInt(parts[1], 10);
+            return isNaN(parsed) ? 0 : parsed;
+          }
+          return 0;
+        });
+        const maxNum = Math.max(...nums);
+        if (maxNum >= 100001) {
+          nextNum = maxNum + 1;
+        }
+      }
+
+      const taskNo = `${teamPrefix}-${nextNum}`;
 
       const { data: newTasks, error } = await supabaseClient
         .from('tasks')

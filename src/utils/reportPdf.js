@@ -1,6 +1,7 @@
 // ==================== EXPENSE REPORT PDF EXPORT ====================
 import { showToast } from '../components/toasts.js';
 import { getExpenseCategoryLabel } from './expenseHelpers.js';
+import { isExternalReceiptUrl } from './upload.js';
 import {
   truncReportItem,
   buildReportFilterDescription,
@@ -49,13 +50,7 @@ function tableLayout() {
 /**
  * @param {object} params
  */
-export function exportExpenseReportToPdf(params) {
-  const pdfMake = getPdfMake();
-  if (!pdfMake) {
-    showToast('PDF library not loaded. Refresh the page and try again.', 'error');
-    return;
-  }
-
+export function buildReportPdfDefinition(params) {
   const {
     filteredExpenses = [],
     incomeScope = { records: [], summary: null },
@@ -73,13 +68,6 @@ export function exportExpenseReportToPdf(params) {
   const filteredIncome = incomeScope.records || [];
   const incomeSummary = incomeScope.summary;
 
-  const hasContent = filteredExpenses.length || filteredIncome.length
-    || teamBuckets.length || budget;
-  if (!hasContent) {
-    showToast('No report data to export. Generate a report first.', 'warning');
-    return;
-  }
-
   const reportTitle = `One Kailasa Report for ${teamName}`;
   const filterParts = buildReportFilterDescription(filters, budget, getBucketName);
   const content = [];
@@ -93,59 +81,108 @@ export function exportExpenseReportToPdf(params) {
     });
   }
 
-  if (sections.expenseDetail) {
-    const totalUSD = filteredExpenses.reduce(
-      (sum, e) => sum + (parseFloat(e.usd_amount) || 0),
-      0
-    );
-    const expenseBody = [
-      [
-        { text: 'Date', style: 'tableHeader' },
-        { text: 'Item', style: 'tableHeader' },
-        { text: 'Category', style: 'tableHeader' },
-        { text: 'Source', style: 'tableHeader' },
-        { text: 'Local', style: 'tableHeader' },
-        { text: 'Rate', style: 'tableHeader' },
-        { text: 'USD', style: 'tableHeader' }
-      ]
-    ];
+  let receiptCounter = 1001;
+  const annexureItems = [];
 
-    [...filteredExpenses].sort((a, b) => b.date.localeCompare(a.date)).forEach(exp => {
-      expenseBody.push([
-        exp.date,
-        truncReportItem(exp.item),
-        getExpenseCategoryLabel(exp, teamCategories),
-        getBucketName ? getBucketName(exp.bucket_id) : '—',
-        `${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}`,
-        String(exp.exchange_rate ?? '—'),
-        `$${(parseFloat(exp.usd_amount) || 0).toFixed(2)}`
-      ]);
+  if (sections.expenseDetail) {
+    const categoriesMap = {};
+    filteredExpenses.forEach(exp => {
+      const catLabel = getExpenseCategoryLabel(exp, teamCategories);
+      if (!categoriesMap[catLabel]) {
+        categoriesMap[catLabel] = [];
+      }
+      categoriesMap[catLabel].push(exp);
     });
 
-    if (expenseBody.length > 1) {
-      expenseBody.push([
-        { text: 'TOTAL', colSpan: 6, alignment: 'right', bold: true },
-        {}, {}, {}, {}, {},
-        { text: `$${totalUSD.toFixed(2)}`, bold: true }
-      ]);
-    }
+    const sortedCategoryLabels = Object.keys(categoriesMap).sort((a, b) => a.localeCompare(b));
 
-    content.push(
-      { text: 'Expense Details', style: 'sectionHeader', margin: [0, 10, 0, 5] },
-      {
-        table: {
-          headerRows: 1,
-          widths: ['auto', 50, 'auto', 'auto', 'auto', 'auto', 'auto'],
-          body: expenseBody
-        },
-        layout: tableLayout()
-      },
-      {
-        text: `Transactions: ${filteredExpenses.length} | Total USD: $${totalUSD.toFixed(2)}`,
-        fontSize: 10,
-        margin: [0, 5, 0, 12]
-      }
-    );
+    sortedCategoryLabels.forEach(catLabel => {
+      const groupExpenses = categoriesMap[catLabel];
+      groupExpenses.sort((a, b) => a.date.localeCompare(b.date));
+
+      const expenseBody = [
+        [
+          { text: 'Receipt', style: 'tableHeader' },
+          { text: 'Date', style: 'tableHeader' },
+          { text: 'Item', style: 'tableHeader' },
+          { text: 'Source', style: 'tableHeader' },
+          { text: 'Local', style: 'tableHeader' },
+          { text: 'Rate', style: 'tableHeader' },
+          { text: 'USD Total', style: 'tableHeader' }
+        ]
+      ];
+
+      let groupUSDTotal = 0;
+
+      groupExpenses.forEach(exp => {
+        const usdAmount = parseFloat(exp.usd_amount) || 0;
+        groupUSDTotal += usdAmount;
+
+        const receiptNumbers = [];
+        const images = exp.receipt_images || [];
+
+        images.forEach(imgBase64 => {
+          const num = receiptCounter++;
+          receiptNumbers.push(num);
+          annexureItems.push({
+            number: num,
+            exp,
+            image: imgBase64
+          });
+        });
+
+        if (images.length === 0 && exp.receipt_url) {
+          const num = receiptCounter++;
+          receiptNumbers.push(num);
+          annexureItems.push({
+            number: num,
+            exp,
+            image: exp.receipt_resolved_url || exp.receipt_url
+          });
+        }
+
+        const receiptCell = receiptNumbers.length 
+          ? {
+              text: receiptNumbers.map((n, idx) => {
+                const arr = [{ text: `#${n}`, linkToDestination: `receipt-${n}`, color: '#0284c7', decoration: 'underline' }];
+                if (idx < receiptNumbers.length - 1) {
+                  arr.push({ text: ', ', color: '#000' });
+                }
+                return arr;
+              }).flat()
+            }
+          : '—';
+
+        expenseBody.push([
+          receiptCell,
+          exp.date,
+          truncReportItem(exp.item),
+          getBucketName ? getBucketName(exp.bucket_id) : '—',
+          `${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}`,
+          String(exp.rate ?? '—'),
+          `$${usdAmount.toFixed(2)}`
+        ]);
+      });
+
+      expenseBody.push([
+        { text: 'Total', colSpan: 6, alignment: 'right', bold: true },
+        {}, {}, {}, {}, {},
+        { text: `$${groupUSDTotal.toFixed(2)} USD`, bold: true }
+      ]);
+
+      content.push(
+        { text: catLabel, style: 'sectionHeader', margin: [0, 15, 0, 5] },
+        {
+          table: {
+            headerRows: 1,
+            widths: ['auto', 'auto', '*', 'auto', 'auto', 'auto', 'auto'],
+            body: expenseBody
+          },
+          layout: tableLayout(),
+          margin: [0, 0, 0, 15]
+        }
+      );
+    });
   }
 
   if (sections.categorySummary) {
@@ -185,165 +222,105 @@ export function exportExpenseReportToPdf(params) {
 
   if (sections.incomeSummary && incomeSummary && incomeSummary.recordCount > 0) {
     const rows = incomeSummary.budgetScoped
-      ? [
-          ['Allocation Records', String(incomeSummary.recordCount)],
-          ['Allocated to Budget', `$${incomeSummary.allocated.toFixed(2)}`]
-        ]
-      : [
-          ['Total Records', String(incomeSummary.recordCount)],
-          ['Total Received', `$${incomeSummary.totalReceived.toFixed(2)}`],
-          ['Allocated', `$${incomeSummary.allocated.toFixed(2)}`],
-          ['Unallocated', `$${incomeSummary.unallocated.toFixed(2)}`]
-        ];
-    content.push(
-      { text: 'Income Summary', style: 'incomeHeader', margin: [0, 15, 0, 5] },
-      {
-        table: {
-          headerRows: 1,
-          widths: ['auto', 'auto'],
-          body: [
-            [{ text: 'Metric', style: 'tableHeader' }, { text: 'Value', style: 'tableHeader' }],
-            ...rows
-          ]
-        },
-        layout: tableLayout()
-      }
-    );
-  }
+      ? filteredIncome.filter(fund => (fund.budget_allocations || []).some(alloc => alloc.budget_id === budget.id))
+      : filteredIncome;
 
-  if (sections.incomeDetail && filteredIncome.length) {
     const incomeBody = [
       [
         { text: 'Date', style: 'tableHeader' },
         { text: 'From', style: 'tableHeader' },
         { text: 'Bucket', style: 'tableHeader' },
-        { text: 'Local', style: 'tableHeader' },
-        { text: 'USD', style: 'tableHeader' },
+        { text: 'Amount (Local)', style: 'tableHeader' },
+        { text: 'Amount (USD)', style: 'tableHeader' },
         { text: 'Description', style: 'tableHeader' }
       ]
     ];
 
-    [...filteredIncome].sort((a, b) => b.date.localeCompare(a.date)).forEach(fund => {
-      const allocs = fund.budget_allocations || [];
-      if (!allocs.length) {
-        const localDisplay = fund.exchange_rate
-          ? `${(fund.local_amount || 0).toLocaleString()} ${fund.currency || ''} @ ${fund.exchange_rate}`
-          : `${(fund.local_amount || 0).toLocaleString()} ${fund.currency || ''}`;
-        incomeBody.push([
-          fund.date,
-          fund.payment_from || '—',
-          getBucketName ? getBucketName(fund.bucket_id) : '—',
-          localDisplay,
-          `$${(parseFloat(fund.amount_usd) || 0).toFixed(2)}`,
-          fund.description || '—'
-        ]);
-        return;
+    rows.forEach(fund => {
+      let localDisplay = '—';
+      if (fund.local_amount && fund.currency) {
+        localDisplay = `${(parseFloat(fund.local_amount) || 0).toLocaleString()} ${fund.currency}`;
       }
-      allocs.forEach(alloc => {
-        const allocUsd = parseFloat(alloc.amount_usd) || 0;
-        const fundUsd = parseFloat(fund.amount_usd) || 0;
-        const allocLocal = fundUsd > 0
-          ? (allocUsd / fundUsd) * (fund.local_amount || 0)
-          : 0;
-        incomeBody.push([
-          fund.date,
-          fund.payment_from || '—',
-          getBucketName ? getBucketName(fund.bucket_id) : '—',
-          `${allocLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${fund.currency || ''}`,
-          `$${allocUsd.toFixed(2)}`,
-          `${fund.description || '—'} → ${getBudgetName ? getBudgetName(alloc.budget_id) : 'Budget'}`
-        ]);
-      });
+      incomeBody.push([
+        fund.date,
+        fund.payment_from || '—',
+        getBucketName ? getBucketName(fund.bucket_id) : '—',
+        localDisplay,
+        `$${(parseFloat(fund.amount_usd) || 0).toFixed(2)}`,
+        fund.description || '—'
+      ]);
     });
 
     content.push(
-      { text: 'Income Details', style: 'incomeHeader', margin: [0, 15, 0, 5] },
+      { text: 'Income Summary', style: 'incomeHeader', margin: [0, 15, 0, 5] },
       {
         table: {
           headerRows: 1,
           widths: ['auto', 'auto', 'auto', 'auto', 'auto', '*'],
           body: incomeBody
         },
-        layout: tableLayout(),
-        margin: [0, 0, 0, 10]
-      }
-    );
-  }
-
-  if (sections.budgetAllocations && filteredIncome.length) {
-    const allocationBody = [
-      [
-        { text: 'Date', style: 'tableHeader' },
-        { text: 'From', style: 'tableHeader' },
-        { text: 'Budget', style: 'tableHeader' },
-        { text: 'Amount (USD)', style: 'tableHeader' },
-        { text: 'Source Income', style: 'tableHeader' }
-      ]
-    ];
-
-    filteredIncome.forEach(fund => {
-      (fund.budget_allocations || []).forEach(alloc => {
-        allocationBody.push([
-          fund.date,
-          fund.payment_from || '—',
-          getBudgetName ? getBudgetName(alloc.budget_id) : 'Unknown',
-          `$${(parseFloat(alloc.amount_usd) || 0).toFixed(2)}`,
-          fund.description || '—'
-        ]);
-      });
-    });
-
-    content.push({ text: 'Budget Allocations', style: 'incomeHeader', margin: [0, 15, 0, 5] });
-    if (allocationBody.length > 1) {
-      content.push({
-        table: {
-          headerRows: 1,
-          widths: ['auto', 'auto', '*', 'auto', '*'],
-          body: allocationBody
-        },
-        layout: tableLayout(),
-        margin: [0, 0, 0, 10]
-      });
-    } else {
-      content.push({
-        text: 'No allocations for the selected criteria.',
-        fontSize: 9,
-        color: '#666',
-        margin: [0, 5, 0, 10]
-      });
-    }
-  }
-
-  if (sections.financialSummary && teamBuckets.length) {
-    const finBody = [
-      [
-        { text: 'Bucket', style: 'tableHeader' },
-        { text: 'Currency', style: 'tableHeader' },
-        { text: 'Balance', style: 'tableHeader' }
-      ]
-    ];
-    teamBuckets.forEach(b => {
-      finBody.push([
-        b.name,
-        b.currency || '—',
-        `${(parseFloat(b.balance) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-      ]);
-    });
-    content.push(
-      { text: 'Financial Summary — Bucket Balances', style: 'sectionHeader', margin: [0, 15, 0, 5] },
-      {
-        table: { headerRows: 1, widths: ['*', 'auto', 'auto'], body: finBody },
         layout: tableLayout()
       }
     );
   }
 
-  if (!content.length) {
-    showToast('No sections selected or no data to export.', 'warning');
-    return;
+  if (annexureItems.length > 0) {
+    content.push({ text: 'Annexure - Receipts', style: 'sectionHeader', pageBreak: 'before', margin: [0, 20, 0, 10] });
+
+    annexureItems.forEach((item, idx) => {
+      const exp = item.exp;
+      const usdAmount = parseFloat(exp.usd_amount) || 0;
+      
+      const metadataTable = {
+        table: {
+          widths: ['*', '*'],
+          body: [
+            [{ text: 'Type', bold: true }, 'Expense'],
+            [{ text: 'Item', bold: true }, exp.item || '—'],
+            [{ text: 'Date', bold: true }, exp.date],
+            [{ text: 'Local Amount', bold: true }, `${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}`],
+            [{ text: 'Rate', bold: true }, String(exp.rate ?? '—')],
+            [{ text: 'USD Total', bold: true }, `$${usdAmount.toFixed(2)}`],
+            [{ text: 'Bucket Source', bold: true }, getBucketName ? getBucketName(exp.bucket_id) : '—'],
+            [{ text: 'Category', bold: true }, getExpenseCategoryLabel(exp, teamCategories)],
+            [{ text: 'Description/Notes', bold: true }, exp.description || '—']
+          ]
+        },
+        layout: 'lightHorizontalLines',
+        margin: [0, 5, 0, 15]
+      };
+
+      const pageContent = [
+        { text: `Receipt Reference: #${item.number}`, id: `receipt-${item.number}`, style: 'sectionHeader', margin: [0, 10, 0, 10] },
+        metadataTable
+      ];
+
+      if (item.image && (item.image.startsWith('data:image/') || item.image.startsWith('data:'))) {
+        pageContent.push({
+          image: item.image,
+          fit: [450, 400],
+          alignment: 'center',
+          margin: [0, 10, 0, 0]
+        });
+      } else if (item.image) {
+        pageContent.push({
+          text: 'View Receipt File in Browser (External Link)',
+          link: item.image,
+          color: '#0284c7',
+          decoration: 'underline',
+          alignment: 'center',
+          margin: [0, 20, 0, 0]
+        });
+      }
+
+      content.push({
+        stack: pageContent,
+        pageBreak: idx === 0 ? 'none' : 'before'
+      });
+    });
   }
 
-  const docDefinition = {
+  return {
     info: { title: reportTitle, author: 'One Kailasa', creationDate: new Date() },
     pageSize: 'A4',
     pageOrientation: 'portrait',
@@ -383,7 +360,16 @@ export function exportExpenseReportToPdf(params) {
     },
     defaultStyle: { fontSize: 7, font: 'Roboto' }
   };
+}
 
+export function exportExpenseReportToPdf(params) {
+  const pdfMake = getPdfMake();
+  if (!pdfMake) {
+    showToast('PDF library not loaded. Refresh the page and try again.', 'error');
+    return;
+  }
+
+  const docDefinition = buildReportPdfDefinition(params);
   const dateStr = new Date().toISOString().split('T')[0];
   pdfMake.createPdf(docDefinition).download(`finance_report_${dateStr}.pdf`);
   showToast(`Report downloaded: finance_report_${dateStr}.pdf`, 'success');

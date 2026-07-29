@@ -149,3 +149,38 @@ export async function resolveReceiptViewUrl(stored) {
   if (isExternalReceiptUrl(s)) return s;
   return getReceiptUrl(s);
 }
+
+export async function uploadReportPdf(blob, filename) {
+  try {
+    const contentType = 'application/pdf';
+    const params = new URLSearchParams({ filename, contentType });
+    const urlRes = await fetch(
+      `${SUPABASE_URL}/functions/v1/get-upload-url?${params.toString()}`,
+      { method: 'GET', headers: await authHeaders() }
+    );
+
+    if (!urlRes.ok) throw new Error(`Could not get upload URL (${urlRes.status})`);
+
+    const payload = await urlRes.json();
+    const signedUrl = payload.signedUrl;
+    let objectKey = payload.objectKey || '';
+    if (!objectKey && payload.publicUrl) {
+      objectKey = extractReceiptObjectKey(payload.publicUrl);
+    }
+
+    if (!signedUrl || !objectKey) throw new Error('Missing upload credentials from Supabase Function');
+
+    const putRes = await fetch(signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: blob
+    });
+
+    if (!putRes.ok) throw new Error(`R2 report upload failed (${putRes.status})`);
+
+    return objectKey;
+  } catch (err) {
+    console.error('uploadReportPdf error:', err);
+    throw err;
+  }
+}

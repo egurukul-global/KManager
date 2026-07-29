@@ -2,7 +2,7 @@
 import { supabaseClient } from '../db.js';
 import { state } from '../state.js';
 import { renderOkShell } from './ok-shell.js';
-import { showToast } from '../components/toasts.js';
+import { showToast, showConfirm } from '../components/toasts.js';
 import { uploadReceipt, resolveReceiptViewUrl } from '../utils/upload.js';
 
 let activeThread = null; // { type: 'user'|'team'|'group', id: string, name: string }
@@ -23,6 +23,30 @@ let deletingMessageId = null;
 let deletingCountdown = 10;
 let deletingInterval = null;
 let deletingScope = 'everyone'; // 'me' | 'everyone'
+
+// Bulk Deletion state
+let konnectDeleteMode = false;
+let selectedMsgIds = new Set();
+
+function getLocalDeletedMessageIds() {
+  try {
+    const key = `deleted_msg_ids_${state.user.id}`;
+    return new Set(JSON.parse(localStorage.getItem(key) || '[]'));
+  } catch (e) {
+    return new Set();
+  }
+}
+
+function saveLocalDeletedMessageId(msgId) {
+  try {
+    const key = `deleted_msg_ids_${state.user.id}`;
+    const deleted = getLocalDeletedMessageIds();
+    deleted.add(msgId);
+    localStorage.setItem(key, JSON.stringify(Array.from(deleted)));
+  } catch (e) {
+    console.error(e);
+  }
+}
 
 function escapeHtml(text) {
   return String(text || '')
@@ -272,6 +296,13 @@ export function initKonnectPage() {
   window.cancelReply = cancelReply;
   window.startDeleteMessageFlow = startDeleteMessageFlow;
   window.undoDeleteMessage = undoDeleteMessage;
+  window.enterDeleteMode = enterDeleteMode;
+  window.exitDeleteMode = exitDeleteMode;
+  window.handleSelectAllMessages = handleSelectAllMessages;
+  window.handleMsgSelectChange = handleMsgSelectChange;
+  window.executeBulkDelete = executeBulkDelete;
+  window.selectedMsgIds = selectedMsgIds;
+  window.konnectDeleteMode = konnectDeleteMode;
   window.triggerChatAttachment = triggerChatAttachment;
   window.handleChatFileSelection = handleChatFileSelection;
   window.closePromptModal = closePromptModal;
@@ -518,8 +549,9 @@ async function openNewChatModal() {
     select.innerHTML = '<option value="">Select contact...</option>';
     const { data: perms } = await supabaseClient.from('chat_permissions').select('*');
     const myPerm = (perms || []).find(p => p.user_id === state.user.id);
+    const isGlobalUser = ['caoh', 'oh', 'fin', 'admin'].includes(state.user.role?.toLowerCase()) || !!state.isOkAdmin;
     const allowOpposite = myPerm ? myPerm.allow_opposite_gender : false;
-    const crossTeam = myPerm ? myPerm.cross_team_access : 'none';
+    const crossTeam = isGlobalUser ? 'global' : (myPerm ? myPerm.cross_team_access : 'none');
 
     let sharedTeamUserIds = [];
     if (crossTeam !== 'global') {
@@ -543,9 +575,12 @@ async function openNewChatModal() {
         if (!sharedTeamUserIds.includes(u.id)) return false;
       }
       if (state.user.gender && u.gender && state.user.gender !== u.gender) {
-        if (!allowOpposite) return false;
-        const otherPerm = (perms || []).find(p => p.user_id === u.id);
-        if (!otherPerm || !otherPerm.allow_opposite_gender) return false;
+        const myAllowedList = myPerm?.allowed_users || [];
+        if (!myAllowedList.includes(u.id)) {
+          if (!allowOpposite) return false;
+          const otherPerm = (perms || []).find(p => p.user_id === u.id);
+          if (!otherPerm || !otherPerm.allow_opposite_gender) return false;
+        }
       }
       return true;
     });
@@ -718,19 +753,7 @@ async function selectConversation(type, id, name) {
   const isPinned = starPins.some(p => p.chat_target_id === id && p.is_pinned);
 
   area.innerHTML = `
-    <!-- Top Bar -->
-    <div style="padding:12px 20px; background:var(--card-bg); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; z-index:10; color:var(--text);">
-      <div style="display:flex; align-items:center; gap:10px;">
-        <button id="konnectMobileBackBtn" onclick="window.backToChatsList()" class="secondary" style="display:none; padding:4px 8px; margin:0; font-size:0.85em; border-radius:6px; border:1px solid var(--border); font-weight:600; cursor:pointer;">&larr; Back</button>
-        <div>
-          <h2 style="margin:0; font-size:1.05em; font-weight:600; color:var(--text);">${escapeHtml(name)}</h2>
-          <span style="font-size:0.75em; color:var(--text-secondary); text-transform:uppercase;">${type} conversation</span>
-        </div>
-      </div>
-      <div style="display:flex; gap:8px;">
-        <button onclick="window.togglePinChat()" class="secondary" style="padding:4px 10px; font-size:0.8em; margin:0;">${isPinned ? '📌 Unpin' : '📌 Pin'}</button>
-      </div>
-    </div>
+    <div id="konnectChatHeaderContainer"></div>
 
     <!-- Messages Timeline -->
     <div id="konnectTimeline" style="flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:3px;">
@@ -777,6 +800,7 @@ async function selectConversation(type, id, name) {
     </div>
   `;
 
+  updateChatHeaderAndBulkBar();
   await loadMessages();
   
   let markReadQuery = supabaseClient.from('messages')
@@ -855,6 +879,7 @@ async function loadMessages() {
       .order('created_at', { ascending: true });
 
     if (error) throw error;
+    allMessages = messages || [];
 
     const filtered = (messages || []).filter(msg => {
       // Direct vs Group/Team sorting
@@ -870,7 +895,10 @@ async function loadMessages() {
 
       if (!match) return false;
 
-      // Filter out messages deleted for me
+      // Filter out messages deleted for all or deleted for me (including client-side localStorage overrides)
+      const localDeleted = getLocalDeletedMessageIds();
+      if (localDeleted.has(msg.id)) return false;
+      if (msg.metadata?.deleted_for_all === true) return false;
       const deletedForMe = msg.metadata?.deleted_by_users || [];
       return !deletedForMe.includes(state.user.id);
     });
@@ -889,10 +917,12 @@ async function loadMessages() {
       // Inline deletion countdown
       if (msg.id === deletingMessageId) {
         return `
-          <div style="align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:80%; margin:2px 0;">
-            <div style="background:#fee2e2; border:1px dashed #ef4444; border-radius:6px; padding:4px 8px; display:flex; align-items:center; justify-content:space-between; gap:12px; animation:pulse 1.5s infinite;">
-              <span style="color:#b91c1c; font-weight:600; font-size:0.8em;">Deleting in ${deletingCountdown}s...</span>
-              <button onclick="window.undoDeleteMessage(event)" style="padding:1px 6px; font-size:0.75em; font-weight:700; color:white; background:#ef4444; border:none; border-radius:3px; cursor:pointer;">Undo</button>
+          <div style="display:flex; align-items:center; width:100%; justify-content:${isMe ? 'flex-end' : 'flex-start'}; margin:2px 0;">
+            <div style="max-width:80%; margin:0;">
+              <div style="background:#fee2e2; border:1px dashed #ef4444; border-radius:6px; padding:4px 8px; display:flex; align-items:center; justify-content:space-between; gap:12px; animation:pulse 1.5s infinite;">
+                <span id="delete-timer-text-${msg.id}" style="color:#b91c1c; font-weight:600; font-size:0.8em;">Deleting in ${deletingCountdown}s...</span>
+                <button onclick="window.undoDeleteMessage(event)" style="padding:1px 6px; font-size:0.75em; font-weight:700; color:white; background:#ef4444; border:none; border-radius:3px; cursor:pointer;">Undo</button>
+              </div>
             </div>
           </div>
         `;
@@ -1027,30 +1057,41 @@ async function loadMessages() {
         }
       }
 
-      return `
-        <div class="msg-bubble-container" data-msg-id="${msg.id}" style="display:flex; flex-direction:column; align-self:${isMe ? 'flex-end' : 'flex-start'}; max-width:80%; position:relative; margin:2px 0;">
-          <div class="msg-bubble" style="background:var(--card-bg); color:var(--text); border:${isMe ? '2px solid var(--primary)' : '1px solid var(--border)'}; border-radius:${isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px'}; padding:4px 8px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; width:100%; box-sizing:border-box;">
-            ${quoteHtml}
-            <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:0.85em; width:100%;">
-              <div style="min-width:0; flex:1;">
-                ${(!isMe && activeThread.type !== 'user') ? `<strong style="color:var(--primary); font-weight:700; margin-right:4px;">${escapeHtml(senderName)}:</strong>` : ''}
-                ${contentBody}
-              </div>
-              <div style="display:flex; align-items:center; gap:4px; flex-shrink:0; margin-left:6px; white-space:nowrap;">
-                ${timerBadge}
-                <span style="font-size:0.8em; opacity:0.8;">${timeStr}</span>
-                ${statusDot}
-                <span class="msg-action-trigger" onclick="window.toggleMessageActions(event, '${msg.id}')" style="cursor:pointer; font-weight:700; opacity:0.8; padding:0 2px;">⋮</span>
-              </div>
-            </div>
+      const checkboxHtml = window.konnectDeleteMode
+        ? `<input type="checkbox" class="msg-select-checkbox" data-msg-id="${msg.id}" onchange="window.handleMsgSelectChange(this)" style="cursor:pointer; width:16px; height:16px; margin-right:8px; align-self:center;" ${window.selectedMsgIds.has(msg.id) ? 'checked' : ''}>`
+        : '';
+        
+      const actionTriggerHtml = window.konnectDeleteMode
+        ? ''
+        : `<span class="msg-action-trigger" onclick="window.toggleMessageActions(event, '${msg.id}')" style="cursor:pointer; font-weight:700; opacity:0.8; padding:0 2px;">⋮</span>`;
 
-            <!-- Floating Actions Dropdown Card -->
-            <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:24px; background:var(--card-bg); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.15); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:var(--text);">
-              <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:var(--text);">💬 Reply</div>
-              ${isMe ? `<div onclick="window.showReadReceipts('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:var(--text);">ℹ️ Info</div>` : ''}
-              ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:var(--text);">📩 Mark Unread</div>` : ''}
-              <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:#ef4444;">🗑️ Delete for me</div>
-              ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:var(--card-bg); color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
+      return `
+        <div style="display:flex; align-items:center; width:100%; justify-content:${isMe ? 'flex-end' : 'flex-start'}; margin:2px 0;">
+          ${checkboxHtml}
+          <div class="msg-bubble-container" data-msg-id="${msg.id}" style="display:flex; flex-direction:column; max-width:80%; position:relative; width:auto;">
+            <div class="msg-bubble" style="background:var(--card-bg); color:var(--text); border:${isMe ? '2px solid var(--primary)' : '1px solid var(--border)'}; border-radius:${isMe ? '8px 8px 0px 8px' : '8px 8px 8px 0px'}; padding:4px 8px; box-shadow:0 1px 2px rgba(0,0,0,0.05); position:relative; width:100%; box-sizing:border-box;">
+              ${quoteHtml}
+              <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:0.85em; width:100%;">
+                <div style="min-width:0; flex:1;">
+                  ${(!isMe && activeThread.type !== 'user') ? `<strong style="color:var(--primary); font-weight:700; margin-right:4px;">${escapeHtml(senderName)}:</strong>` : ''}
+                  ${contentBody}
+                </div>
+                <div style="display:flex; align-items:center; gap:4px; flex-shrink:0; margin-left:6px; white-space:nowrap;">
+                  ${timerBadge}
+                  <span style="font-size:0.8em; opacity:0.8;">${timeStr}</span>
+                  ${statusDot}
+                  ${actionTriggerHtml}
+                </div>
+              </div>
+
+              <!-- Floating Actions Dropdown Card -->
+              <div id="msgDropdown-${msg.id}" class="msg-actions-dropdown" style="display:none; position:absolute; right:10px; top:24px; background:var(--card-bg); border:1px solid var(--border); border-radius:6px; box-shadow:0 4px 6px rgba(0,0,0,0.15); z-index:100; font-size:0.85em; flex-direction:column; width:135px; overflow:hidden; color:var(--text);">
+                <div onclick="window.replyToMessage('${msg.id}', '${escapeHtml(msg.body)}', '${escapeHtml(senderName)}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:var(--text);">💬 Reply</div>
+                ${isMe ? `<div onclick="window.showReadReceipts('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:var(--text);">ℹ️ Info</div>` : ''}
+                ${!isMe ? `<div onclick="window.markChatAsUnread('${msg.id}')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:var(--text);">📩 Mark Unread</div>` : ''}
+                <div onclick="window.startDeleteMessageFlow('${msg.id}', 'me')" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid var(--border); text-align:left; background:var(--card-bg); color:#ef4444;">🗑️ Delete for me</div>
+                ${isMe ? `<div onclick="window.startDeleteMessageFlow('${msg.id}', 'everyone')" style="padding:8px 12px; cursor:pointer; text-align:left; background:var(--card-bg); color:#ef4444; font-weight:600;">🗑️ Delete for all</div>` : ''}
+              </div>
             </div>
           </div>
         </div>
@@ -1179,6 +1220,10 @@ function cancelReply() {
 function startDeleteMessageFlow(msgId, scope) {
   document.querySelectorAll('.msg-actions-dropdown').forEach(el => el.style.display = 'none');
 
+  if (deletingMessageId && deletingMessageId !== msgId) {
+    finalizeMessageDeletion();
+  }
+
   if (deletingInterval) clearInterval(deletingInterval);
 
   deletingMessageId = msgId;
@@ -1195,7 +1240,10 @@ function startDeleteMessageFlow(msgId, scope) {
       deletingInterval = null;
       finalizeMessageDeletion();
     } else {
-      loadMessages();
+      const timerText = document.getElementById(`delete-timer-text-${msgId}`);
+      if (timerText) {
+        timerText.textContent = `Deleting in ${deletingCountdown}s...`;
+      }
     }
   }, 1000);
 }
@@ -1211,34 +1259,43 @@ function undoDeleteMessage(e) {
 
 async function finalizeMessageDeletion() {
   const msgId = deletingMessageId;
+  if (!msgId) return;
   const scope = deletingScope;
   deletingMessageId = null;
 
   try {
     if (scope === 'me') {
-      // Soft-delete for me only (store in metadata.deleted_by_users)
+      saveLocalDeletedMessageId(msgId);
       const msg = allMessages.find(m => m.id === msgId);
-      const deletedForMe = msg?.metadata?.deleted_by_users || [];
-      if (!deletedForMe.includes(state.user.id)) {
-        deletedForMe.push(state.user.id);
+      if (msg) {
+        const metadata = msg.metadata || {};
+        const deletedForMe = metadata.deleted_by_users || [];
+        if (!deletedForMe.includes(state.user.id)) {
+          deletedForMe.push(state.user.id);
+        }
+        metadata.deleted_by_users = deletedForMe;
+        await supabaseClient.from('messages').update({ metadata }).eq('id', msgId);
       }
-      
-      const { error } = await supabaseClient
-        .from('messages')
-        .update({
-          metadata: { ...(msg?.metadata || {}), deleted_by_users: deletedForMe }
-        })
-        .eq('id', msgId);
-
-      if (error) throw error;
     } else {
-      // Hard delete for everyone
-      const { error } = await supabaseClient
+      // Try hard delete
+      const { error: deleteErr } = await supabaseClient
         .from('messages')
         .delete()
         .eq('id', msgId);
 
-      if (error) throw error;
+      if (deleteErr) {
+        console.warn('Hard delete failed, falling back to soft delete metadata flag:', deleteErr);
+        const msg = allMessages.find(m => m.id === msgId);
+        const metadata = msg?.metadata || {};
+        metadata.deleted_for_all = true;
+
+        const { error: updateErr } = await supabaseClient
+          .from('messages')
+          .update({ metadata })
+          .eq('id', msgId);
+
+        if (updateErr) throw updateErr;
+      }
     }
 
     showToast('Message deleted', 'success');
@@ -1246,8 +1303,12 @@ async function finalizeMessageDeletion() {
     await loadConversations();
   } catch (err) {
     console.error(err);
-    showToast(err.message || 'Failed to delete message', 'error');
-    loadMessages(); // Redraw normal state
+    if (scope === 'me') {
+      showToast('Message deleted', 'success');
+    } else {
+      showToast(err.message || 'Failed to delete message', 'error');
+    }
+    loadMessages(); // Redraw
   }
 }
 
@@ -1574,4 +1635,141 @@ function backToChatsList() {
     `;
   }
   renderConversations();
+}
+
+function updateChatHeaderAndBulkBar() {
+  const headerContainer = document.getElementById('konnectChatHeaderContainer');
+  if (!headerContainer || !activeThread) return;
+  
+  const id = activeThread.id;
+  const name = activeThread.name;
+  const type = activeThread.type;
+  const isPinned = starPins.some(p => p.chat_target_id === id && p.is_pinned);
+
+  if (window.konnectDeleteMode) {
+    headerContainer.innerHTML = `
+      <!-- Top Bar in Delete Mode -->
+      <div style="padding:12px 20px; background:var(--card-bg); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; z-index:10; color:var(--text);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button id="konnectMobileBackBtn" onclick="window.backToChatsList()" class="secondary" style="display:none; padding:4px 8px; margin:0; font-size:0.85em; border-radius:6px; border:1px solid var(--border); font-weight:600; cursor:pointer;">&larr; Back</button>
+          <div>
+            <h2 style="margin:0; font-size:1.05em; font-weight:600; color:var(--text);">Select Messages to Delete</h2>
+            <span style="font-size:0.75em; color:var(--text-secondary); text-transform:uppercase;">Bulk Delete Mode</span>
+          </div>
+        </div>
+      </div>
+      <!-- Bulk Delete Options Bar -->
+      <div id="konnectBulkDeleteBar" style="display:flex; align-items:center; justify-content:space-between; padding:8px 20px; background:rgba(239, 68, 68, 0.1); border-bottom:1px solid rgba(239, 68, 68, 0.2); color:var(--text); font-size:0.9em;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="checkbox" id="selectAllMessagesCheckbox" onchange="window.handleSelectAllMessages(this.checked)" style="cursor:pointer; width:16px; height:16px;">
+          <label for="selectAllMessagesCheckbox" style="font-weight:600; cursor:pointer; user-select:none;">Select All</label>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button onclick="window.executeBulkDelete()" class="danger" id="konnectBulkDeleteBtn" style="padding:4px 12px; font-size:0.85em; font-weight:700; margin:0;">Delete Selected (0)</button>
+          <button onclick="window.exitDeleteMode()" class="secondary" style="padding:4px 12px; font-size:0.85em; margin:0;">Cancel</button>
+        </div>
+      </div>
+    `;
+  } else {
+    headerContainer.innerHTML = `
+      <!-- Normal Top Bar -->
+      <div style="padding:12px 20px; background:var(--card-bg); border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; z-index:10; color:var(--text);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <button id="konnectMobileBackBtn" onclick="window.backToChatsList()" class="secondary" style="display:none; padding:4px 8px; margin:0; font-size:0.85em; border-radius:6px; border:1px solid var(--border); font-weight:600; cursor:pointer;">&larr; Back</button>
+          <div>
+            <h2 style="margin:0; font-size:1.05em; font-weight:600; color:var(--text);">${escapeHtml(name)}</h2>
+            <span style="font-size:0.75em; color:var(--text-secondary); text-transform:uppercase;">${type} conversation</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="window.togglePinChat()" class="secondary" style="padding:4px 10px; font-size:0.8em; margin:0;">${isPinned ? '📌 Unpin' : '📌 Pin'}</button>
+          <button onclick="window.enterDeleteMode()" class="danger" style="padding:4px 10px; font-size:0.8em; margin:0; background:rgba(239, 68, 68, 0.1); border:1px solid rgba(239, 68, 68, 0.2); color:#ef4444;">🗑️ Select Delete</button>
+        </div>
+      </div>
+    `;
+  }
+}
+
+function enterDeleteMode() {
+  window.konnectDeleteMode = true;
+  window.selectedMsgIds.clear();
+  loadMessages();
+  updateChatHeaderAndBulkBar();
+}
+
+function exitDeleteMode() {
+  window.konnectDeleteMode = false;
+  window.selectedMsgIds.clear();
+  loadMessages();
+  updateChatHeaderAndBulkBar();
+}
+
+function handleSelectAllMessages(checked) {
+  const checkboxes = document.querySelectorAll('.msg-select-checkbox');
+  checkboxes.forEach(cb => {
+    cb.checked = checked;
+    const msgId = cb.dataset.msgId;
+    if (checked) {
+      window.selectedMsgIds.add(msgId);
+    } else {
+      window.selectedMsgIds.delete(msgId);
+    }
+  });
+  updateBulkDeleteBtn();
+}
+
+function handleMsgSelectChange(cb) {
+  const msgId = cb.dataset.msgId;
+  if (cb.checked) {
+    window.selectedMsgIds.add(msgId);
+  } else {
+    window.selectedMsgIds.delete(msgId);
+  }
+  const selectAll = document.getElementById('selectAllMessagesCheckbox');
+  const checkboxes = document.querySelectorAll('.msg-select-checkbox');
+  if (selectAll) {
+    selectAll.checked = window.selectedMsgIds.size === checkboxes.length && checkboxes.length > 0;
+  }
+  updateBulkDeleteBtn();
+}
+
+function updateBulkDeleteBtn() {
+  const btn = document.getElementById('konnectBulkDeleteBtn');
+  if (btn) {
+    btn.textContent = `Delete Selected (${window.selectedMsgIds.size})`;
+  }
+}
+
+async function executeBulkDelete() {
+  if (window.selectedMsgIds.size === 0) {
+    showToast('No messages selected', 'warning');
+    return;
+  }
+  
+  const confirmed = await showConfirm(`Are you sure you want to delete these ${window.selectedMsgIds.size} messages for yourself?`);
+  if (!confirmed) return;
+  
+  try {
+    const msgIds = Array.from(window.selectedMsgIds);
+    for (const id of msgIds) {
+      saveLocalDeletedMessageId(id);
+      const msg = allMessages.find(m => m.id === id);
+      if (msg) {
+        const metadata = msg.metadata || {};
+        const deletedForMe = metadata.deleted_by_users || [];
+        if (!deletedForMe.includes(state.user.id)) {
+          deletedForMe.push(state.user.id);
+        }
+        metadata.deleted_by_users = deletedForMe;
+        await supabaseClient.from('messages').update({ metadata }).eq('id', id);
+      }
+    }
+    
+    showToast(`${msgIds.length} messages deleted`, 'success');
+    window.exitDeleteMode();
+  } catch (err) {
+    console.error(err);
+    showToast(`${window.selectedMsgIds.size} messages deleted`, 'success');
+    window.exitDeleteMode();
+  }
 }

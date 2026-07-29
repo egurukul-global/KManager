@@ -17,7 +17,8 @@ export function getBudgetCategoryOptions(budget, teamCategories = []) {
   return lines.map(line => {
     const label = categoryDisplayName(line);
     const match = teamCategories.find(c =>
-      c.name === line.category || c.name === label
+      (c.name || '').toLowerCase() === (line.category || '').toLowerCase() || 
+      (c.name || '').toLowerCase() === label.toLowerCase()
     );
     return {
       value: match?.id || `line:${line.category}:${line.subcategory || ''}`,

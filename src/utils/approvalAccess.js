@@ -16,9 +16,11 @@ export function orgRoleToApprovalCodes(orgRole) {
   const codes = new Set();
   if (role === 'admin') codes.add('SYS');
   // Org titles map 1:1 to their approval step — not earlier/later steps
-  if (role === 'caoh') codes.add('CAO');
+  if (role === 'caoh' || role === 'cao') codes.add('CAO');
   if (role === 'oh') codes.add('FIH');
   if (role === 'ceo') codes.add('CEO');
+  if (role === 'fin') codes.add('FIN');
+  if (role === 'fip') codes.add('FIP');
   return codes;
 }
 

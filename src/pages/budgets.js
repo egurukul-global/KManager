@@ -2297,23 +2297,240 @@ async function markBudgetReceived(budgetId) {
     return;
   }
 
-  const ok = await new Promise(resolve => {
-    showConfirm('Mark funds as received in your buckets?', () => resolve(true), () => resolve(false));
-  });
-  if (!ok) return;
-
-  try {
-    const { error } = await supabaseClient
-      .from('budget_plans')
-      .update({ status: 'received' })
-      .eq('id', budgetId);
-
-    if (error) throw error;
-    showToast('Budget marked as RECEIVED. Team can now record expenses!', 'success');
-    await initViewBudgetsPage();
-  } catch (err) {
-    showToast(err.message || 'Action failed', 'error');
+  const teamId = budget.team_id;
+  const bucketsResult = await sbSelect('buckets', { teamId, orderBy: 'name', ascending: true });
+  const activeBuckets = (bucketsResult.data || []).filter(b => !b.is_deleted);
+  
+  if (activeBuckets.length === 0) {
+    showToast('No active buckets found for this team. Please create a bucket first.', 'warning');
+    return;
   }
+
+  const ratesResult = await sbSelect('exchange_rates', { teamId, orderBy: 'date', ascending: false });
+  const exchangeRates = (ratesResult.data || []).filter(r => !r.is_deleted);
+
+  const existing = document.getElementById('receiveFundsModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'receiveFundsModal';
+  modal.className = 'modal active';
+  modal.style.display = 'flex';
+
+  const defaultAmount = budget.paid_amount || budget.total_amount || 0;
+
+  const categoryOptions = (budget.categories || []).map(c => {
+    const label = c.name || c.category || '';
+    const sub = c.subcategory ? ` — ${c.subcategory}` : '';
+    const fullLabel = `${label}${sub}`;
+    return `<option value="${fullLabel}">${fullLabel}</option>`;
+  }).join('');
+
+  let bucketOptions = activeBuckets.map(b => `<option value="${b.id}">${b.name} (${b.currency || 'USD'})</option>`).join('');
+
+  modal.innerHTML = `
+    <div class="modal-content small" style="max-width: 480px; padding: 20px;">
+      <h3>📥 Receive Funds & Allocate to Bucket</h3>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
+        Allocate funds for budget: <strong>${budget.name}</strong> (Paid: $${defaultAmount.toFixed(2)} USD)
+      </p>
+      
+      <div class="form-stack" style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="form-group">
+          <label style="font-weight: 600; font-size: 0.85rem;">Select Bucket</label>
+          <select id="recvBucketSelect" style="width: 100%;" required>
+            ${bucketOptions}
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label style="font-weight: 600; font-size: 0.85rem;">Amount to Receive (USD)</label>
+          <input type="number" id="recvAmountUsd" step="0.01" value="${defaultAmount}" style="width: 100%;" required>
+        </div>
+
+        <div id="recvRateGroup" style="display: none; flex-direction: column; gap: 4px;">
+          <div style="display: flex; gap: 10px;">
+            <div class="form-group" style="flex: 1;">
+              <label style="font-size: 0.75rem; color: var(--text-secondary);">Exchange Rate (1 USD = ?)</label>
+              <input type="number" id="recvExchangeRate" step="any" style="width: 100%;">
+            </div>
+            <div class="form-group" style="flex: 1;">
+              <label style="font-size: 0.75rem; color: var(--text-secondary);">Local Amount</label>
+              <input type="number" id="recvLocalAmount" readonly style="width: 100%; background: #f3f4f6;">
+            </div>
+          </div>
+        </div>
+
+        <!-- Fee Auto-Log Section -->
+        <div id="recvFeeSection" style="display: none; flex-direction: column; gap: 8px; border-top: 1px dashed var(--border); padding-top: 10px; margin-top: 6px;">
+          <p style="margin: 0; font-size: 0.8rem; color: var(--danger); font-weight: 600;">
+            ⚠️ Fee Detected: $<span id="recvFeeLabel">0.00</span> USD will be logged as transaction expense.
+          </p>
+          <div class="form-group">
+            <label style="font-size: 0.75rem; color: var(--text-secondary);">Expense Category for Fee</label>
+            <select id="recvFeeCategorySelect" style="width: 100%;">
+              ${categoryOptions || '<option value="">(No categories on budget)</option>'}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="btn-group" style="margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="secondary" onclick="document.getElementById('receiveFundsModal').remove()">Cancel</button>
+        <button type="button" class="success" id="recvConfirmBtn">Confirm & Allocate</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const bucketSelect = modal.querySelector('#recvBucketSelect');
+  const amountInput = modal.querySelector('#recvAmountUsd');
+  const rateGroup = modal.querySelector('#recvRateGroup');
+  const rateInput = modal.querySelector('#recvExchangeRate');
+  const localInput = modal.querySelector('#recvLocalAmount');
+  const feeSection = modal.querySelector('#recvFeeSection');
+  const feeLabel = modal.querySelector('#recvFeeLabel');
+  const feeCategorySelect = modal.querySelector('#recvFeeCategorySelect');
+  const confirmBtn = modal.querySelector('#recvConfirmBtn');
+
+  function updateMath() {
+    const bucketId = bucketSelect.value;
+    const bucket = activeBuckets.find(b => b.id === bucketId);
+    const currency = bucket?.currency || 'USD';
+    const amountUsd = parseFloat(amountInput.value) || 0;
+
+    const diff = defaultAmount - amountUsd;
+    if (diff > 0.009) {
+      feeSection.style.display = 'flex';
+      feeLabel.textContent = diff.toFixed(2);
+    } else {
+      feeSection.style.display = 'none';
+    }
+
+    if (currency === 'USD') {
+      rateGroup.style.display = 'none';
+      rateInput.value = '1';
+      localInput.value = amountUsd.toFixed(2);
+    } else {
+      rateGroup.style.display = 'flex';
+      if (!rateInput.value || rateInput.value === '1') {
+        const rate = getLatestUsdRate(exchangeRates, currency) || 1;
+        rateInput.value = rateForInput(rate);
+      }
+      const rate = parseFloat(rateInput.value) || 1;
+      localInput.value = (amountUsd * rate).toFixed(2);
+    }
+  }
+
+  bucketSelect.onchange = () => {
+    rateInput.value = '';
+    updateMath();
+  };
+  amountInput.oninput = updateMath;
+  rateInput.oninput = updateMath;
+
+  updateMath();
+
+  confirmBtn.onclick = async () => {
+    const bucketId = bucketSelect.value;
+    const bucket = activeBuckets.find(b => b.id === bucketId);
+    const amountUsd = parseFloat(amountInput.value) || 0;
+    const rate = parseFloat(rateInput.value) || 1;
+    const localAmount = parseFloat(localInput.value) || 0;
+
+    if (amountUsd <= 0) {
+      showToast('Amount must be greater than zero', 'warning');
+      return;
+    }
+    if (amountUsd - defaultAmount > 0.01) {
+      showToast(`Cannot receive more than the paid amount of $${defaultAmount.toFixed(2)} USD.`, 'warning');
+      return;
+    }
+
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Allocating...';
+
+    try {
+      const diff = defaultAmount - amountUsd;
+      if (diff > 0.009) {
+        const feeCategory = feeCategorySelect.value;
+        let matchedCategoryId = null;
+        if (feeCategory) {
+          const catResult = await sbSelect('categories', { teamId, orderBy: 'name' });
+          const teamCategories = catResult.data || [];
+          const match = teamCategories.find(tc => {
+            const l = tc.name || '';
+            return feeCategory.startsWith(l);
+          });
+          if (match) matchedCategoryId = match.id;
+        }
+
+        const expensePayload = {
+          id: crypto.randomUUID(),
+          team_id: teamId,
+          date: new Date().toISOString().split('T')[0],
+          item: 'Bank/Exchange Fee',
+          description: `Auto-logged fee for budget funding mismatch (Paid: $${defaultAmount.toFixed(2)} USD vs Received: $${amountUsd.toFixed(2)} USD)`,
+          budget_id: budget.id,
+          bucket_id: bucketId,
+          local_amount: roundUsd(diff * rate),
+          currency: bucket.currency || 'USD',
+          rate: rate,
+          usd_amount: roundUsd(diff),
+          total_usd: roundUsd(diff),
+          status: 'recorded',
+          payment_status: 'paid',
+          balance_impact: false,
+          created_by: state.user?.id,
+          is_deleted: false,
+          vendor_info: feeCategory ? `budget_cat:${feeCategory}` : '',
+          category_id: matchedCategoryId,
+          updated_at: new Date().toISOString(),
+          created_at: new Date().toISOString()
+        };
+
+        const expResult = await sbInsert('expenses', expensePayload);
+        if (expResult?.error) throw expResult.error;
+      }
+
+      const incomePayload = {
+        id: crypto.randomUUID(),
+        team_id: teamId,
+        date: new Date().toISOString().split('T')[0],
+        payment_from: 'KMOF / Budget Funding',
+        bucket_id: bucketId,
+        payment_bucket: bucket.name,
+        amount_usd: amountUsd,
+        currency: bucket.currency || 'USD',
+        exchange_rate: rate,
+        local_amount: localAmount,
+        description: `Received funding for budget: ${budget.name}`,
+        budget_allocations: [{ budget_id: budget.id, amount_usd: amountUsd }],
+        created_by: state.user?.id,
+        is_deleted: false,
+        updated_at: new Date().toISOString()
+      };
+
+      const incResult = await sbInsert('income', incomePayload);
+      if (incResult?.error) throw incResult.error;
+
+      const { error: updErr } = await supabaseClient
+        .from('budget_plans')
+        .update({ status: 'received' })
+        .eq('id', budget.id);
+
+      if (updErr) throw updErr;
+
+      showToast('Funds received and allocated to bucket successfully!', 'success');
+      modal.remove();
+      await initViewBudgetsPage();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to allocate funds', 'error');
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm & Allocate';
+    }
+  };
 }
 
 window.viewBudgetDetail = function(budgetId) {

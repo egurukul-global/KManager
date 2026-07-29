@@ -80,12 +80,13 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
   const isDark = document.body.classList.contains('dark');
 
   return `
-    <!-- Global Ambient Glowing Spheres -->
-    <div class="ok-glow ok-glow-1"></div>
-    <div class="ok-glow ok-glow-2"></div>
-    <div class="ok-glow ok-glow-3"></div>
+    <div class="ok-shell-theme ${isDark ? 'dark' : 'light'}" id="okShellThemeWrapper">
+      <!-- Global Ambient Glowing Spheres -->
+      <div class="ok-glow ok-glow-1"></div>
+      <div class="ok-glow ok-glow-2"></div>
+      <div class="ok-glow ok-glow-3"></div>
 
-    <div class="mobile-header" style="height: 56px; border-bottom: 2px solid var(--border); display: flex; align-items: center; padding: 0 15px; background: var(--header-bg); color: var(--text); position: fixed; top: 0; left: 0; right: 0; z-index: 999;">
+      <div class="mobile-header" style="height: 56px; border-bottom: 2px solid var(--border); align-items: center; padding: 0 15px; background: var(--header-bg); color: var(--text); position: fixed; top: 0; left: 0; right: 0; z-index: 999;">
       <button type="button" class="menu-toggle" id="okMenuToggle" style="background: none; border: none; color: var(--text); font-size: 1.4rem; cursor: pointer;">☰</button>
       <h1 style="flex: 1; text-align: center; font-size: 1.1rem; font-weight: 700; color: var(--text); margin: 0;">${escapeHtml(title)}</h1>
       <img src="${swamijiImg}" alt="" class="header-logo" width="36" height="36" style="border-radius: 50%;">
@@ -94,13 +95,13 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
     <div class="overlay" id="okOverlay"></div>
 
     <div class="app-shell active">
-      <aside class="sidebar ${isDark ? 'glass-panel-dark' : 'glass-panel-light'}" id="sidebar" style="color: var(--text); display: flex; flex-direction: column; border-radius: 0; border: none; border-right: 1px solid var(--border); height: 100vh;">
+      <aside class="sidebar" id="sidebar" style="display: flex; flex-direction: column;">
         
         <!-- Logo & Branding -->
-        <div style="display: flex; align-items: center; gap: 12px; padding: 20px; border-bottom: 1px solid var(--border);">
-          <div style="width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 1.25rem; box-shadow: 0 4px 10px rgba(0,0,0,0.15)">OK</div>
+        <div style="display: flex; align-items: center; gap: 12px; padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+          <div style="width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 1.4rem; box-shadow: 0 4px 10px rgba(0,0,0,0.15)">🔱</div>
           <div>
-            <h1 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: var(--text); line-height: 1.2;">OneKailasa</h1>
+            <h1 style="font-size: 1.1rem; font-weight: 700; margin: 0; color: inherit; line-height: 1.2;">OneKailasa</h1>
             <p style="font-size: 0.75rem; color: var(--text-secondary); margin: 0;">Monastery Operations</p>
           </div>
         </div>
@@ -112,7 +113,7 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
               ${initials}
             </div>
             <div style="flex: 1; min-width: 0;">
-              <p style="font-size: 0.85rem; font-weight: 600; color: var(--text); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(displayName)}</p>
+              <p style="font-size: 0.85rem; font-weight: 600; color: inherit; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(displayName)}</p>
               <p style="font-size: 0.75rem; color: var(--text-secondary); margin: 0;">Adheenavasi</p>
             </div>
           </div>
@@ -133,7 +134,7 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
         </nav>
 
         <!-- Sidebar Footer -->
-        <div style="padding: 15px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px;">
+        <div style="padding: 15px; border-top: 1px solid rgba(255,255,255,0.08); display: flex; flex-direction: column; gap: 10px;">
           <!-- Sign Out Button -->
           <button type="button" onclick="window.handleLogout()" class="card-hover" style="width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--radius-sm); background: rgba(239, 68, 68, 0.08); color: var(--danger); cursor: pointer; font-size: 0.85rem; font-weight: 600; text-align: left;">
             <i class="fa-solid fa-arrow-right-from-bracket" style="width: 16px; text-align: center;"></i>
@@ -142,9 +143,9 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
         </div>
       </aside>
 
-      <div class="main-area" style="color: var(--text); display: flex; flex-direction: column; min-height: 100vh;">
+      <div class="main-area" style="color: var(--text); display: flex; flex-direction: column;">
         <!-- Sticky Glass Header -->
-        <header class="app-topbar ${isDark ? 'glass-panel-dark' : 'glass-panel-light'} fade-in" style="position: sticky; top: 0; z-index: 100; border-radius: 0; border: none; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 15px 30px; height: 70px;">
+        <header class="app-topbar glass fade-in" style="position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; padding: 15px 30px; height: 70px;">
           <div>
             <h2 style="font-size: 1.2rem; font-weight: 700; color: var(--text); margin: 0;">${escapeHtml(title)}</h2>
           </div>
@@ -161,7 +162,7 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
           </div>
         </header>
 
-        <main class="main-content fade-in" id="mainContent" style="padding: 30px; position: relative; z-index: 1;">
+        <main class="main-content fade-in" id="mainContent" style="padding: 30px;">
           ${mainHtml}
         </main>
       </div>
@@ -188,6 +189,7 @@ export function renderOkShell({ activePath, title, mainHtml, bottomTab = 'home' 
         <span class="bottom-nav-label">Menu</span>
       </button>
     </nav>
+  </div>
   `;
 }
 
@@ -209,6 +211,16 @@ export function initOkShell() {
   window.toggleTheme = function() {
     const isDark = document.body.classList.toggle('dark');
     localStorage.setItem('ok-theme', isDark ? 'dark' : 'light');
+    const wrapper = document.getElementById('okShellThemeWrapper');
+    if (wrapper) {
+      if (isDark) {
+        wrapper.classList.remove('light');
+        wrapper.classList.add('dark');
+      } else {
+        wrapper.classList.remove('dark');
+        wrapper.classList.add('light');
+      }
+    }
     const moon = document.getElementById('themeMoonIcon');
     const sun = document.getElementById('themeSunIcon');
     const lbl = document.getElementById('themeToggleLabel');

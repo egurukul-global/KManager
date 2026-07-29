@@ -488,17 +488,24 @@ function renderKonnectPage() {
 
 function renderAppShell() {
   const displayName = getDisplayName(state.user);
+  const isDark = document.body.classList.contains('dark');
   app.innerHTML = `
-    <div class="mobile-header">
-      <button class="menu-toggle" onclick="window.toggleSidebar()">☰</button>
-      <h1>Finance</h1>
-      <img src="${swamijiImg}" alt="" class="header-logo" width="36" height="36">
-    </div>
+    <div class="ok-shell-theme ${isDark ? 'dark' : 'light'}" id="okShellThemeWrapper">
+      <!-- Global Ambient Glowing Spheres -->
+      <div class="ok-glow ok-glow-1"></div>
+      <div class="ok-glow ok-glow-2"></div>
+      <div class="ok-glow ok-glow-3"></div>
 
-    <div class="overlay" onclick="window.toggleSidebar()"></div>
+      <div class="mobile-header">
+        <button class="menu-toggle" onclick="window.toggleSidebar()">☰</button>
+        <h1>Finance</h1>
+        <img src="${swamijiImg}" alt="" class="header-logo" width="36" height="36">
+      </div>
 
-    <div class="app-shell active">
-      <aside class="sidebar" id="sidebar">
+      <div class="overlay" onclick="window.toggleSidebar()"></div>
+
+      <div class="app-shell active">
+        <aside class="sidebar" id="sidebar">
         <div class="sidebar-user">
           <div class="sidebar-user-text">
             <span class="sidebar-app-title">Finance</span>
@@ -684,6 +691,7 @@ function renderAppShell() {
         <span class="bottom-nav-label">Menu</span>
       </button>
     </nav>
+  </div>
   `;
 
   // Expose functions to window for onclick handlers

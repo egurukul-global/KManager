@@ -53,28 +53,28 @@
 }
 
 body.dark {
-  --primary: #3b82f6;
-  --primary-dark: #1d4ed8;
-  --primary-light: #60a5fa;
-  --secondary: #1e3a8a;
-  --accent-gold: #fbbf24;
-  --accent-gold-light: #fde68a;
-  --accent-gold-dark: #d97706;
+  --primary: #D4AF37; /* Gold */
+  --primary-dark: #B8922A;
+  --primary-light: #F0D878;
+  --secondary: #5a000d; /* Dark Burgundy */
+  --accent-gold: #D4AF37;
+  --accent-gold-light: #F0D878;
+  --accent-gold-dark: #B8922A;
   --success: #22c55e;
   --danger: #ef4444;
   --warning: #f59e0b;
   --info: #38bdf8;
-  --bg: #0f172a;
-  --bg-secondary: #1e293b;
-  --card-bg: #1e293b;
+  --bg: #1a0003; /* Monastic dark */
+  --bg-secondary: rgba(25, 0, 5, 0.45);
+  --card-bg: rgba(25, 0, 5, 0.55);
   --text: #f1f5f9;
   --text-secondary: #cbd5e1;
   --text-muted: #94a3b8;
-  --border: #334155;
-  --sidebar-bg: #1e293b;
-  --header-bg: #1e293b;
-  --shadow: 0 4px 20px rgba(0,0,0,0.4);
-  --shadow-hover: 0 10px 40px -10px rgba(0,0,0,0.6);
+  --border: rgba(212, 175, 55, 0.3);
+  --sidebar-bg: rgba(20, 0, 4, 0.6);
+  --header-bg: rgba(20, 0, 4, 0.6);
+  --shadow: 0 4px 20px rgba(0,0,0,0.6);
+  --shadow-hover: 0 10px 40px -10px rgba(0,0,0,0.8);
 }
 
 /* ===== GLOBAL SCROLLBARS ===== */
@@ -2974,5 +2974,252 @@ body.dark .empty-state {
 body.dark .status-total {
   background: var(--bg-secondary) !important;
   color: var(--text) !important;
+}
+
+/* ===== MONASTIC DESIGN SYSTEM FOR ONEKAILASA ===== */
+.ok-shell-theme {
+  --bg-dark-red: #8B0000;
+  --bg-cream: #FAF4EC;
+  --brand-saffron: #FFA500;
+  --brand-gold: #D4AF37;
+  
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.ok-shell-theme.dark {
+  background: radial-gradient(circle at 50% 20%, #8B0000 0%, #3a0008 100%) !important;
+  color: #ffffff !important;
+  --primary: var(--brand-gold) !important;
+  --primary-dark: #b8922a !important;
+  --primary-light: #fde68a !important;
+  --secondary: #5a000d !important;
+  --accent-gold: var(--brand-gold) !important;
+  --bg: radial-gradient(circle at 50% 20%, #8B0000 0%, #3a0008 100%) !important;
+  --card-bg: rgba(25, 0, 5, 0.45) !important;
+  --bg-secondary: rgba(25, 0, 5, 0.3) !important;
+  --border: rgba(212, 175, 55, 0.3) !important;
+}
+.ok-shell-theme.light {
+  background: radial-gradient(circle at 50% 20%, var(--bg-cream) 0%, #F3E5D8 100%) !important;
+  color: var(--bg-dark-red) !important;
+  --primary: var(--brand-saffron) !important;
+  --primary-dark: #cc8400 !important;
+  --primary-light: #ffc966 !important;
+  --secondary: #FAF4EC !important;
+  --accent-gold: var(--brand-gold) !important;
+  --bg: radial-gradient(circle at 50% 20%, var(--bg-cream) 0%, #F3E5D8 100%) !important;
+  --card-bg: rgba(255, 255, 255, 0.55) !important;
+  --bg-secondary: rgba(255, 255, 255, 0.4) !important;
+  --border: rgba(255, 165, 0, 0.35) !important;
+}
+
+/* Sidebar styling for Monastic theme */
+.ok-shell-theme.dark .sidebar {
+  background: rgba(25, 0, 5, 0.45) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-right: 1px solid rgba(212, 175, 55, 0.3) !important;
+  color: #ffffff !important;
+}
+.ok-shell-theme.light .sidebar {
+  background: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-right: 1px solid rgba(255, 165, 0, 0.35) !important;
+  color: var(--bg-dark-red) !important;
+}
+
+/* Sidebar menu items */
+.ok-shell-theme.dark .sidebar-item {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+.ok-shell-theme.dark .sidebar-item.active,
+.ok-shell-theme.dark .sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: var(--brand-gold) !important;
+  border-left-color: var(--brand-gold) !important;
+}
+
+.ok-shell-theme.light .sidebar-item {
+  color: var(--bg-dark-red) !important;
+  opacity: 0.85;
+}
+.ok-shell-theme.light .sidebar-item.active,
+.ok-shell-theme.light .sidebar-item:hover {
+  background: rgba(139, 0, 0, 0.05) !important;
+  color: var(--bg-dark-red) !important;
+  border-left-color: var(--bg-dark-red) !important;
+  opacity: 1;
+}
+
+/* Top sticky header bar */
+.ok-shell-theme.dark .app-topbar {
+  background: rgba(20, 0, 4, 0.45) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.3) !important;
+  color: #ffffff !important;
+}
+.ok-shell-theme.light .app-topbar {
+  background: rgba(255, 255, 255, 0.65) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid rgba(255, 165, 0, 0.35) !important;
+  color: var(--bg-dark-red) !important;
+}
+
+/* General button theme overrides under ok-shell-theme */
+.ok-shell-theme.dark .btn-primary,
+.ok-shell-theme.dark button.primary {
+  background: var(--brand-gold) !important;
+  color: #1a0003 !important;
+}
+.ok-shell-theme.light .btn-primary,
+.ok-shell-theme.light button.primary {
+  background: var(--brand-saffron) !important;
+  color: #ffffff !important;
+}
+
+/* Sidebar user & buttons color overrides for light mode */
+.ok-shell-theme.light .sidebar-user {
+  border-bottom-color: rgba(139, 0, 0, 0.1) !important;
+}
+.ok-shell-theme.light .sidebar-app-title {
+  color: var(--bg-dark-red) !important;
+}
+.ok-shell-theme.light .sidebar-display-name {
+  color: var(--bg-dark-red) !important;
+  opacity: 0.9 !important;
+}
+.ok-shell-theme.light .sidebar-top-row {
+  border-bottom-color: rgba(139, 0, 0, 0.1) !important;
+}
+.ok-shell-theme.light .sidebar-top-btn {
+  background: rgba(139, 0, 0, 0.05) !important;
+  border-color: rgba(139, 0, 0, 0.15) !important;
+  color: var(--bg-dark-red) !important;
+}
+.ok-shell-theme.light .sidebar-top-btn:hover {
+  background: rgba(139, 0, 0, 0.1) !important;
+}
+.ok-shell-theme.light button.sidebar-top-btn[onclick*="handleLogout"] {
+  background: rgba(220, 53, 69, 0.1) !important;
+  border-color: rgba(220, 53, 69, 0.2) !important;
+  color: #b91c1c !important;
+}
+.ok-shell-theme.light .team-switcher {
+  border-bottom-color: rgba(139, 0, 0, 0.1) !important;
+}
+.ok-shell-theme.light .team-switcher select {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: rgba(139, 0, 0, 0.15) !important;
+  color: var(--bg-dark-red) !important;
+}
+.ok-shell-theme.light .team-switcher select option {
+  background: var(--bg-cream) !important;
+  color: var(--bg-dark-red) !important;
+}
+.ok-shell-theme.light .sidebar-access-badge {
+  background: rgba(139, 0, 0, 0.1) !important;
+  color: var(--bg-dark-red) !important;
+}
+
+/* Thicker, high-contrast scrollbars for OneKailasa */
+.ok-shell-theme ::-webkit-scrollbar {
+  width: 10px !important;
+  height: 10px !important;
+}
+.ok-shell-theme ::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05) !important;
+}
+.ok-shell-theme.dark ::-webkit-scrollbar-thumb {
+  background: rgba(212, 175, 55, 0.4) !important;
+  border-radius: 5px !important;
+}
+.ok-shell-theme.light ::-webkit-scrollbar-thumb {
+  background: rgba(139, 0, 0, 0.3) !important;
+  border-radius: 5px !important;
+}
+.ok-shell-theme ::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 175, 55, 0.6) !important;
+}
+
+/* ===== GLOBAL MODAL COLOR SYSTEM (MONASTIC STYLE) ===== */
+body:not(.dark) .modal-content {
+  background: #FAF4EC !important; /* Cream */
+  border: 1px solid rgba(255, 165, 0, 0.35) !important;
+  color: #8B0000 !important; /* Dark Red */
+  box-shadow: 0 12px 40px rgba(139, 0, 0, 0.15) !important;
+}
+body:not(.dark) .modal-content h1,
+body:not(.dark) .modal-content h2,
+body:not(.dark) .modal-content h3,
+body:not(.dark) .modal-content h4,
+body:not(.dark) .modal-content label {
+  color: #8B0000 !important;
+}
+body:not(.dark) .modal-content input,
+body:not(.dark) .modal-content select,
+body:not(.dark) .modal-content textarea {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border: 1px solid rgba(255, 165, 0, 0.35) !important;
+  color: #8B0000 !important;
+}
+body:not(.dark) .modal-content button.secondary {
+  background: rgba(139, 0, 0, 0.05) !important;
+  border: 1px solid rgba(139, 0, 0, 0.2) !important;
+  color: #8B0000 !important;
+}
+body:not(.dark) .modal-content button.primary {
+  background: #FFA500 !important; /* Saffron */
+  color: #ffffff !important;
+}
+
+body.dark .modal-content {
+  background: rgba(30, 0, 5, 0.95) !important; /* Monastic Dark Red */
+  backdrop-filter: blur(25px) !important;
+  -webkit-backdrop-filter: blur(25px) !important;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6) !important;
+}
+body.dark .modal-content h1,
+body.dark .modal-content h2,
+body.dark .modal-content h3,
+body.dark .modal-content h4,
+body.dark .modal-content label {
+  color: #ffffff !important;
+}
+body.dark .modal-content input,
+body.dark .modal-content select,
+body.dark .modal-content textarea {
+  background: rgba(25, 0, 5, 0.6) !important;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  color: #ffffff !important;
+}
+body.dark .modal-content button.secondary {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(212, 175, 55, 0.25) !important;
+  color: #ffffff !important;
+}
+body.dark .modal-content button.primary {
+  background: var(--brand-gold, #D4AF37) !important;
+  color: #1a0003 !important;
+}
+
+/* Kanban column background overrides */
+.ok-shell-theme.dark .kanban-column {
+  background: rgba(25, 0, 5, 0.45) !important;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+}
+.ok-shell-theme.light .kanban-column {
+  background: rgba(255, 255, 255, 0.5) !important;
+  border: 1px solid rgba(255, 165, 0, 0.25) !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
 }
 

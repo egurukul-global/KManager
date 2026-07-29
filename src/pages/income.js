@@ -154,11 +154,11 @@ export function getRecordIncomePage() {
             <div class="modal-field-card">
               <div class="modal-field-row modal-field-row--stacked">
                 <label for="allocModalBudget">Budget Plan</label>
-                <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
+                <select id="allocModalBudget"><option value="">Select Budget Plan</option></select>
               </div>
               <div class="modal-field-row">
                 <label for="allocModalAmount">Amount (USD)</label>
-                <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00" required>
+                <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00">
               </div>
             </div>
             <div class="btn-group">
@@ -380,7 +380,10 @@ window.openAllocationEntryModal = async function(forEdit = false) {
   const plans = await getBudgetPlansForTeam();
   select.innerHTML = '<option value="">Select Budget Plan</option>';
   plans.forEach(plan => {
-    select.innerHTML += `<option value="${plan.id}">${plan.name} (${getBudgetStatus(plan)})</option>`;
+    const status = getBudgetStatus(plan);
+    if (status === 'approved' || status === 'paid' || status === 'received') {
+      select.innerHTML += `<option value="${plan.id}">${plan.name} (${status})</option>`;
+    }
   });
   if (amount) amount.value = '';
   modal.classList.add('active');
@@ -652,11 +655,11 @@ export function getIncomeManagerPage() {
         <div class="modal-field-card">
           <div class="modal-field-row modal-field-row--stacked">
             <label for="allocModalBudget">Budget Plan</label>
-            <select id="allocModalBudget" required><option value="">Select Budget Plan</option></select>
+            <select id="allocModalBudget"><option value="">Select Budget Plan</option></select>
           </div>
           <div class="modal-field-row">
             <label for="allocModalAmount">Amount (USD)</label>
-            <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00" required>
+            <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00">
           </div>
         </div>
         <div class="btn-group">
