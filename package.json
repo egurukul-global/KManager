@@ -4,7 +4,7 @@
   "description": "Kailasa Manager - NGO Finance Management System",
   "type": "module",
   "scripts": {
-    "dev": "node node_modules/vite/bin/vite.js",
+    "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
     "preview": "node node_modules/vite/bin/vite.js preview",
     "postinstall": "node scripts/fix-bin-perms.mjs"

@@ -71,7 +71,7 @@ export const FINANCE_MENU_KEYS = [
 ];
 
 export function isOkAdmin() {
-  return !!state.isOkAdmin || (state.okAppAdmins && state.okAppAdmins.length > 0);
+  return !!state.isOkAdmin || (state.user?.role === 'admin') || (state.okAppAdmins && state.okAppAdmins.length > 0);
 }
 
 export function hasAppAccess(appCode) {
@@ -82,7 +82,7 @@ export function hasAppAccess(appCode) {
 
 export function hasMenuAccess(appCode, menuKey) {
   if (!hasAppAccess(appCode)) return false;
-  if (state.isOkAdmin || (state.okAppAdmins && state.okAppAdmins.includes(appCode))) return true;
+  if (state.isOkAdmin || state.user?.role === 'admin' || (state.okAppAdmins && state.okAppAdmins.includes(appCode))) return true;
   const menus = state.okMenus || [];
   if (!menus.length) return true;
   return menus.some(m => m.app_code === appCode && m.menu_key === menuKey && m.enabled !== false);

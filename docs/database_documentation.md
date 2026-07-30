@@ -157,6 +157,9 @@ Cross-gender and cross-team security filters.
 * `user_id` (`UUID`, PK): References `public.users(id)`.
 * `allow_opposite_gender` (`BOOLEAN`): Enables messaging users of opposite gender.
 * `cross_team_access` (`TEXT`): `'none'`, `'team'`, `'global'`.
+* `allowed_users` (`UUID[]`): List of user IDs explicitly allowed for contact.
+* `allowed_roles` (`TEXT[]`): List of global roles explicitly allowed for contact.
+* `allowed_teams` (`UUID[]`): List of team IDs explicitly allowed for contact.
 
 ---
 

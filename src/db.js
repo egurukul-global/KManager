@@ -4,7 +4,37 @@ import { createClient } from '@supabase/supabase-js'
 const SUPABASE_URL = 'https://nvhaetvreopkktlxxdwg.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52aGFldHZyZW9wa2t0bHh4ZHdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0Mzg3MDcsImV4cCI6MjA5NDAxNDcwN30.yjsQeAhjZfXYV_Od6lkdZCCBSgt00Z9Pb-9Ki-a79kA';
 
-export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { 
+    persistSession: false, 
+    autoRefreshToken: false 
+  },
+  global: {
+    fetch: async (url, options = {}) => {
+      const targetUrl = new URL(url);
+      const path = targetUrl.pathname + targetUrl.search;
+      const proxyUrl = `/api/supabase-proxy?path=${encodeURIComponent(path)}`;
+      
+      const plainHeaders = {};
+      if (options.headers) {
+        if (typeof options.headers.forEach === 'function') {
+          options.headers.forEach((value, key) => {
+            plainHeaders[key] = value;
+          });
+        } else {
+          Object.assign(plainHeaders, options.headers);
+        }
+      }
+      delete plainHeaders['authorization'];
+      
+      options.credentials = 'include';
+      return fetch(proxyUrl, {
+        ...options,
+        headers: plainHeaders
+      });
+    }
+  }
+});
 export { SUPABASE_URL, SUPABASE_ANON_KEY };
 
 // ==================== INDEXEDDB SETUP ====================

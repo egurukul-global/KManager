@@ -3,6 +3,8 @@ import './styles.css';
 import { state, computePermissions } from './state.js';
 import { supabaseClient, syncAll, pushPendingChanges, initLocalDB } from './db.js';
 import { showToast, showConfirm } from './components/toasts.js';
+import { secureLogin, secureVerify, secureLogout, migrateLegacyToken } from './auth.js';
+import { registerServiceWorker } from './sw-register.js';
 import { getLoginPage, initLoginPage } from './pages/login.js';
 import { getDashboardPage, initDashboardPage } from './pages/dashboard.js';
 import { getBucketsPage, initBucketsPage } from './pages/buckets.js';
@@ -82,9 +84,8 @@ export async function handleLogin(e) {
   errorDiv.classList.remove('active');
 
   try {
-    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    state.session = data.session;
+    const data = await secureLogin(email, password);
+    state.session = { user: data.user, expires_at: data.expires_at };
     if (window.location.pathname !== '/') {
       window.history.replaceState({}, '', '/');
     }
@@ -109,7 +110,7 @@ export async function handleLogout() {
   isLoggingOut = true;
 
   try {
-    await supabaseClient.auth.signOut();
+    await secureLogout();
   } catch (err) {
     console.error('Logout error:', err);
   }
@@ -135,9 +136,9 @@ export async function handleLogout() {
 window.handleLogout = handleLogout;
 
 async function checkExistingSession() {
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (session) {
-    state.session = session;
+  const result = await secureVerify();
+  if (result.authenticated && result.user) {
+    state.session = { user: result.user, offline: result.offline };
     await initializeApp();
   } else {
     renderLoginScreen();
@@ -184,7 +185,7 @@ async function initializeApp() {
     }
 
     if (state.user.on_hold) {
-      await supabaseClient.auth.signOut();
+      await secureLogout();
       state.session = null;
       state.user = null;
       renderLoginScreen();
@@ -328,6 +329,8 @@ function handleOnline() {
     });
   }
 }
+
+// ==================== ONLINE/OFFLINE HANDLING ====================
 
 function handleOffline() {
   state.isOnline = false;
@@ -643,7 +646,6 @@ function renderAppShell() {
             <div class="nav-subitems">
               <div class="nav-subitem" data-page="team-mgmt" onclick="window.showPage('team-mgmt')">Teams</div>
               <div class="nav-subitem" data-page="role-assignments" onclick="window.showPage('role-assignments')">Role Assignments</div>
-              <div class="nav-subitem" data-page="user-mgmt" onclick="window.showPage('user-mgmt')">Users</div>
               <div class="nav-subitem" data-page="budget-calendar" onclick="window.showPage('budget-calendar')">Budget Calendar</div>
               <div class="nav-subitem" data-page="category-master" onclick="window.showPage('category-master')">Category Master</div>
             </div>
@@ -900,6 +902,17 @@ function placeholderPage(title, session) {
 }
 
 // ===================== BOOT ====================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  registerServiceWorker();
+  
+  try {
+    const migrationResult = await migrateLegacyToken();
+    if (migrationResult.migrated) {
+      console.log('✅ Legacy token migrated successfully');
+    }
+  } catch (error) {
+    console.warn('Migration check failed:', error.message);
+  }
+
   checkExistingSession();
 });
