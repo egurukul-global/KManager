@@ -125,10 +125,7 @@ export function canAccessPage(pageName) {
 
   if (isSystemAdmin()) return true;
 
-  // Check selected team capabilities
-  if (FINANCE_PAGES.has(pageName) && state.currentTeam?.has_budget_access === false) return false;
-  if (pageName === 'tasks' && state.currentTeam?.has_tasks_access === false) return false;
-  if (['gurukul-lms', 'learners', 'courses'].includes(pageName) && state.currentTeam?.has_lms_access === false) return false;
+
 
   // One Kailasa Finance menu matrix
   if (state.okMenus?.length && !NON_FINANCE_PAGES.has(pageName) && !hasMenuAccess('finance', pageName)) {

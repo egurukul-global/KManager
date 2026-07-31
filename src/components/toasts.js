@@ -59,7 +59,7 @@ export function showAlert(message, type = 'info', options = {}) {
       e.stopPropagation();
       close();
     };
-    modal.onclick = e => { if (e.target === modal) close(); };
+    // modal.onclick = e => { if (e.target === modal) close(); };
     setTimeout(() => modal.querySelector('#alertOkBtn')?.focus(), 0);
   });
 }
@@ -108,9 +108,9 @@ export function showConfirm(message, onConfirm, onCancel) {
       e.stopPropagation();
       close(false, onCancel);
     };
-    modal.onclick = e => {
-      if (e.target === modal) close(false, onCancel);
-    };
+    // modal.onclick = e => {
+    //   if (e.target === modal) close(false, onCancel);
+    // };
   });
 }
 
@@ -187,9 +187,9 @@ export function showPrompt(message, options = {}) {
       e.stopPropagation();
       close(null);
     };
-    modal.onclick = e => {
-      if (e.target === modal) close(null);
-    };
+    // modal.onclick = e => {
+    //   if (e.target === modal) close(null);
+    // };
     input?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !multiline) {
         e.preventDefault();

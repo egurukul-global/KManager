@@ -80,14 +80,16 @@ Maps app codes (modules) to specific users as local app/module administrators.
 * `created_at` (`TIMESTAMPTZ`): Creation timestamp.
 
 ### `public.ok_app_access`
-Enables app/module access clearance for users.
+Enables app/module access clearance for users, scoped by team.
 * `user_id` (`UUID`, PK): References `public.users(id)`.
+* `team_id` (`UUID`, PK): References `public.teams(id)`.
 * `app_code` (`TEXT`, PK): Allowed values: `'finance'`, `'gurukul'`, `'utilities'`, `'tasks'`, `'konnect'`.
 * `enabled` (`BOOLEAN`): True if app is enabled.
 
 ### `public.ok_menu_access`
-Enables granular menu access within applications.
+Enables granular menu access within applications, scoped by team.
 * `user_id` (`UUID`, PK): References `public.users(id)`.
+* `team_id` (`UUID`, PK): References `public.teams(id)`.
 * `app_code` (`TEXT`, PK): Allowed values: `'finance'`, `'gurukul'`, `'utilities'`, `'tasks'`, `'konnect'`.
 * `menu_key` (`TEXT`, PK): Key representing specific page/menu.
 * `enabled` (`BOOLEAN`): True if menu is enabled.

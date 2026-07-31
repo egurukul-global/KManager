@@ -189,6 +189,10 @@ export async function refreshAccessibleTeams() {
   const preferredTeamId = state.currentTeam?.team_id;
   await loadAccessibleTeams();
   syncCurrentTeamAfterReload(preferredTeamId);
+  if (state.user?.id && state.currentTeam?.team_id) {
+    const { loadOkAccess } = await import('./okAccess.js');
+    await loadOkAccess(state.user.id, state.currentTeam.team_id);
+  }
   populateTeamSwitcher();
   updateAccessBadge();
   const { applyNavPermissions } = await import('./navPermissions.js');

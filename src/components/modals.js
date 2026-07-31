@@ -9,18 +9,18 @@ export function createModal(id, content, options = {}) {
   modal.className = 'modal';
   modal.innerHTML = `
     <div class="modal-content" style="${options.maxWidth ? `max-width: ${options.maxWidth};` : ''}">
-      <button class="close-modal" onclick="document.getElementById('${id}').classList.remove('active')">&times;</button>
+      ${options.hideCloseButton ? '' : `<button class="close-modal" onclick="document.getElementById('${id}').classList.remove('active')">&times;</button>`}
       ${content}
     </div>
   `;
   document.body.appendChild(modal);
 
   // Close on outside click
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.classList.remove('active');
-    }
-  });
+  // modal.addEventListener('click', (e) => {
+  //   if (e.target === modal) {
+  //     modal.classList.remove('active');
+  //   }
+  // });
 
   return modal;
 }

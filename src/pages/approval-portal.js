@@ -255,12 +255,12 @@ export async function initApprovalPortalPage() {
   }
 
   const modal = document.getElementById('approvalReviewModal');
-  if (modal && !modal.dataset.bound) {
-    modal.dataset.bound = '1';
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) portalCloseReviewModal();
-    });
-  }
+  // if (modal && !modal.dataset.bound) {
+  //   modal.dataset.bound = '1';
+  //   modal.addEventListener('click', (e) => {
+  //     if (e.target === modal) portalCloseReviewModal();
+  //   });
+  // }
 }
 
 async function setupStepFilter() {

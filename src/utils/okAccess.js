@@ -92,8 +92,8 @@ export function getAppMeta(code) {
   return OK_APPS.find(a => a.code === code) || null;
 }
 
-/** Load OK admin flag, app admins, apps, menus, pins into state. */
-export async function loadOkAccess(userId) {
+/** Load OK admin flag, app admins, apps, menus, pins into state. Scoped by team. */
+export async function loadOkAccess(userId, teamId = null) {
   if (!userId) {
     state.isOkAdmin = false;
     state.okAppAdmins = [];
@@ -103,11 +103,17 @@ export async function loadOkAccess(userId) {
     return;
   }
 
+  const activeTeamId = teamId || state.currentTeam?.team_id;
+
   const [adminRes, appAdminRes, appsRes, menusRes, pinsRes] = await Promise.all([
     supabaseClient.from('ok_admins').select('user_id').eq('user_id', userId).maybeSingle(),
     supabaseClient.from('ok_app_admins').select('app_code').eq('user_id', userId),
-    supabaseClient.from('ok_app_access').select('app_code, enabled').eq('user_id', userId),
-    supabaseClient.from('ok_menu_access').select('app_code, menu_key, enabled').eq('user_id', userId).eq('enabled', true),
+    activeTeamId
+      ? supabaseClient.from('ok_app_access').select('app_code, enabled').eq('user_id', userId).eq('team_id', activeTeamId)
+      : supabaseClient.from('ok_app_access').select('app_code, enabled').eq('user_id', userId),
+    activeTeamId
+      ? supabaseClient.from('ok_menu_access').select('app_code, menu_key, enabled').eq('user_id', userId).eq('team_id', activeTeamId).eq('enabled', true)
+      : supabaseClient.from('ok_menu_access').select('app_code, menu_key, enabled').eq('user_id', userId).eq('enabled', true),
     supabaseClient.from('ok_home_pins').select('app_code, sort_order').eq('user_id', userId).order('sort_order')
   ]);
 
@@ -116,6 +122,18 @@ export async function loadOkAccess(userId) {
   state.okApps = (appsRes.data || []).filter(a => a.enabled === true);
   state.okMenus = menusRes.data || [];
   state.okPins = pinsRes.data || [];
+
+  // Default Tasks and Konnect to enabled unless explicitly set to false
+  if (activeTeamId) {
+    const hasTasksRow = (appsRes.data || []).some(a => a.app_code === 'tasks');
+    if (!hasTasksRow) {
+      state.okApps.push({ app_code: 'tasks', enabled: true });
+    }
+    const hasKonnectRow = (appsRes.data || []).some(a => a.app_code === 'konnect');
+    if (!hasKonnectRow) {
+      state.okApps.push({ app_code: 'konnect', enabled: true });
+    }
+  }
 
   // Soft fallback only when tables are missing (migration not run)
   if (appsRes.error) {

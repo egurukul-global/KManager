@@ -181,10 +181,27 @@ Deno.serve(async (req) => {
     let role = String(body.role || 'user').toLowerCase();
     const workTeamId = body.team_id || null;
     const accessLevel = String(body.access_level || 'member').toLowerCase();
+    const gender = String(body.gender || '').trim().toLowerCase();
 
     if (!email) return fail('Email is required');
     if (!name) return fail('Full name is required');
     if (password.length < 8) return fail('Password must be at least 8 characters');
+    if (gender !== 'male' && gender !== 'female') return fail('Gender must be male or female');
+
+    const lowerPassword = password.toLowerCase();
+    const bannedWords = ['nithya', '123', 'ananda', 'swamiji', 'nithyananda', 'kailasa', 'shiva', 'paramashiva'];
+    for (const word of bannedWords) {
+      if (lowerPassword.includes(word)) {
+        return fail(`Password cannot contain the term "${word}"`);
+      }
+    }
+
+    const nameParts = name.toLowerCase().split(/\s+/).map(p => p.trim()).filter(p => p.length >= 2);
+    for (const part of nameParts) {
+      if (lowerPassword.includes(part)) {
+        return fail(`Password cannot contain your name part "${part}"`);
+      }
+    }
 
     if (callerRole !== 'admin' && role === 'admin') {
       return fail('Only system admin can assign SYS role', 403);
@@ -235,6 +252,7 @@ Deno.serve(async (req) => {
       email,
       name,
       role,
+      gender,
       on_hold: false
     };
     if (personalTeam?.id) profilePayload.team_id = personalTeam.id;
@@ -247,6 +265,7 @@ Deno.serve(async (req) => {
         email,
         name,
         role,
+        gender,
         on_hold: false
       }, { onConflict: 'id' });
       if (!retry.error) profileErr = null;

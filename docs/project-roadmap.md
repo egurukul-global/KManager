@@ -1,40 +1,59 @@
-# Project Roadmap & Pending Backlog
+# One Kailasa Project Roadmap & Status
 
-This document tracks all completed and pending project phases. It acts as the single source of truth for planning upcoming development sprints.
+This document is the single source of truth for the project roadmap, completed features, pending backlogs, and active design decisions.
 
 ---
 
-## Roadmap Phases
+## 1. Roadmap & Phase Status
 
 | Phase | Title | Description | Status |
 | :--- | :--- | :--- | :--- |
-| **Phase 4E** | Tabbed User Panel & Granular Permissions | Organize User Admin into Identity, Teams, and App Access tabs. Add dynamic filters for bulk checking and custom permission overrides. | Pending |
-| **Phase 4F** | Team Hierarchy & Cross-Department Roles | Implement recursive parent-child team structures (e.g. India Gurukul under Global Gurukul/India ALL) and department-specific team roles. | Pending |
-| **Phase 4G** | Leadership Hotline & Security Overrides | Build the emergency hotline to bypass normal gender/team constraints, including CAO management tools to suspend hotline access. | Pending |
-| **Phase 4H** | Impersonation & Shadowing Mode | Create a read-only viewer mode for CEO/CAO and authorized staff to replicate user-level views of chats and tasks. | Pending |
-| **Phase 4I** | Tasks & Guruvak (Instructions) System | Implement specific Guruvak instructions tagged in the task system, search/filter improvements, and a larger, user-friendly task message UI. | Pending |
-| **Phase 4J** | FIP Payment & TL Allocation Module | Build the finance payment module where FIP allocates payments to budgets (with comment logic for partial/over-payments) and TL allocates received funds to buckets. | Pending |
-| **Phase 5A** | Core Modules Expansion (Phase 2 core) | Implement Goal tracking, Housing database, Donor database, Social media/Outreach tracking, and OPH Group budgeting. | Pending |
-| **Phase 5B** | Database Role Rename | Run migration to rename legacy DB role codes (`member` -> `ops`, `lead` -> `opl`, `oht` -> `oph`) to match UI displays. | Deferred |
-| **Phase 6** | Basic CRM & Profile Lifecycles | Track user status history (Adheenavasi/Kailasavasi transitions), seva/volunteering logs, donation history, and basic call tracking. | Future |
-| **Phase 7** | Document Management & Expiry Escapes | Track passports, visas, licenses, and tax docs with 1-year advance alerts for passports (escalating to TL/OPH every 2 weeks). Add secure R2 storage folders. | Future |
-| **Phase 8** | Messaging & Security Upgrades | Add broadcast channels, silent mode, read receipts, and system alerts delivered directly into messaging channels. | Future |
-| **Phase 9** | Custom Password Rules & Boss Resets | Enforce custom password constraints and route user password reset authorizations directly to their immediate boss. | Future |
-| **Phase 10** | Organizational AI Insights & Self-Refinement | Integrate AI tools to analyze system data, extract leadership insights, identify procedural bottlenecks, and propose application feature improvements. | Future |
+| **Phases 1–3** | Wallet & Transfers | Wallet, transfer state machine, personal teams cross-team access. | **Done** |
+| **Pre-Phase 4** | Mobile Prework | Mobile layout optimizations. | **Done** |
+| **Phase 4A** | Governance Foundation | Access rules and role definitions. | **Done** |
+| **Phase 4B** | Approval Platform | Workflow engine, RLS policies, skip-level approvals, and role-based flows. | **Done** |
+| **Phase 4C** | User Lifecycle & Auto-Assign | Platform hold, login creation, and auto-assigning OPH/FIN/FIH roles to personal teams. | **Done** |
+| **Phase 4D** | One Kailasa Shell | Router, navigation, app pinning, shared chrome, and profile app visibility. | **Done** |
+| **Phase 4E** | Tabbed User Panel & Granular Permissions | Chat permissions (opposite-gender, cross-team, allowed users/roles/teams list, Konnect Hub). | **Done** |
+| **Phase 4F** | Team Hierarchy & Cross-Department Roles | M:N parent-child team structures (`team_relationships`), recursive sub-team resolution. | **Pending** |
+| **Phase 4G** | Leadership Hotline & Security Overrides | Emergency hotline bypassing gender/team constraints with CAO suspension controls. | **Pending** |
+| **Phase 4H** | Impersonation & Shadowing Mode | Read-only shadowing mode for CEO/CAO and authorized staff. | **Pending** |
+| **Phase 4I** | Tasks & Guruvak (Instructions) | Guruvak instruction tagging, task auto-numbering (done), spacious task UI, team assignment. | **In Progress** |
+| **Phase 4J** | FIP Payment & TL Allocation | FIP budget payments with discrepancy comment rules, TL receipts, and bucket allocation. | **Pending** |
+| **Phase 5A** | Core Modules Expansion | Goal Tracker, Housing Registry, Donor Manager, Activity Metrics, OPH Group budgeting. | **Pending** |
+| **Phase 5B** | Database Role Rename | Rename legacy DB roles (`member` -> `ops`, `lead` -> `opl`, `oht` -> `oph`). | **Deferred** |
+| **Phase 6** | Basic CRM & Lifecycles | Profile lifecycle status transitions (Adheenavasi/Kailasavasi), seva logs, donation history. | **Future** |
+| **Phase 7** | Document Management | Government ID tracking, passport expiry alert engine, R2 secure document storage. | **Future** |
+| **Phase 8** | Messaging & Security | Broadcast channels, silent mode, read receipts, and system broadcast alerts. | **Future** |
+| **Phase 9** | Custom Password Rules | Custom password validation constraints and delegated boss resets. | **Future** |
+| **Phase 10** | Organizational AI Insights | Semantic search, executive summaries, self-refinement UI audit. | **Future** |
 
 ---
 
-## Detailed Phase Breakdown
+## 2. Active Design Decisions & Product Rules
 
-### Phase 4E: Tabbed User Panel & Granular Permissions
-* **Tabbed Interface:** Refactor user select modal in `ok-admin.js` into three tabs: Profile, Teams, App Permissions.
-* **Inline Team Management:** Assign users to teams and set their access level (OPS, OPL, OPH, View) directly from Tab 2.
-* **Override Controls:** Provide checkable rules for allowing opposite-gender contact, specific role contacts, and department-wide messaging.
-* **Bulk Select Filter:** Add filter dropdowns (by Gender, Role, Department, Region) that generate checkbox lists for bulk adding/removing individual clearances.
+### Platform & Shell Layer
+* **Login & Routing:** Users land on One Kailasa home (`/`). Sibling apps include Finance (`/finance`), Gurukul (`/gurukul`, coming soon), and Utilities (`/utilities`, coming soon).
+* **Identity:** Single login identity across the entire platform.
+* **Administration:** One Kailasa Admin manages users, logins, platform hold, and application pins (`ok_home_pins`).
+* **Profile:** Users customize visible/pinned apps on home via `/profile`.
+
+### Access & Role Control
+* **Three-Layer Access:** Org roles (`users.role`) $\neq$ Team access (`user_teams.access_level`) $\neq$ Approval pools (`request_role_assignments`).
+* **Pure Role-Based Approvals:** FIN, FIP, and FIH check permissions strictly via `request_role_assignments`. CAO, CEO, and Admin retain implicit system mappings.
+* **Gender Scopes:** Teams enforce `gender_scope` (`male`, `female`, `mixed`) constraints for messaging and group operations.
+
+### Finance Rules
+* **Create Budget:** Header currency/rate rules conversion for all line items. Line amounts default to 0. No per-line currency selection.
+* **FIP & FIN Operations:** FIN/FIP roles can select and manage budget plans.
+
+---
+
+## 3. Detailed Phase Breakdown (Pending & Future)
 
 ### Phase 4F: Team Hierarchy & Cross-Department Roles
 * **Association Schema:** Create `team_relationships` table for M:N parent-child mapping.
-* **Recursive Resolution:** Update database functions/RLS to recognize sub-teams recursively (e.g., broadcasting to a parent team includes members of all sub-teams).
+* **Recursive Resolution:** Update database functions/RLS to recognize sub-teams recursively (e.g. broadcasting to a parent team includes members of sub-teams).
 * **Department Tiers:** Add `team_type` and `department` fields to teams, mapping team roles (OPS/OPL/OPH) to department-specific names in the UI.
 
 ### Phase 4G: Leadership Hotline & Security Overrides

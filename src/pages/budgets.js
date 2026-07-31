@@ -977,15 +977,17 @@ export function getViewBudgetsPage() {
     </div>
 
     <div id="submissionWizardModal" class="modal">
-      <div class="modal-content" style="max-width: 700px; padding: 25px;">
-        <button class="close-modal" onclick="window.closeWizardModal()">&times;</button>
-        <h2 style="margin-bottom: 20px;">Budget Submission Wizard</h2>
-        <div class="wizard-progress-bar" style="height: 6px; background: #eee; border-radius: 3px; margin-bottom: 25px; position: relative;">
-          <div id="wizardProgressBarFill" style="height: 100%; width: 10%; background: #28a745; border-radius: 3px; transition: width 0.3s ease;"></div>
+      <div class="modal-content" style="max-width: 700px; padding: 15px; position: relative;">
+        <button class="close-modal" onclick="window.closeWizardModal()" style="background:#cc241d; color:white; border:none; border-radius:4px; width:24px; height:24px; font-weight:bold; font-size:0.9em; display:flex; align-items:center; justify-content:center; position:absolute; top:12px; right:12px; cursor:pointer;">✖</button>
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding-right: 30px;">
+          <h3 style="margin: 0; font-size: 1rem; font-weight: bold; color: #333;">Budget Submission Wizard</h3>
+          <span id="wizardStepTitle" style="font-weight: bold; font-size: 0.85rem; color: #666;">Step 1 of 10</span>
         </div>
-        <div id="wizardStepTitle" style="font-weight: bold; font-size: 1.1rem; margin-bottom: 15px; color: #333;">Step 1 of 10</div>
+        <div class="wizard-progress-bar" style="height: 4px; background: #eee; border-radius: 2px; margin-bottom: 15px; position: relative;">
+          <div id="wizardProgressBarFill" style="height: 100%; width: 10%; background: #28a745; border-radius: 2px; transition: width 0.3s ease;"></div>
+        </div>
         <div id="wizardStepsContainer" class="form-stack"></div>
-        <div class="wizard-footer" style="margin-top: 30px; display: flex; justify-content: space-between; align-items: center;">
+        <div class="wizard-footer" style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;">
           <button type="button" class="secondary" id="wizardPrevBtn" onclick="window.wizardPrevStep()">Back</button>
           <button type="button" class="success" id="wizardNextBtn" onclick="window.wizardNextStep()">Next</button>
         </div>
@@ -1436,46 +1438,95 @@ function getWizardStepsForBudget(budget) {
   ];
 }
 
-window.closeWizardModal = function() {
-  document.getElementById('submissionWizardModal').classList.remove('active');
-  const btn = document.getElementById('wizardNextBtn');
-  if (btn) {
-    btn.disabled = false;
-    btn.textContent = 'Next';
+async function syncWizardDataToDB() {
+  if (!wizardBudget) return;
+  try {
+    await supabaseClient
+      .from('budget_plans')
+      .update({
+        open_budgets_explanation: wizardData.openBudgetsExplanation,
+        recon_cash_balance: wizardData.cashBalance,
+        recon_bank_balance: wizardData.bankBalance,
+        recon_remaining_funds: wizardData.remainingFunds,
+        submission_team_info: { 
+          members: wizardMembers, 
+          allocations: wizardData.allocations,
+          expensesClosed: wizardData.expensesClosed,
+          reconciliationConfirmed: wizardData.reconciliationConfirmed
+        },
+        submission_housing_info: wizardData.housingInfo,
+        submission_accomplishments: { data: wizardData.accomplishmentsData },
+        submission_income_report: { data: wizardData.incomeData },
+        submission_social_media: { data: wizardData.socialMediaData },
+        submission_coursing: { data: wizardData.causingData }
+      })
+      .eq('id', wizardBudget.id);
+  } catch (err) {
+    console.warn('Autosave sync failed:', err);
   }
-  wizardBudget = null;
-  wizardStep = 1;
-  wizardData = {};
-  wizardOpenBudgets = [];
-  wizardBuckets = [];
-  wizardMembers = [];
+}
+
+window.closeWizardModal = function() {
+  showConfirm('Quit the submission wizard? Unsaved changes in this step will be saved, and you can resume later.', async () => {
+    saveStepData();
+    await syncWizardDataToDB();
+    document.getElementById('submissionWizardModal').classList.remove('active');
+    const btn = document.getElementById('wizardNextBtn');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Next';
+    }
+    wizardBudget = null;
+    wizardStep = 1;
+    wizardData = {};
+    wizardOpenBudgets = [];
+    wizardBuckets = [];
+    wizardMembers = [];
+  });
 };
 
-window.wizardPrevStep = function() {
+window.wizardPrevStep = async function() {
   if (wizardStep > 1) {
     saveStepData();
+    await syncWizardDataToDB();
     wizardStep--;
     window.renderWizardStep();
   }
 };
 
 function getCategoryAllocations(categoryName, totalAmount) {
+  let allocations = {};
   if (wizardData.allocations && wizardData.allocations[categoryName]) {
-    return wizardData.allocations[categoryName];
+    allocations = { ...wizardData.allocations[categoryName] };
   }
-  const count = wizardMembers.length;
-  if (count === 0) return {};
-  const base = Math.floor((totalAmount / count) * 100) / 100;
-  const totalAllocated = base * count;
-  const remainder = Math.round((totalAmount - totalAllocated) * 100) / 100;
-  const allocations = {};
-  const lead = wizardMembers.find(m => m.access_level === 'opl') || wizardMembers[0];
-  wizardMembers.forEach(m => {
-    allocations[m.id] = base;
+
+  const memberIds = new Set(wizardMembers.map(m => m.id));
+  const sum = Object.values(allocations).reduce((a, b) => a + b, 0);
+  const hasAllMembers = wizardMembers.every(m => allocations[m.id] !== undefined && allocations[m.id] !== null);
+
+  if (Object.keys(allocations).length === 0 || sum === 0 || !hasAllMembers) {
+    const count = wizardMembers.length;
+    if (count > 0) {
+      const base = Math.floor((totalAmount / count) * 100) / 100;
+      const totalAllocated = base * count;
+      const remainder = Math.round((totalAmount - totalAllocated) * 100) / 100;
+      allocations = {};
+      wizardMembers.forEach(m => {
+        allocations[m.id] = base;
+      });
+      const lead = wizardMembers.find(m => m.access_level === 'opl') || wizardMembers[0];
+      if (lead && remainder !== 0) {
+        allocations[lead.id] = Math.round((allocations[lead.id] + remainder) * 100) / 100;
+      }
+    }
+  }
+
+  Object.keys(allocations).forEach(id => {
+    if (!memberIds.has(id)) {
+      delete allocations[id];
+    }
   });
-  if (lead && remainder !== 0) {
-    allocations[lead.id] = Math.round((allocations[lead.id] + remainder) * 100) / 100;
-  }
+
   return allocations;
 }
 
@@ -1490,46 +1541,39 @@ window.onAllocationChange = function(categoryIndex, memberId, inputEl) {
     val = totalAmount;
     inputEl.value = val.toFixed(2);
   }
+
   if (!wizardData.allocations) wizardData.allocations = {};
   if (!wizardData.allocations[categoryName]) {
     wizardData.allocations[categoryName] = getCategoryAllocations(categoryName, totalAmount);
   }
-  if (!wizardData.customizedAllocations) wizardData.customizedAllocations = {};
-  if (!wizardData.customizedAllocations[categoryName]) {
-    wizardData.customizedAllocations[categoryName] = {};
-  }
-  wizardData.customizedAllocations[categoryName][memberId] = val;
-  const customized = wizardData.customizedAllocations[categoryName];
-  let customSum = 0;
-  wizardMembers.forEach(m => {
-    if (customized[m.id] !== undefined) {
-      customSum += customized[m.id];
-    }
-  });
-  const remainder = totalAmount - customSum;
-  const remainingMembers = wizardMembers.filter(m => customized[m.id] === undefined);
-  if (remainingMembers.length > 0) {
+
+  wizardData.allocations[categoryName][memberId] = val;
+
+  const otherMembers = wizardMembers.filter(m => m.id !== memberId);
+  if (otherMembers.length > 0) {
+    const remainder = totalAmount - val;
     if (remainder < 0) {
       showToast('Sum of allocations exceeds total category amount!', 'warning');
-      delete customized[memberId];
       window.renderWizardStep();
       return;
     }
-    const base = Math.floor((remainder / remainingMembers.length) * 100) / 100;
-    const allocated = base * remainingMembers.length;
+    const base = Math.floor((remainder / otherMembers.length) * 100) / 100;
+    const allocated = base * otherMembers.length;
     const roundingRemainder = Math.round((remainder - allocated) * 100) / 100;
-    remainingMembers.forEach(m => {
+
+    otherMembers.forEach(m => {
       wizardData.allocations[categoryName][m.id] = base;
     });
-    const lead = remainingMembers.find(m => m.access_level === 'opl') || remainingMembers[0];
+
+    const lead = otherMembers.find(m => m.access_level === 'opl') || otherMembers[0];
     if (lead && roundingRemainder !== 0) {
       wizardData.allocations[categoryName][lead.id] = Math.round((wizardData.allocations[categoryName][lead.id] + roundingRemainder) * 100) / 100;
     }
   }
-  wizardData.allocations[categoryName][memberId] = val;
+
   wizardMembers.forEach(m => {
     const input = document.getElementById(`alloc-${categoryIndex}-${m.id}`);
-    if (input && input !== inputEl) {
+    if (input) {
       input.value = (wizardData.allocations[categoryName][m.id] || 0).toFixed(2);
     }
   });
@@ -1552,6 +1596,10 @@ function saveStepData() {
   } else if (wizardStep === 2) {
     wizardData.expensesClosed = document.getElementById('confirmExpensesClosed')?.checked || false;
   } else if (wizardStep === 3) {
+    const totalBalance = wizardBuckets.reduce((sum, b) => sum + (b.balance || 0), 0);
+    wizardData.cashBalance = totalBalance;
+    wizardData.bankBalance = totalBalance;
+    wizardData.remainingFunds = totalBalance;
     wizardData.reconciliationConfirmed = document.getElementById('confirmReconciliation')?.checked || false;
   } else if (wizardStep === 5) {
     const utils = [];
@@ -1877,32 +1925,29 @@ window.renderWizardStep = function() {
   } else if (wizardStep === 3) {
     const totalBalance = wizardBuckets.reduce((sum, b) => sum + (b.balance || 0), 0);
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
-        <h4 style="margin-top: 0; margin-bottom: 15px;">Bank &amp; Cash Reconciliation</h4>
-        <p class="section-hint" style="margin-bottom: 15px;">Below is the current balance of all active buckets associated with this budget Proposal:</p>
-        <div style="margin-bottom: 15px; border: 1px solid #eee; padding: 10px; border-radius: 6px; background: #fafafa;">
+      <div class="card" style="padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 0.9rem;">
+        <p class="section-hint" style="margin-bottom: 10px; font-size: 0.85rem;">Below is the current balance of all active buckets associated with this budget Proposal:</p>
+        <div style="margin-bottom: 10px; border: 1px solid #eee; padding: 8px; border-radius: 6px; background: #fafafa;">
           ${wizardBuckets.map(b => `
-            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 6px 0;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 4px 0;">
               <span>${escapeHtmlAttr(b.name)} (${escapeHtmlAttr(b.currency || 'USD')})</span>
               <span style="font-weight: bold;">$${Number(b.balance || 0).toFixed(2)}</span>
             </div>
           `).join('')}
-          <div style="display: flex; justify-content: space-between; border-top: 2px solid #ccc; padding-top: 10px; margin-top: 10px; font-weight: bold; font-size: 1.1rem; color: #28a745;">
+          <div style="display: flex; justify-content: space-between; border-top: 2px solid #ccc; padding-top: 8px; margin-top: 8px; font-weight: bold; color: #28a745;">
             <span>Total Balance</span>
             <span>$${totalBalance.toFixed(2)}</span>
           </div>
         </div>
-        <label style="display: inline-flex; align-items: center; gap: 10px; font-weight: bold; cursor: pointer; margin-top: 10px;">
-          <input type="checkbox" id="confirmReconciliation" style="transform: scale(1.3);" ${wizardData.reconciliationConfirmed ? 'checked' : ''}>
+        <label style="display: inline-flex; align-items: center; gap: 8px; font-weight: bold; cursor: pointer; margin-top: 5px; font-size: 0.85rem;">
+          <input type="checkbox" id="confirmReconciliation" style="transform: scale(1.1);" ${wizardData.reconciliationConfirmed ? 'checked' : ''}>
           I confirm the reconciliation details are correct
         </label>
       </div>
     `;
   } else if (wizardStep === 4) {
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
-        <h4 style="margin-top: 0; margin-bottom: 10px;">Category Allocation Splits</h4>
-        <p class="section-hint" style="margin-bottom: 15px;">Define the budget split per person. Unmodified members share the remaining balance.</p>
+      <div class="card" style="padding: 10px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto; font-size: 0.9rem;">
         ${(wizardBudget.categories || []).map((cat, catIdx) => {
           const categoryName = cat.name || cat.category;
           const total = cat.usdAmount || cat.usd_amount || 0;
@@ -1913,15 +1958,15 @@ window.renderWizardStep = function() {
           return `
             <div style="margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;">
               <h5 style="margin: 0 0 10px 0; color: #007bff;">${escapeHtmlAttr(categoryName)} (Total: $${total.toFixed(2)})</h5>
-              <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px;">
+              <div style="display: flex; flex-direction: column; gap: 8px; max-width: 400px;">
                 ${wizardMembers.map(m => `
-                  <div class="form-group" style="margin: 0;">
-                    <label style="font-size: 0.85rem;">${escapeHtmlAttr(m.name)}</label>
+                  <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                    <span style="font-size: 0.9em; font-weight: 500; min-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtmlAttr(m.name)}</span>
                     <input type="number" step="0.01" min="0" max="${total}" 
                            id="alloc-${catIdx}-${m.id}" 
                            value="${(allocs[m.id] || 0).toFixed(2)}"
-                           oninput="window.onAllocationChange(${catIdx}, '${m.id}', this)"
-                           style="width: 100%;">
+                           onchange="window.onAllocationChange(${catIdx}, '${m.id}', this)"
+                           style="width: 100px; height: 32px; text-align: right; border-radius: 4px; border: 1px solid var(--border); padding: 4px 8px; box-sizing: border-box;">
                   </div>
                 `).join('')}
               </div>
@@ -1933,75 +1978,60 @@ window.renderWizardStep = function() {
   } else if (wizardStep === 5) {
     const h = wizardData.housingInfo || {};
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto;">
-        <h4 style="margin-top: 0; margin-bottom: 15px;">Housing Details</h4>
-        <div class="form-group" style="margin-bottom: 10px;">
-          <label>Address *</label>
-          <input type="text" id="house-address" value="${escapeHtmlAttr(h.address || '')}" required style="width: 100%;">
-        </div>
-        <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-          <div class="form-group">
-            <label>Rent (USD equivalent) *</label>
-            <input type="number" step="0.01" id="house-rent" value="${h.rent ?? ''}" required style="width: 100%;">
+      <div class="card" style="padding: 12px; border-radius: 8px; border: 1px solid #ddd; max-height: 400px; overflow-y: auto; font-size: 0.9rem;">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <label style="min-width: 120px; font-weight: bold; margin: 0;">Address *</label>
+            <input type="text" id="house-address" value="${escapeHtmlAttr(h.address || '')}" required style="flex: 1; min-width: 200px; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
           </div>
-          <div class="form-group">
-            <label>Location Map URL</label>
-            <input type="text" id="house-map" value="${escapeHtmlAttr(h.mapUrl || '')}" style="width: 100%;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <label style="min-width: 120px; font-weight: bold; margin: 0;">Rent (USD eq) *</label>
+            <input type="number" step="0.01" id="house-rent" value="${h.rent ?? ''}" required style="flex: 1; min-width: 200px; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
           </div>
-        </div>
-        <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-          <div class="form-group">
-            <label>Owner Name *</label>
-            <input type="text" id="house-owner" value="${escapeHtmlAttr(h.ownerName || '')}" required style="width: 100%;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <label style="min-width: 120px; font-weight: bold; margin: 0;">Location Map URL</label>
+            <input type="text" id="house-map" value="${escapeHtmlAttr(h.mapUrl || '')}" style="flex: 1; min-width: 200px; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
           </div>
-          <div class="form-group">
-            <label>Owner Phone *</label>
-            <input type="text" id="house-phone" value="${escapeHtmlAttr(h.ownerPhone || '')}" required style="width: 100%;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <label style="min-width: 120px; font-weight: bold; margin: 0;">Owner Name *</label>
+            <input type="text" id="house-owner" value="${escapeHtmlAttr(h.ownerName || '')}" required style="flex: 1; min-width: 200px; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
           </div>
-        </div>
-        <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-          <div class="form-group">
-            <label>Bedrooms *</label>
-            <input type="number" id="house-bedrooms" value="${h.bedrooms ?? ''}" required style="width: 100%;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <label style="min-width: 120px; font-weight: bold; margin: 0;">Owner Phone *</label>
+            <input type="text" id="house-phone" value="${escapeHtmlAttr(h.ownerPhone || '')}" required style="flex: 1; min-width: 200px; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
           </div>
-          <div class="form-group">
-            <label>Bathrooms *</label>
-            <input type="number" step="0.5" id="house-bathrooms" value="${h.bathrooms ?? ''}" required style="width: 100%;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <label style="min-width: 120px; font-weight: bold; margin: 0;">Bed/Bath/Occupants *</label>
+            <div style="display: flex; gap: 6px; flex: 1; min-width: 200px; box-sizing: border-box;">
+              <input type="number" id="house-bedrooms" placeholder="Beds" value="${h.bedrooms ?? ''}" required style="width: 33%; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
+              <input type="number" step="0.5" id="house-bathrooms" placeholder="Baths" value="${h.bathrooms ?? ''}" required style="width: 33%; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
+              <input type="number" id="house-occupants" placeholder="People" value="${h.occupants ?? ''}" required style="width: 34%; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
+            </div>
           </div>
-          <div class="form-group">
-            <label>Total Occupants *</label>
-            <input type="number" id="house-occupants" value="${h.occupants ?? ''}" required style="width: 100%;">
-          </div>
-        </div>
-        <div class="form-grid-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-          <div class="form-group">
-            <label style="display: inline-flex; align-items: center; gap: 6px;">
-              <input type="checkbox" id="house-agreement-chk" ${h.hasAgreement ? 'checked' : ''}>
-              Rental Agreement?
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <label style="min-width: 120px; font-weight: bold; margin: 0; display: inline-flex; align-items: center; gap: 4px;">
+              <input type="checkbox" id="house-agreement-chk" ${h.hasAgreement ? 'checked' : ''}> Agreement?
             </label>
+            <input type="text" id="house-agreement-file" value="${escapeHtmlAttr(h.agreementFile || '')}" placeholder="Agreement Link / Note" style="flex: 1; min-width: 200px; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
           </div>
-          <div class="form-group">
-            <label>Agreement File / Link</label>
-            <input type="text" id="house-agreement-file" value="${escapeHtmlAttr(h.agreementFile || '')}" placeholder="File link or text note" style="width: 100%;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <label style="min-width: 120px; font-weight: bold; margin: 0;">Furnished State *</label>
+            <select id="house-furnished" style="flex: 1; min-width: 200px; height: 28px; border-radius: 4px; border: 1px solid var(--border); padding: 2px 6px; box-sizing: border-box;">
+              <option value="no" ${h.furnished === 'no' ? 'selected' : ''}>No</option>
+              <option value="partial" ${h.furnished === 'partial' ? 'selected' : ''}>Partial</option>
+              <option value="full" ${h.furnished === 'full' ? 'selected' : ''}>Full</option>
+            </select>
           </div>
-        </div>
-        <div class="form-group" style="margin-bottom: 10px;">
-          <label style="font-weight: bold; display: block; margin-bottom: 5px;">Utilities Provided:</label>
-          <div style="display: flex; gap: 15px; flex-wrap: wrap;">
-            <label><input type="checkbox" id="util-wifi" ${(h.utilities || []).includes('wifi') ? 'checked' : ''}> Wifi</label>
-            <label><input type="checkbox" id="util-gas" ${(h.utilities || []).includes('gas') ? 'checked' : ''}> Gas</label>
-            <label><input type="checkbox" id="util-electricity" ${(h.utilities || []).includes('electricity') ? 'checked' : ''}> Electricity</label>
-            <label><input type="checkbox" id="util-water" ${(h.utilities || []).includes('water') ? 'checked' : ''}> Water</label>
-            <label><input type="checkbox" id="util-garbage" ${(h.utilities || []).includes('garbage') ? 'checked' : ''}> Garbage</label>
+          <div style="margin-top: 5px;">
+            <strong style="display: block; margin-bottom: 4px;">Utilities Provided:</strong>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 0.85rem;">
+              <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;"><input type="checkbox" id="util-wifi" ${(h.utilities || []).includes('wifi') ? 'checked' : ''}> Wifi</label>
+              <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;"><input type="checkbox" id="util-gas" ${(h.utilities || []).includes('gas') ? 'checked' : ''}> Gas</label>
+              <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;"><input type="checkbox" id="util-electricity" ${(h.utilities || []).includes('electricity') ? 'checked' : ''}> Elec</label>
+              <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;"><input type="checkbox" id="util-water" ${(h.utilities || []).includes('water') ? 'checked' : ''}> Water</label>
+              <label style="cursor: pointer; display: inline-flex; align-items: center; gap: 4px;"><input type="checkbox" id="util-garbage" ${(h.utilities || []).includes('garbage') ? 'checked' : ''}> Trash</label>
+            </div>
           </div>
-        </div>
-        <div class="form-group">
-          <label>Furnished State *</label>
-          <select id="house-furnished" style="width: 100%;">
-            <option value="no" ${h.furnished === 'no' ? 'selected' : ''}>No</option>
-            <option value="partial" ${h.furnished === 'partial' ? 'selected' : ''}>Partial</option>
-            <option value="full" ${h.furnished === 'full' ? 'selected' : ''}>Full</option>
-          </select>
         </div>
       </div>
     `;
@@ -2150,11 +2180,148 @@ window.renderWizardStep = function() {
       </div>
     `;
   } else if (wizardStep === 10) {
+    const totalBudget = wizardBudget.total_amount || wizardBudget.totalAmount || 0;
+    const memberCount = wizardMembers.length || 1;
+    const avgCost = totalBudget / memberCount;
+
+    let stepsHtml = `
+      <div style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 15px; font-size: 0.9rem;">
+        <h4 style="margin: 0 0 10px 0; color: #333;">Detailed Step-by-Step Submissions</h4>
+        
+        <div style="margin-bottom: 15px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
+          <strong>Step 1: Open Budgets Review</strong>
+          ${(wizardData.openBudgetsExplanation || []).length === 0 ? '<p style="margin:4px 0 0; color:#666;">No open budgets required explanation.</p>' : 
+            wizardData.openBudgetsExplanation.map(e => `
+              <div style="margin-top:6px; padding-left:10px; border-left:2px solid #ffc107;">
+                <div><strong>Budget:</strong> ${escapeHtmlAttr(e.name)}</div>
+                <div><strong>Reason Open:</strong> ${escapeHtmlAttr(e.reason)}</div>
+                <div><strong>Status:</strong> ${escapeHtmlAttr(e.status)} | <strong>Expected Closure:</strong> ${e.closure}</div>
+              </div>
+            `).join('')}
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
+          <strong>Step 2: Close Previous Month Expenses</strong>
+          <p style="margin:4px 0 0; color:#28a745;">✓ Confirmed: Previous month expenses are frozen</p>
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
+          <strong>Step 3: Bank & Cash Reconciliation</strong>
+          <div style="margin-top:6px; padding-left:10px;">
+            ${wizardBuckets.map(b => `
+              <div>${escapeHtmlAttr(b.name)}: $${Number(b.balance || 0).toFixed(2)}</div>
+            `).join('')}
+            <div style="font-weight:bold; margin-top:4px;">Total Balance: $${Number(wizardData.bankBalance || 0).toFixed(2)}</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
+          <strong>Step 4: Team Allocation Splits</strong>
+          <div style="margin-top:6px; padding-left:10px;">
+            ${(wizardBudget.categories || []).map(cat => {
+              const catName = cat.name || cat.category;
+              const allocs = wizardData.allocations?.[catName] || {};
+              return `
+                <div style="margin-bottom: 8px;">
+                  <span style="color:#007bff; font-weight:bold;">${escapeHtmlAttr(catName)}:</span>
+                  <div style="display:flex; flex-wrap:wrap; gap:10px; padding-left:10px; font-size:0.85rem; margin-top:2px;">
+                    ${wizardMembers.map(m => `
+                      <span>${escapeHtmlAttr(m.name)}: $${Number(allocs[m.id] || 0).toFixed(2)}</span>
+                    `).join('')}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
+          <strong>Step 5: Housing Details</strong>
+          <div style="margin-top:6px; padding-left:10px; display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+            <div><strong>Address:</strong> ${escapeHtmlAttr(wizardData.housingInfo?.address || 'N/A')}</div>
+            <div><strong>Rent:</strong> $${(wizardData.housingInfo?.rent || 0).toFixed(2)}</div>
+            <div><strong>Owner Name:</strong> ${escapeHtmlAttr(wizardData.housingInfo?.ownerName || 'N/A')}</div>
+            <div><strong>Owner Phone:</strong> ${escapeHtmlAttr(wizardData.housingInfo?.ownerPhone || 'N/A')}</div>
+            <div><strong>Bedrooms:</strong> ${wizardData.housingInfo?.bedrooms || 0}</div>
+            <div><strong>Bathrooms:</strong> ${wizardData.housingInfo?.bathrooms || 0}</div>
+            <div><strong>Occupants:</strong> ${wizardData.housingInfo?.occupants || 0}</div>
+            <div><strong>Furnished:</strong> ${wizardData.housingInfo?.furnished || 'no'}</div>
+            <div style="grid-column: span 2;"><strong>Utilities:</strong> ${(wizardData.housingInfo?.utilities || []).join(', ') || 'None'}</div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
+          <strong>Step 6: Member Accomplishments & Goals</strong>
+          <div style="margin-top:6px; padding-left:10px;">
+            ${wizardMembers.map(m => {
+              const acc = wizardData.accomplishmentsData?.[m.id] || {};
+              return `
+                <div style="margin-bottom: 6px;">
+                  <strong>${escapeHtmlAttr(m.name)}:</strong>
+                  <div style="padding-left:10px; font-size:0.85rem; color:#555;">
+                    <div>Accomplishments: ${escapeHtmlAttr(acc.accomplishments || 'None')}</div>
+                    <div>Goals: ${escapeHtmlAttr(acc.goals || 'None')}</div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
+          <strong>Step 7: Member Income Report</strong>
+          <div style="margin-top:6px; padding-left:10px;">
+            ${wizardMembers.map(m => {
+              const inc = wizardData.incomeData?.[m.id] || {};
+              return `
+                <div>${escapeHtmlAttr(m.name)}: Sevas: $${Number(inc.sevas || 0).toFixed(2)} | Business: $${Number(inc.business || 0).toFixed(2)} | Donations: $${Number(inc.donations || 0).toFixed(2)}</div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
+          <strong>Step 8: Member Social Media Tracking</strong>
+          <div style="margin-top:6px; padding-left:10px;">
+            ${wizardMembers.map(m => {
+              const sm = wizardData.socialMediaData?.[m.id] || {};
+              return `
+                <div>${escapeHtmlAttr(m.name)}: Yoga: ${sm.yoga || 0} posts | Other: ${sm.other || 0} posts | Handles: ${escapeHtmlAttr(sm.handles || 'None')}</div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px; padding: 10px; background: #fafafa; border: 1px solid #eee; border-radius: 6px;">
+          <strong>Step 9: Causing Outreach</strong>
+          <div style="margin-top:6px; padding-left:10px;">
+            ${wizardMembers.map(m => {
+              const caus = wizardData.causingData?.[m.id] || {};
+              return `
+                <div>${escapeHtmlAttr(m.name)}: Adheenavasis: ${caus.adheenavasis || 0} | PSS: ${caus.pss || 0} | SJP: ${caus.sjp || 0}</div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const teamName = state.teams.find(t => t.team_id === wizardBudget.team_id)?.team_name || 'Team';
+
     html = `
-      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 420px; overflow-y: auto;">
+      <div class="card" style="padding: 15px; border-radius: 8px; border: 1px solid #ddd; max-height: 500px; overflow-y: auto;">
+        <h3 style="margin-top: 0; margin-bottom: 5px; color: var(--primary); font-family: var(--font-family);">${escapeHtmlAttr(teamName)}</h3>
         <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 8px; color: #28a745;">Submission Summary &amp; Verification</h4>
         <p style="margin-bottom: 15px; font-weight: bold; color: #cc241d;">⚠ Please verify the financial numbers and category allocations below before submitting.</p>
         
+        <div style="background: #f8f9fa; border: 1px solid #ddd; padding: 12px; border-radius: 6px; margin-bottom: 20px; font-size: 0.95rem; line-height: 1.6;">
+          <div><strong>Budget Proposal Name:</strong> ${escapeHtmlAttr(wizardBudget.name)}</div>
+          <div><strong>Total Proposed USD:</strong> $${totalBudget.toFixed(2)}</div>
+          <div><strong>Team size:</strong> ${memberCount} member(s)</div>
+          <div style="color: #007bff; font-weight: bold;"><strong>Average USD Cost per Person:</strong> $${avgCost.toFixed(2)}</div>
+          <div style="color: #28a745; font-weight: bold;"><strong>Total Reconciliation Cash on Hand:</strong> $${Number(wizardData.bankBalance || 0).toFixed(2)}</div>
+        </div>
+
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9rem;">
           <thead>
             <tr style="background: #f1f1f1; text-align: left;">
@@ -2167,7 +2334,7 @@ window.renderWizardStep = function() {
             ${(wizardBudget.categories || []).map(cat => `
               <tr>
                 <td style="padding: 6px; border: 1px solid #ddd;">
-                  ${escapeHtmlAttr(cat.category)} ${cat.subcategory ? `<span style="color: #666; font-size: 0.8rem;">(${escapeHtmlAttr(cat.subcategory)})</span>` : ''}
+                  ${escapeHtmlAttr(cat.category || cat.name)} ${cat.subcategory ? `<span style="color: #666; font-size: 0.8rem;">(${escapeHtmlAttr(cat.subcategory)})</span>` : ''}
                 </td>
                 <td style="padding: 6px; border: 1px solid #ddd;">
                   ${Number(cat.localAmount || cat.local_amount || 0).toFixed(2)} ${escapeHtmlAttr(cat.currency || 'USD')}
@@ -2180,13 +2347,7 @@ window.renderWizardStep = function() {
           </tbody>
         </table>
 
-        <div style="font-size: 0.9rem; line-height: 1.5; border-top: 1px solid #eee; padding-top: 10px;">
-          <p><strong>Budget Proposal Name:</strong> ${escapeHtmlAttr(wizardBudget.name)}</p>
-          <p><strong>Total Proposed USD:</strong> $${(wizardBudget.total_amount || wizardBudget.totalAmount || 0).toFixed(2)}</p>
-          <p><strong>Reconciliation Total Balance:</strong> $${wizardData.bankBalance}</p>
-          <p><strong>Housing Address:</strong> ${escapeHtmlAttr(wizardData.housingInfo?.address || 'None')}</p>
-          <p><strong>Explanations for open budgets:</strong> ${wizardData.openBudgetsExplanation?.length || 0} budgets explained</p>
-        </div>
+        ${stepsHtml}
       </div>
       <p style="color: #666; font-size: 0.9rem; margin-top: 15px;">Please confirm all details are correct. Clicking Submit will record your accountability statistics and route this budget plan for approval.</p>
     `;
@@ -2216,14 +2377,21 @@ async function submitBudgetApprovalHandler(budgetId) {
   }
 
   try {
-    const teamId = budget.team_id;
+    const { data: freshBudget, error: freshErr } = await supabaseClient
+      .from('budget_plans')
+      .select('*')
+      .eq('id', budgetId)
+      .single();
+    if (freshErr) throw freshErr;
+
+    const teamId = freshBudget.team_id;
     const [openBudgetsRes, bucketsRes, userTeamsRes] = await Promise.all([
       supabaseClient
         .from('budget_plans')
         .select('id, name, status')
         .eq('team_id', teamId)
         .eq('is_deleted', false)
-        .neq('id', budget.id)
+        .neq('id', freshBudget.id)
         .in('status', ['approved', 'received']),
       supabaseClient
         .from('buckets')
@@ -2232,9 +2400,8 @@ async function submitBudgetApprovalHandler(budgetId) {
         .eq('is_deleted', false),
       supabaseClient
         .from('user_teams')
-        .select('user_id, access_level, users(id, name)')
+        .select('user_id, access_level, users:user_id(id, name)')
         .eq('team_id', teamId)
-        .eq('is_active', true)
     ]);
 
     const openBudgets = openBudgetsRes.data || [];
@@ -2255,23 +2422,23 @@ async function submitBudgetApprovalHandler(budgetId) {
       });
     }
 
-    wizardBudget = budget;
+    wizardBudget = freshBudget;
     wizardStep = 1;
     
     // Load pre-existing data from columns
     wizardData = {
-      openBudgetsExplanation: budget.open_budgets_explanation || [],
-      cashBalance: budget.recon_cash_balance || 0,
-      bankBalance: budget.recon_bank_balance || 0,
-      remainingFunds: budget.recon_remaining_funds || 0,
-      allocations: budget.submission_team_info?.allocations || {},
-      housingInfo: budget.submission_housing_info || {},
-      accomplishmentsData: budget.submission_accomplishments?.data || {},
-      incomeData: budget.submission_income_report?.data || {},
-      socialMediaData: budget.submission_social_media?.data || {},
-      causingData: budget.submission_coursing?.data || {},
-      expensesClosed: false,
-      reconciliationConfirmed: (budget.recon_bank_balance > 0)
+      openBudgetsExplanation: freshBudget.open_budgets_explanation || [],
+      cashBalance: freshBudget.recon_cash_balance || 0,
+      bankBalance: freshBudget.recon_bank_balance || 0,
+      remainingFunds: freshBudget.recon_remaining_funds || 0,
+      allocations: freshBudget.submission_team_info?.allocations || {},
+      housingInfo: freshBudget.submission_housing_info || {},
+      accomplishmentsData: freshBudget.submission_accomplishments?.data || {},
+      incomeData: freshBudget.submission_income_report?.data || {},
+      socialMediaData: freshBudget.submission_social_media?.data || {},
+      causingData: freshBudget.submission_coursing?.data || {},
+      expensesClosed: !!freshBudget.submission_team_info?.expensesClosed,
+      reconciliationConfirmed: !!freshBudget.submission_team_info?.reconciliationConfirmed || (freshBudget.recon_bank_balance > 0)
     };
 
     wizardOpenBudgets = openBudgets;

@@ -28,10 +28,14 @@ export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       delete plainHeaders['authorization'];
       
       options.credentials = 'include';
-      return fetch(proxyUrl, {
+      const response = await fetch(proxyUrl, {
         ...options,
         headers: plainHeaders
       });
+      if (response.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth-expired'));
+      }
+      return response;
     }
   }
 });

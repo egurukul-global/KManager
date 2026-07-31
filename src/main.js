@@ -101,6 +101,142 @@ export async function handleLogin(e) {
 
 let isLoggingOut = false;
 
+export async function forceLogout() {
+  if (isLoggingOut) return;
+  isLoggingOut = true;
+  clearTimeout(inactivityTimeout);
+  try {
+    await secureLogout();
+  } catch (err) {
+    console.error('Force logout error:', err);
+  }
+  state.user = null;
+  state.teams = [];
+  state.currentTeam = null;
+  state.session = null;
+  state.userTeamAccess = null;
+  state.isOkAdmin = false;
+  state.okApps = [];
+  state.okMenus = [];
+  state.okPins = [];
+
+  const lockEl = document.getElementById('lockScreen');
+  if (lockEl) lockEl.style.display = 'none';
+  state.isLocked = false;
+
+  if (window.location.pathname !== '/') {
+    window.history.replaceState({}, '', '/');
+  }
+  renderLoginScreen();
+
+  setTimeout(() => { isLoggingOut = false; }, 500);
+}
+window.forceLogout = forceLogout;
+
+window.addEventListener('auth-expired', () => {
+  forceLogout();
+});
+
+let inactivityTimeout;
+const INACTIVITY_LIMIT = 30 * 60 * 1000; // 30 minutes
+
+function resetInactivityTimer() {
+  if (state.isLocked || !state.session) return;
+  clearTimeout(inactivityTimeout);
+  inactivityTimeout = setTimeout(lockSession, INACTIVITY_LIMIT);
+}
+
+function lockSession() {
+  if (!state.session) return;
+  state.isLocked = true;
+  initLockScreenDOM();
+  const emailEl = document.getElementById('lockUserEmail');
+  if (emailEl) emailEl.innerText = state.session.user?.email || '';
+  const lockEl = document.getElementById('lockScreen');
+  if (lockEl) {
+    lockEl.style.display = 'flex';
+  }
+}
+
+function initLockScreenDOM() {
+  if (document.getElementById('lockScreen')) return;
+  const lock = document.createElement('div');
+  lock.id = 'lockScreen';
+  lock.style.display = 'none';
+  lock.style.position = 'fixed';
+  lock.style.top = '0';
+  lock.style.left = '0';
+  lock.style.width = '100%';
+  lock.style.height = '100%';
+  lock.style.background = 'rgba(0,0,0,0.85)';
+  lock.style.backdropFilter = 'blur(15px)';
+  lock.style.webkitBackdropFilter = 'blur(15px)';
+  lock.style.zIndex = '99999';
+  lock.style.alignItems = 'center';
+  lock.style.justifyContent = 'center';
+  lock.style.color = 'white';
+  lock.innerHTML = `
+    <div style="background:var(--modal-bg, #1e0005); border:1px solid var(--border, rgba(212,175,55,0.3)); border-radius:15px; padding:30px; max-width:400px; width:90%; text-align:center; box-shadow:0 12px 40px rgba(0,0,0,0.5); font-family:var(--font-family);">
+      <div style="font-size:3em; margin-bottom:15px; color:var(--brand-gold, #D4AF37);">🔒</div>
+      <h2 style="margin:0 0 10px; color:white !important; font-family:var(--font-family);">Session Locked</h2>
+      <p style="margin:0 0 20px; color:#ccc; font-size:0.95em;">Enter password to unlock and resume your session.</p>
+      <div style="font-weight:bold; margin-bottom:16px; color:white;" id="lockUserEmail"></div>
+      <form id="lockScreenForm">
+        <div class="form-group" style="margin-bottom:16px; text-align:left;">
+          <input type="password" id="lockPassword" placeholder="Enter password" required style="width:100%; height:38px; border-radius:6px; border:1px solid var(--border, rgba(212,175,55,0.3)); padding:8px 12px; background:rgba(25, 0, 5, 0.6); color:white; font-size:1em;">
+        </div>
+        <div id="lockError" style="color:#ff4d4d; font-size:0.9em; margin-bottom:12px; display:none;"></div>
+        <button type="submit" id="unlockBtn" style="width:100%; height:38px; background:var(--brand-gold, #D4AF37); color:#1a0003; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:1em; margin-bottom:10px;">Unlock</button>
+        <button type="button" id="lockLogoutBtn" style="width:100%; height:38px; background:transparent; border:1px solid rgba(255,255,255,0.2); color:white; border-radius:6px; cursor:pointer; font-size:0.95em;">Log Out</button>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(lock);
+  
+  document.getElementById('lockScreenForm').onsubmit = handleUnlockSession;
+  document.getElementById('lockLogoutBtn').onclick = handleForceLogoutFromLock;
+}
+
+async function handleUnlockSession(e) {
+  e.preventDefault();
+  const pwd = document.getElementById('lockPassword').value;
+  const btn = document.getElementById('unlockBtn');
+  const errDiv = document.getElementById('lockError');
+  if (!state.session?.user?.email) return;
+
+  btn.disabled = true;
+  btn.innerText = 'Unlocking...';
+  errDiv.style.display = 'none';
+
+  try {
+    const data = await secureLogin(state.session.user.email, pwd);
+    state.session = { user: data.user, expires_at: data.expires_at };
+    
+    state.isLocked = false;
+    const lock = document.getElementById('lockScreen');
+    if (lock) lock.style.display = 'none';
+    document.getElementById('lockPassword').value = '';
+    resetInactivityTimer();
+    showToast('Session unlocked', 'success');
+  } catch (err) {
+    errDiv.textContent = err.message || 'Unlock failed';
+    errDiv.style.display = 'block';
+    btn.disabled = false;
+    btn.innerText = 'Unlock';
+  }
+}
+
+async function handleForceLogoutFromLock() {
+  const lock = document.getElementById('lockScreen');
+  if (lock) lock.style.display = 'none';
+  state.isLocked = false;
+  await forceLogout();
+}
+
+['mousemove', 'mousedown', 'keydown', 'scroll', 'click', 'touchstart'].forEach(event => {
+  window.addEventListener(event, resetInactivityTimer, { passive: true });
+});
+
 export async function handleLogout() {
   if (isLoggingOut) return; // Prevent double execution
 
@@ -108,6 +244,7 @@ export async function handleLogout() {
   if (!ok) return;
 
   isLoggingOut = true;
+  clearTimeout(inactivityTimeout);
 
   try {
     await secureLogout();
@@ -119,7 +256,7 @@ export async function handleLogout() {
   state.teams = [];
   state.currentTeam = null;
   state.session = null;
-  state.userTeamAcess = null;
+  state.userTeamAccess = null;
   state.isOkAdmin = false;
   state.okApps = [];
   state.okMenus = [];
@@ -226,6 +363,7 @@ async function initializeApp() {
     }
 
     await routeAfterAuth();
+    resetInactivityTimer();
 
   } catch (err) {
     console.error('Initialization error:', err);
@@ -381,6 +519,10 @@ export async function switchTeam(teamId) {
     granted_by: team.granted_by,
     granted_at: team.granted_at
   };
+
+  const { loadOkAccess } = await import('./utils/okAccess.js');
+  await loadOkAccess(state.user.id, teamId);
+
   computePermissions();
   applyNavPermissions();
 

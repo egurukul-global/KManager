@@ -176,20 +176,6 @@ export function getTeamMgmtPage() {
               <button type="button" class="danger" onclick="window.deleteTeam()">Delete team</button>
             </div>
           </div>
-          <div style="margin-top: 15px;">
-            <label style="font-weight: 600; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.8; margin-bottom: 8px; display: block;">Team Capabilities</label>
-            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-              <label class="ok-pin-check" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="checkbox" id="teamCheckBudget"> Budget & Finance
-              </label>
-              <label class="ok-pin-check" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="checkbox" id="teamCheckTasks"> Task Tracker
-              </label>
-              <label class="ok-pin-check" style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
-                <input type="checkbox" id="teamCheckLms"> Gurukul LMS
-              </label>
-            </div>
-          </div>
         </form>
       ` : ''}
     </div>
@@ -201,7 +187,7 @@ export function getTeamMgmtPage() {
       <p id="teamsMembersHint" class="page-intro">Select a team above. Team access (OPS/OPL/OPH) is set here. Approval roles FIN, FIH, CAO are assigned separately under Admin → Role Assignments or on the user account.</p>
 
       <div id="memberSearchGroup" style="display:none; margin-bottom:15px; max-width:320px;">
-        <input type="text" id="memberSearchInput" placeholder="🔍 Search members..." oninput="window.filterTeamMembers()" style="height:38px; box-sizing:border-box; width:100%; padding:8px 10px; border:2px solid var(--border); border-radius:var(--radius-sm); font-size:15px;">
+        <input type="text" id="memberSearchInput" placeholder="🔍 Search users to add..." oninput="window.filterTeamMembers()" style="height:38px; box-sizing:border-box; width:100%; padding:8px 10px; border:2px solid var(--border); border-radius:var(--radius-sm); font-size:15px;">
       </div>
 
       <form id="addMemberForm" class="team-add-member-form" onsubmit="window.addTeamMember(event)" style="display:none;">
@@ -384,13 +370,7 @@ async function onTeamsPageSelectChange() {
   if (renameRow && renameInput && isOrgAdmin()) {
     renameRow.style.display = '';
     renameInput.value = team?.name || '';
-    const checkBudget = document.getElementById('teamCheckBudget');
-    const checkTasks = document.getElementById('teamCheckTasks');
-    const checkLms = document.getElementById('teamCheckLms');
     const checkGenderScope = document.getElementById('teamRenameGenderScope');
-    if (checkBudget) checkBudget.checked = team?.has_budget_access !== false;
-    if (checkTasks) checkTasks.checked = team?.has_tasks_access !== false;
-    if (checkLms) checkLms.checked = !!team?.has_lms_access;
     if (checkGenderScope) checkGenderScope.value = team?.gender_scope || 'mixed';
   }
   document.getElementById('memberTeamId').value = teamId;
@@ -550,14 +530,6 @@ async function saveTeamRename(e) {
   btn.textContent = 'Saving…';
   btn.disabled = true;
 
-  const checkBudget = document.getElementById('teamCheckBudget');
-  const checkTasks = document.getElementById('teamCheckTasks');
-  const checkLms = document.getElementById('teamCheckLms');
-
-  const budget = checkBudget ? checkBudget.checked : true;
-  const tasks = checkTasks ? checkTasks.checked : true;
-  const lms = checkLms ? checkLms.checked : false;
-
   const genderScope = document.getElementById('teamRenameGenderScope')?.value || 'mixed';
 
   try {
@@ -565,9 +537,6 @@ async function saveTeamRename(e) {
       .from('teams')
       .update({
         name,
-        has_budget_access: budget,
-        has_tasks_access: tasks,
-        has_lms_access: lms,
         gender_scope: genderScope
       })
       .eq('id', teamId);
@@ -576,9 +545,6 @@ async function saveTeamRename(e) {
     const team = teamsCache.find(t => t.id === teamId);
     if (team) {
       team.name = name;
-      team.has_budget_access = budget;
-      team.has_tasks_access = tasks;
-      team.has_lms_access = lms;
       team.gender_scope = genderScope;
     }
 
@@ -603,9 +569,16 @@ function populateAddMemberUserSelect(teamId) {
 
   const assignedIds = new Set(membersCache.map(m => m.user_id));
   const available = usersCache.filter(u => !assignedIds.has(u.id));
+  const q = (document.getElementById('memberSearchInput')?.value || '').trim().toLowerCase();
+
+  const matched = available.filter(u => 
+    !q || 
+    (u.name || '').toLowerCase().includes(q) || 
+    (u.email || '').toLowerCase().includes(q)
+  );
 
   select.innerHTML = '<option value="">Select user…</option>';
-  available.forEach(user => {
+  matched.forEach(user => {
     select.innerHTML += `<option value="${user.id}">${escapeHtml(userLabel(user))}</option>`;
   });
 }
@@ -690,23 +663,8 @@ async function loadTeamMembers(teamId) {
 }
 
 function filterTeamMembers() {
-  const query = document.getElementById('memberSearchInput')?.value?.toLowerCase().trim() || '';
-  
-  const tbody = document.getElementById('teamMembersBody');
-  if (tbody) {
-    tbody.querySelectorAll('tr').forEach(row => {
-      if (row.querySelector('.empty-state')) return;
-      const text = row.textContent.toLowerCase();
-      row.style.display = text.includes(query) ? '' : 'none';
-    });
-  }
-
-  const mobile = document.getElementById('teamMembersMobile');
-  if (mobile) {
-    mobile.querySelectorAll('.data-card').forEach(card => {
-      const text = card.textContent.toLowerCase();
-      card.style.display = text.includes(query) ? '' : 'none';
-    });
+  if (activeTeamId) {
+    populateAddMemberUserSelect(activeTeamId);
   }
 }
 
