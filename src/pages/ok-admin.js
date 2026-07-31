@@ -1,22 +1,64 @@
 import { state } from '../state.js';
 import { supabaseClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
-import { setButtonLoading } from '../utils/uiHelpers.js';
+import { setButtonLoading, cardRow } from '../utils/uiHelpers.js';
+import { createModal, openModal, closeModal, removeModal } from '../components/modals.js';
 import {
   isOkAdmin,
   OK_APPS,
   FINANCE_MENU_KEYS
 } from '../utils/okAccess.js';
 import { renderOkShell, initOkShell } from './ok-shell.js';
+import { ensureMemberBucketOnWorkTeam } from '../utils/memberBucketHelpers.js';
 
 let allUsers = [];
+let teamCountMapCache = {};
 let selectedUserId = null;
+const OK_ADMIN_SELECT_MODAL_ID = 'okAdminSelectModal';
+
+const ORG_ROLE_FILTERS = [
+  { value: 'user', label: 'User' },
+  { value: 'fin', label: 'Finance reviewer (FIN)' },
+  { value: 'fip', label: 'Finance payments (FIP)' },
+  { value: 'oh', label: 'Finance head (FIH)' },
+  { value: 'caoh', label: 'Chief admin (CAO)' },
+  { value: 'ceo', label: 'CEO' },
+  { value: 'admin', label: 'System admin (SYS)' }
+];
+
+const TEAM_ACCESS_DISPLAY = {
+  view: 'View only',
+  member: 'Member (OPS)',
+  lead: 'Team lead (OPL)',
+  oht: 'Operations head (OPH)',
+  admin: 'Team admin'
+};
 
 function escapeHtml(text) {
   return String(text || '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/"/g, '&quot;');
+}
+
+function orgRoleFilterOptions() {
+  let html = '<option value="">All org roles</option>';
+  ORG_ROLE_FILTERS.forEach(r => {
+    html += `<option value="${r.value}">${r.label}</option>`;
+  });
+  return html;
+}
+
+function roleOptions(selected = 'user') {
+  const current = String(selected || 'user').toLowerCase().trim();
+  const roles = ORG_ROLE_FILTERS.map(r => r.value);
+  if (current && !roles.includes(current)) roles.unshift(current);
+  return roles.map(r => {
+    const matched = ORG_ROLE_FILTERS.find(f => f.value === r);
+    const label = matched ? matched.label : r.toUpperCase();
+    const sel = r === current ? ' selected' : '';
+    return `<option value="${r}"${sel}>${label}</option>`;
+  }).join('');
 }
 
 export function getOkAdminPage() {
@@ -37,14 +79,28 @@ export function getOkAdminPage() {
     title: 'Admin',
     bottomTab: 'admin',
     mainHtml: `
-      <h1 class="page-title">People &amp; app access</h1>
-      <p class="page-intro">Create logins and decide which apps and Finance menus each person can open.</p>
+      <h1 class="page-title">Users</h1>
+      <p class="page-intro">Finance department &amp; One Kailasa: set org roles, manage team rosters, app clearances, and permissions overrides.</p>
 
       <div class="card">
         <div class="form-grid-row form-grid-row--user-filters">
           <div class="form-group">
             <label>Search</label>
             <input type="text" id="okAdminSearch" placeholder="Name or email" oninput="window.filterOkAdminUsers()">
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="okAdminStatusFilter" onchange="window.filterOkAdminUsers()">
+              <option value="active">Active</option>
+              <option value="hold">On hold</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Org role</label>
+            <select id="okAdminRoleFilter" onchange="window.filterOkAdminUsers()">
+              ${orgRoleFilterOptions()}
+            </select>
           </div>
           <div class="form-group user-mgmt-filter-actions">
             <label>&nbsp;</label>
@@ -57,27 +113,25 @@ export function getOkAdminPage() {
       </div>
 
       <div class="card">
-        <h2>All people</h2>
+        <h2>All users</h2>
         <div class="table-container show-desktop">
           <table class="table-stack-mobile user-mgmt-table">
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Email</th>
+                <th>Org role</th>
+                <th>Teams</th>
                 <th>Status</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="okAdminTableBody">
-              <tr><td colspan="4" class="empty-state">Loading…</td></tr>
+              <tr><td colspan="6" class="empty-state">Loading…</td></tr>
             </tbody>
           </table>
         </div>
         <div id="okAdminMobile" class="show-mobile data-card-list"></div>
-      </div>
-
-      <div class="card" id="okAdminDetailCard" style="display:none;">
-        <div id="okAdminDetail"></div>
       </div>
 
       <div id="okAdminCreateModal" class="modal">
@@ -115,87 +169,159 @@ export function initOkAdminPage() {
 
   window.filterOkAdminUsers = filterOkAdminUsers;
   window.selectOkAdminUser = selectUser;
+  window.closeUserSelectModal = closeUserSelectModal;
+  window.wireUserSelectModal = wireUserSelectModal;
   setupCreateModal();
   loadUsers();
 }
 
+function wireUserSelectModal() {
+  const modal = document.getElementById(OK_ADMIN_SELECT_MODAL_ID);
+  if (!modal) return;
+  const closeBtn = modal.querySelector('.close-modal');
+  if (closeBtn) closeBtn.onclick = () => closeUserSelectModal();
+  modal.onclick = (e) => {
+    if (e.target === modal) closeUserSelectModal();
+  };
+}
+
+function closeUserSelectModal() {
+  selectedUserId = null;
+  closeModal(OK_ADMIN_SELECT_MODAL_ID);
+}
+
 async function loadUsers() {
-  const { data, error } = await supabaseClient
-    .from('users')
-    .select('id, email, name, role, on_hold, gender, clearance_level, escalation_tokens')
-    .order('name');
-  if (error) {
-    showToast(error.message || 'Could not load people', 'error');
-    return;
+  const tbody = document.getElementById('okAdminTableBody');
+  const mobile = document.getElementById('okAdminMobile');
+
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading…</td></tr>';
+  if (mobile) mobile.innerHTML = '<p class="empty-state">Loading…</p>';
+
+  try {
+    const [usersRes, userTeamsRes] = await Promise.all([
+      supabaseClient.from('users').select('id, email, name, role, on_hold, gender, clearance_level, escalation_tokens').order('name'),
+      supabaseClient.from('user_teams').select('user_id, team_id, teams:team_id(name, is_personal_team)')
+    ]);
+
+    if (usersRes.error) throw usersRes.error;
+
+    teamCountMapCache = {};
+    window.allUserTeams = userTeamsRes.data || [];
+    (userTeamsRes.data || []).forEach(m => {
+      if (m.teams?.is_personal_team) return;
+      teamCountMapCache[m.user_id] = (teamCountMapCache[m.user_id] || 0) + 1;
+    });
+
+    allUsers = usersRes.data || [];
+    filterOkAdminUsers();
+  } catch (err) {
+    showToast(err.message || 'Could not load users', 'error');
   }
-  allUsers = data || [];
-  filterOkAdminUsers();
 }
 
 function filterOkAdminUsers() {
   const q = (document.getElementById('okAdminSearch')?.value || '').trim().toLowerCase();
+  const statusFilter = document.getElementById('okAdminStatusFilter')?.value || 'active';
+  const roleFilter = (document.getElementById('okAdminRoleFilter')?.value || '').toLowerCase();
+
   const tbody = document.getElementById('okAdminTableBody');
   const mobile = document.getElementById('okAdminMobile');
+
   const filtered = allUsers.filter(u => {
+    if (statusFilter === 'active' && u.on_hold) return false;
+    if (statusFilter === 'hold' && !u.on_hold) return false;
+    if (roleFilter && String(u.role || 'user').toLowerCase() !== roleFilter) return false;
     if (!q) return true;
     return (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
   });
 
   if (!filtered.length) {
-    if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No people found.</td></tr>';
-    if (mobile) mobile.innerHTML = '<p class="empty-state">No people found.</p>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No users match these filters.</td></tr>';
+    if (mobile) mobile.innerHTML = '<p class="empty-state">No users match these filters.</p>';
     return;
   }
 
   if (tbody) {
-    tbody.innerHTML = filtered.map(u => `
-      <tr class="${u.id === selectedUserId ? 'row-selected' : ''}">
-        <td data-label="Name">${escapeHtml(u.name || '—')}</td>
-        <td data-label="Email">${escapeHtml(u.email || '')}</td>
-        <td data-label="Status">${u.on_hold ? '<span class="status-badge status-hold">On hold</span>' : '<span class="status-badge status-active">Active</span>'}</td>
-        <td data-label="">
-          <button type="button" class="secondary" onclick="window.selectOkAdminUser('${u.id}')">Select</button>
-        </td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = filtered.map(u => {
+      const statusBadge = u.on_hold
+        ? '<span class="badge badge-danger">On hold</span>'
+        : '<span class="badge badge-success">Active</span>';
+      const teams = teamCountMapCache[u.id] || 0;
+      const teamsLabel = teams === 1 ? '1 work team' : `${teams} work teams`;
+      const matched = ORG_ROLE_FILTERS.find(f => f.value === u.role);
+      const displayRole = matched ? matched.label.split(' (')[0] : (u.role || 'User').toUpperCase();
+
+      return `
+        <tr class="${u.id === selectedUserId ? 'row-selected' : ''}">
+          <td data-label="Name"><strong>${escapeHtml(u.name || '—')}</strong></td>
+          <td data-label="Email">${escapeHtml(u.email || '')}</td>
+          <td data-label="Org role">${escapeHtml(displayRole)}</td>
+          <td data-label="Teams">${teamsLabel}</td>
+          <td data-label="Status">${statusBadge}</td>
+          <td data-label="">
+            <button type="button" class="small secondary" onclick="window.selectOkAdminUser('${u.id}')">Select</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
   }
 
   if (mobile) {
-    mobile.innerHTML = filtered.map(u => `
-      <article class="data-card data-card--compact ${u.id === selectedUserId ? 'data-card--selected' : ''}">
-        <div class="data-card-top">
-          <span class="data-card-title">${escapeHtml(u.name || '—')}</span>
-          ${u.on_hold ? '<span class="status-badge status-hold">On hold</span>' : '<span class="status-badge status-active">Active</span>'}
-        </div>
-        <div class="data-card-row"><span class="data-card-row-label">Email</span><span class="data-card-row-value">${escapeHtml(u.email || '')}</span></div>
-        <div class="btn-group" style="margin-top:10px;">
-          <button type="button" onclick="window.selectOkAdminUser('${u.id}')">Select</button>
-        </div>
-      </article>
-    `).join('');
+    mobile.innerHTML = filtered.map(u => {
+      const statusBadge = u.on_hold
+        ? '<span class="badge badge-danger">On hold</span>'
+        : '<span class="badge badge-success">Active</span>';
+      const teams = teamCountMapCache[u.id] || 0;
+      const teamsLabel = teams === 1 ? '1 work team' : `${teams} work teams`;
+      const matched = ORG_ROLE_FILTERS.find(f => f.value === u.role);
+      const displayRole = matched ? matched.label : (u.role || 'User').toUpperCase();
+
+      return `
+        <article class="data-card data-card--compact ${u.id === selectedUserId ? 'data-card--selected' : ''}">
+          <div class="data-card-top">
+            <span class="data-card-title">${escapeHtml(u.name || '—')}</span>
+            ${statusBadge}
+          </div>
+          ${cardRow('Email', u.email || '—')}
+          ${cardRow('Org role', displayRole)}
+          ${cardRow('Work teams', teamsLabel)}
+          <div class="btn-group" style="margin-top:10px;">
+            <button type="button" class="small secondary" onclick="window.selectOkAdminUser('${u.id}')">Select</button>
+          </div>
+        </article>
+      `;
+    }).join('');
   }
 }
 
 async function selectUser(userId) {
   selectedUserId = userId;
   filterOkAdminUsers();
-  const detailCard = document.getElementById('okAdminDetailCard');
-  const detail = document.getElementById('okAdminDetail');
   const user = allUsers.find(u => u.id === userId);
-  if (!detail || !user) return;
+  if (!user) return;
 
-  if (detailCard) detailCard.style.display = '';
-  detail.innerHTML = `<p class="empty-state">Loading user details and memberships…</p>`;
-  detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  removeModal(OK_ADMIN_SELECT_MODAL_ID);
+  createModal(OK_ADMIN_SELECT_MODAL_ID, '<p class="empty-state">Loading user details and memberships…</p>', { maxWidth: '720px' });
+  wireUserSelectModal();
+  openModal(OK_ADMIN_SELECT_MODAL_ID);
 
   try {
-    const [appsRes, menusRes, adminRes, userTeamsRes, chatPermRes, allTeamsRes] = await Promise.all([
+    const [
+      appsRes,
+      menusRes,
+      adminRes,
+      userTeamsRes,
+      chatPermRes,
+      allTeamsRes,
+      assignmentsRes
+    ] = await Promise.all([
       supabaseClient.from('ok_app_access').select('app_code, enabled').eq('user_id', userId),
       supabaseClient.from('ok_menu_access').select('menu_key, enabled').eq('user_id', userId).eq('app_code', 'finance'),
       supabaseClient.from('ok_admins').select('user_id').eq('user_id', userId).maybeSingle(),
       supabaseClient.from('user_teams').select('id, team_id, access_level, teams:team_id(id, name, is_personal_team)').eq('user_id', userId),
       supabaseClient.from('chat_permissions').select('*').eq('user_id', userId).maybeSingle(),
-      supabaseClient.from('teams').select('id, name').eq('is_personal_team', false).order('name')
+      supabaseClient.from('teams').select('id, name').eq('is_personal_team', false).order('name'),
+      supabaseClient.from('request_role_assignments').select('role_code, team_id, request_type, teams:team_id(name)').eq('user_id', userId).eq('is_active', true).order('role_code')
     ]);
 
     const appSet = new Set((appsRes.data || []).filter(a => a.enabled).map(a => a.app_code));
@@ -215,282 +341,387 @@ async function selectUser(userId) {
     const allowedUsersList = chatPerm.allowed_users || [];
     const allowedRolesList = chatPerm.allowed_roles || [];
     const allowedTeamsList = chatPerm.allowed_teams || [];
+    const assignments = assignmentsRes.data || [];
 
-    // Filter opposite gender users in memory
-    const myGender = user.gender || '';
-    const oppositeGenderUsers = myGender
-      ? allUsers.filter(u => u.id !== userId && u.gender && u.gender !== myGender && !u.on_hold)
-      : allUsers.filter(u => u.id !== userId && !u.on_hold);
+    // Allow whitelisting from all other active users
+    const oppositeGenderUsers = allUsers.filter(u => u.id !== userId && !u.on_hold);
 
-    detail.innerHTML = `
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
-        <div>
-          <h2 style="margin:0;">${escapeHtml(user.name || '—')}</h2>
-          <p class="page-intro" style="margin:4px 0 16px;">${escapeHtml(user.email || '')}</p>
-        </div>
-        <div class="btn-group">
-          <button type="button" class="${user.on_hold ? 'secondary' : ''}" id="okToggleHold" ${isGlobalAdmin ? '' : 'disabled style="opacity:0.6; pointer-events:none;"'}>
-            ${user.on_hold ? 'Clear hold' : 'Put on hold'}
-          </button>
-          <button type="button" class="secondary" id="okToggleAdmin" ${isGlobalAdmin ? '' : 'disabled style="opacity:0.6; pointer-events:none;"'}>
-            ${isAdmin ? 'Remove OK Admin' : 'Make OK Admin'}
-          </button>
-        </div>
-      </div>
-
-      <!-- Tab Buttons -->
-      <div class="tabs-container" style="margin-bottom: 20px; display: flex; gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
-        <button type="button" class="tab-btn active" id="btnTabProfile" onclick="window.switchOkAdminTab('profile')" style="background: none; border: none; padding: 8px 16px; cursor: pointer; font-weight: bold; border-bottom: 3px solid var(--primary); color: var(--text);">Identity & Roles</button>
-        <button type="button" class="tab-btn" id="btnTabTeams" onclick="window.switchOkAdminTab('teams')" style="background: none; border: none; padding: 8px 16px; cursor: pointer; color: var(--text-secondary);">Teams</button>
-        <button type="button" class="tab-btn" id="btnTabPermissions" onclick="window.switchOkAdminTab('permissions')" style="background: none; border: none; padding: 8px 16px; cursor: pointer; color: var(--text-secondary);">Permissions</button>
-      </div>
-
-      <!-- TAB 1: Identity & Roles -->
-      <div id="tabContentProfile" class="tab-content" style="display: block;">
-        <form id="okProfileForm" onsubmit="window.saveUserProfileInline(event)">
-          <div class="form-grid" style="margin-bottom:16px;">
-            <div class="form-group">
-              <label for="okSelectName">Full Name *</label>
-              <input type="text" id="okSelectName" required maxlength="120" value="${escapeHtml(user.name || '')}">
-            </div>
-            <div class="form-group">
-              <label for="okSelectRole">Global Role</label>
-              <select id="okSelectRole" class="form-control" ${isGlobalAdmin ? '' : 'disabled'}>
-                <option value="user" ${user.role === 'user' ? 'selected' : ''}>User</option>
-                <option value="fin" ${user.role === 'fin' ? 'selected' : ''}>FIN (Finance Reviewer)</option>
-                <option value="fip" ${user.role === 'fip' ? 'selected' : ''}>FIP (Finance Payments)</option>
-                <option value="oh" ${user.role === 'oh' ? 'selected' : ''}>OH (Finance Head)</option>
-                <option value="caoh" ${user.role === 'caoh' ? 'selected' : ''}>CAOH (Chief Admin)</option>
-                <option value="ceo" ${user.role === 'ceo' ? 'selected' : ''}>CEO</option>
-                <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>Admin (SYS)</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="okSelectGender">Gender</label>
-              <select id="okSelectGender" class="form-control" ${isGlobalAdmin ? '' : 'disabled'}>
-                <option value="male" ${user.gender === 'male' ? 'selected' : ''}>Male</option>
-                <option value="female" ${user.gender === 'female' ? 'selected' : ''}>Female</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="okSelectTokens">Escalation Tokens</label>
-              <select id="okSelectTokens" class="form-control" ${isGlobalAdmin ? '' : 'disabled'}>
-                <option value="1" ${user.escalation_tokens === 1 ? 'selected' : ''}>1</option>
-                <option value="2" ${user.escalation_tokens === 2 ? 'selected' : ''}>2</option>
-                <option value="3" ${user.escalation_tokens === 3 || user.escalation_tokens === undefined || user.escalation_tokens === null ? 'selected' : ''}>3 (Default)</option>
-              </select>
-            </div>
-          </div>
-          <div class="btn-group">
-            <button type="submit" id="okSaveProfileBtn">Save Profile</button>
-            <button type="button" class="secondary" id="okResetPwdBtn">Send Password Reset Email</button>
-          </div>
-        </form>
-      </div>
-
-      <!-- TAB 2: Teams -->
-      <div id="tabContentTeams" class="tab-content" style="display: none;">
-        <h3>Team Memberships</h3>
-        <div class="table-container show-desktop">
-          <table class="table-stack-mobile">
-            <thead>
-              <tr>
-                <th>Team Name</th>
-                <th>Access Level</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${memberships.length === 0 
-                ? '<tr><td colspan="3" class="empty-state">No team memberships found.</td></tr>' 
-                : memberships.map(m => `
-                  <tr>
-                    <td><strong>${escapeHtml(m.teams?.name)}</strong></td>
-                    <td>
-                      <select onchange="window.updateTeamAccessInline('${m.team_id}', this.value)" style="padding:4px; border-radius:4px; border:1px solid var(--border); font-size:0.9em; background:var(--card-bg); color:var(--text);">
-                        <option value="view" ${m.access_level === 'view' ? 'selected' : ''}>View only</option>
-                        <option value="member" ${m.access_level === 'member' ? 'selected' : ''}>Member (OPS)</option>
-                        <option value="lead" ${m.access_level === 'lead' ? 'selected' : ''}>Team lead (OPL)</option>
-                        <option value="oht" ${m.access_level === 'oht' ? 'selected' : ''}>Operations head (OPH)</option>
-                        <option value="admin" ${m.access_level === 'admin' ? 'selected' : ''}>Team admin</option>
-                      </select>
-                    </td>
-                    <td>
-                      <button type="button" class="danger small" onclick="window.removeTeamMemberInline('${m.team_id}')">Remove</button>
-                    </td>
-                  </tr>
-                `).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div class="show-mobile data-card-list">
-          ${memberships.length === 0 
-            ? '<p class="empty-state">No team memberships found.</p>' 
-            : memberships.map(m => `
-              <article class="data-card data-card--compact">
-                <div class="data-card-top">
-                  <span class="data-card-title">${escapeHtml(m.teams?.name)}</span>
-                  <button type="button" class="danger small" onclick="window.removeTeamMemberInline('${m.team_id}')">Remove</button>
-                </div>
-                <div class="form-group" style="margin-top:8px;">
-                  <label>Access Level</label>
-                  <select onchange="window.updateTeamAccessInline('${m.team_id}', this.value)" style="width:100%; padding:6px; border-radius:6px; border:1px solid var(--border); background:var(--card-bg); color:var(--text);">
-                    <option value="view" ${m.access_level === 'view' ? 'selected' : ''}>View only</option>
-                    <option value="member" ${m.access_level === 'member' ? 'selected' : ''}>Member (OPS)</option>
-                    <option value="lead" ${m.access_level === 'lead' ? 'selected' : ''}>Team lead (OPL)</option>
-                    <option value="oht" ${m.access_level === 'oht' ? 'selected' : ''}>Operations head (OPH)</option>
-                    <option value="admin" ${m.access_level === 'admin' ? 'selected' : ''}>Team admin</option>
-                  </select>
-                </div>
-              </article>
-            `).join('')}
-        </div>
-
-        <h4 style="margin-top:24px;">Add to a Team</h4>
-        <form id="okAddUserTeamForm" onsubmit="window.addTeamMemberInline(event)" style="background:var(--bg-secondary); padding:16px; border-radius:8px; border:1px solid var(--border);">
-          <div class="form-grid" style="align-items:flex-end; gap:16px; margin-bottom:12px;">
-            <div class="form-group">
-              <label for="okAddTeamSelect">Select Team</label>
-              <select id="okAddTeamSelect" required style="width:100%;">
-                <option value="">Choose team…</option>
-                ${availableTeams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="okAddTeamAccess">Access Level</label>
-              <select id="okAddTeamAccess" required style="width:100%;">
-                <option value="member">Member (OPS)</option>
-                <option value="lead">Team lead (OPL)</option>
-                <option value="oht">Operations head (OPH)</option>
-                <option value="view">View only</option>
-                <option value="admin">Team admin</option>
-              </select>
-            </div>
-          </div>
-          <button type="submit" id="okAddMemberBtn" ${availableTeams.length === 0 ? 'disabled' : ''}>Add Member</button>
-        </form>
-      </div>
-
-      <!-- TAB 3: Permissions -->
-      <div id="tabContentPermissions" class="tab-content" style="display: none;">
-        <h3>App & Menu Access</h3>
-        <h4 style="margin:12px 0 6px;">Applications</h4>
-        <div class="ok-access-checks" id="okAppChecks" style="margin-bottom:16px;">
-          ${OK_APPS.map(a => {
-            const canManage = isGlobalAdmin || managedApps.includes(a.code);
-            const disabled = canManage ? '' : 'disabled';
-            return `
-              <label class="ok-pin-check" style="${canManage ? '' : 'opacity: 0.6; pointer-events: none;'}">
-                <input type="checkbox" data-app="${a.code}" ${appSet.has(a.code) ? 'checked' : ''} ${disabled}>
-                ${escapeHtml(a.label)}${a.live ? '' : ' (soon)'}
-              </label>
-            `;
-          }).join('')}
-        </div>
-
-        <h4 style="margin:12px 0 6px;">Finance menus</h4>
-        <div class="ok-access-checks ok-access-checks--menus" id="okMenuChecks" style="margin-bottom:20px;">
-          ${FINANCE_MENU_KEYS.map(m => {
-            const canManage = isGlobalAdmin || managedApps.includes('finance');
-            const disabled = canManage ? '' : 'disabled';
-            return `
-              <label class="ok-pin-check" style="${canManage ? '' : 'opacity: 0.6; pointer-events: none;'}">
-                <input type="checkbox" data-menu="${m.key}" ${menuSet.has(m.key) ? 'checked' : ''} ${disabled}>
-                ${escapeHtml(m.label)}
-              </label>
-            `;
-          }).join('')}
-        </div>
-
-        <h3 style="border-top:1px solid var(--border); padding-top:16px; margin-top:20px;">Konnect Clearances</h3>
-        <div class="form-grid" style="margin-bottom:16px;">
-          <div class="form-group" style="display:flex; align-items:center; gap:8px;">
-            <input type="checkbox" id="okAllowOpposite" ${allowOpposite ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px;">
-            <label for="okAllowOpposite" style="cursor:pointer; font-weight:600; margin:0; user-select:none;">Allow opposite gender messaging</label>
-          </div>
-          <div class="form-group">
-            <label for="okCrossTeam">Cross-team clearance</label>
-            <select id="okCrossTeam" style="width:100%;">
-              <option value="none" ${crossTeam === 'none' ? 'selected' : ''}>None (Shared teams only)</option>
-              <option value="team" ${crossTeam === 'team' ? 'selected' : ''}>Team (All team channels visible)</option>
-              <option value="global" ${crossTeam === 'global' ? 'selected' : ''}>Global (All users visible)</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Role Clearances Override -->
-        <h4 style="margin:12px 0 6px;">Explicit Role Permissions</h4>
-        <p class="section-hint" style="margin-bottom:8px;">Grant this user permission to message anyone with these roles, regardless of gender or team limits.</p>
-        <div id="okAllowedRolesList" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
-          <label style="cursor:pointer;"><input type="checkbox" data-role-clearance="fin" ${allowedRolesList.includes('fin') ? 'checked' : ''}> FIN</label>
-          <label style="cursor:pointer;"><input type="checkbox" data-role-clearance="fip" ${allowedRolesList.includes('fip') ? 'checked' : ''}> FIP</label>
-          <label style="cursor:pointer;"><input type="checkbox" data-role-clearance="oh" ${allowedRolesList.includes('oh') ? 'checked' : ''}> OH (FIH)</label>
-          <label style="cursor:pointer;"><input type="checkbox" data-role-clearance="caoh" ${allowedRolesList.includes('caoh') ? 'checked' : ''}> CAOH (CAO)</label>
-          <label style="cursor:pointer;"><input type="checkbox" data-role-clearance="ceo" ${allowedRolesList.includes('ceo') ? 'checked' : ''}> CEO</label>
-          <label style="cursor:pointer;"><input type="checkbox" data-role-clearance="admin" ${allowedRolesList.includes('admin') ? 'checked' : ''}> Admin</label>
-        </div>
-
-        <!-- Team Clearances Override -->
-        <h4 style="margin:12px 0 6px;">Explicit Team Permissions</h4>
-        <p class="section-hint" style="margin-bottom:8px;">Grant this user permission to message anyone belonging to these teams, regardless of gender limits.</p>
-        <div id="okAllowedTeamsList" style="max-height:120px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px; background:var(--bg-secondary); margin-bottom:16px;">
-          ${allTeamsRes.data?.map(t => {
-            const isChecked = allowedTeamsList.includes(t.id);
-            return `<label style="cursor:pointer;"><input type="checkbox" data-team-clearance="${t.id}" ${isChecked ? 'checked' : ''}> ${escapeHtml(t.name)}</label>`;
-          }).join('')}
-        </div>
-
-        <!-- Opposite Gender Bulk Filter Checkbox List -->
-        <h4 style="margin:12px 0 6px;">Explicit Individual Clearances</h4>
-        <p class="section-hint" style="margin-bottom:12px;">Search and whitelist specific individuals (e.g. opposite-gender) for direct chat override.</p>
-        
-        <div class="form-grid-row" style="display:flex; gap:10px; margin-bottom:12px;">
-          <input type="text" id="okOppositeSearch" placeholder="Search name/email..." oninput="window.filterOppositeGenderUsers()" style="flex:1; height:36px; padding:6px; border:1px solid var(--border); border-radius:6px;">
-          <select id="okOppositeRoleFilter" onchange="window.filterOppositeGenderUsers()" style="width:160px; height:36px; border-radius:6px; border:1px solid var(--border); padding:6px;">
-            <option value="">All Roles</option>
-            <option value="user">User</option>
-            <option value="fin">FIN</option>
-            <option value="fip">FIP</option>
-            <option value="oh">OH</option>
-            <option value="caoh">CAOH</option>
-            <option value="ceo">CEO</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-
-        <div style="margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
-          <label style="font-size:0.85em; font-weight:600; cursor:pointer; color:var(--text);">
-            <input type="checkbox" id="okSelectAllOpposite" onchange="window.toggleSelectAllOpposite(this.checked)"> Select All Matching
-          </label>
-          <span id="okOppositeCount" style="font-size:0.8em; color:var(--text-secondary);">0 matched</span>
-        </div>
-
-        <div id="okOppositeList" style="max-height:150px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; padding:8px; background:var(--bg-secondary); display:flex; flex-direction:column; gap:6px; margin-bottom:20px;">
-          <!-- Loaded dynamically -->
-        </div>
-
-        <div class="btn-group">
-          <button type="button" id="okSaveAccess">Save Permissions</button>
-        </div>
-      </div>
-    `;
-
-    document.getElementById('okToggleHold')?.addEventListener('click', () => toggleHold(user));
-    document.getElementById('okToggleAdmin')?.addEventListener('click', () => toggleAdmin(user, isAdmin));
-    document.getElementById('okSaveAccess')?.addEventListener('click', () => saveAccess(userId));
-    document.getElementById('okResetPwdBtn')?.addEventListener('click', () => sendResetEmailInline(user.email));
+    const statusBadge = user.on_hold
+      ? '<span class="badge badge-danger">On hold</span>'
+      : '<span class="badge badge-success">Active</span>';
 
     // Store whitelisted user set globally on window for dynamic checkbox access
     window.currentAllowedUsers = new Set(allowedUsersList);
     window.oppositeGenderUsers = oppositeGenderUsers;
+    window.availableTeamsCache = availableTeams;
+
+    const content = `
+      <div class="user-select-modal" style="padding:10px 0;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px; margin-bottom: 16px;">
+          <div>
+            <h2 style="margin:0; color: var(--text);">${escapeHtml(user.name || '—')}</h2>
+            <p class="user-select-email" style="margin:4px 0 6px; color: var(--text-secondary);">${escapeHtml(user.email || '')}</p>
+          </div>
+          <div class="btn-group" style="align-items: center; gap: 8px;">
+            ${statusBadge}
+            <button type="button" class="secondary small" id="okToggleHold" ${isGlobalAdmin ? '' : 'disabled style="opacity:0.6; pointer-events:none;"'}>
+              ${user.on_hold ? 'Remove hold' : 'Place on hold'}
+            </button>
+            <button type="button" class="secondary small" id="okToggleAdmin" ${isGlobalAdmin ? '' : 'disabled style="opacity:0.6; pointer-events:none;"'}>
+              ${isAdmin ? 'Remove OK Admin' : 'Make OK Admin'}
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab Buttons -->
+        <div class="tabs-container" style="margin-bottom: 20px; display: flex; gap: 10px; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+          <button type="button" class="tab-btn active" id="btnTabProfile" onclick="window.switchOkAdminTab('profile')" style="background: none; border: none; padding: 8px 16px; cursor: pointer; font-weight: bold; border-bottom: 3px solid var(--primary); color: var(--text);">Identity & Roles</button>
+          <button type="button" class="tab-btn" id="btnTabTeams" onclick="window.switchOkAdminTab('teams')" style="background: none; border: none; padding: 8px 16px; cursor: pointer; color: var(--text-secondary);">Teams</button>
+          <button type="button" class="tab-btn" id="btnTabPermissions" onclick="window.switchOkAdminTab('permissions')" style="background: none; border: none; padding: 8px 16px; cursor: pointer; color: var(--text-secondary);">App Access</button>
+          <button type="button" class="tab-btn" id="btnTabChat" onclick="window.switchOkAdminTab('chat')" style="background: none; border: none; padding: 8px 16px; cursor: pointer; color: var(--text-secondary);">Chat Clearances</button>
+        </div>
+
+        <!-- TAB 1: Identity & Roles -->
+        <div id="tabContentProfile" class="ok-admin-tab-content" style="display: block;">
+          <form id="okProfileForm" onsubmit="window.saveUserProfileInline(event)">
+            <div class="form-grid" style="margin-bottom:16px;">
+              <div class="form-group">
+                <label for="okSelectName">Full Name *</label>
+                <input type="text" id="okSelectName" required maxlength="120" value="${escapeHtml(user.name || '')}">
+              </div>
+              <div class="form-group">
+                <label for="okSelectRole">Global Role</label>
+                <select id="okSelectRole" class="form-control" ${isGlobalAdmin ? '' : 'disabled'}>
+                  ${roleOptions(user.role || 'user')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="okSelectGender">Gender</label>
+                <select id="okSelectGender" class="form-control" ${isGlobalAdmin ? '' : 'disabled'}>
+                  <option value="male" ${user.gender === 'male' ? 'selected' : ''}>Male</option>
+                  <option value="female" ${user.gender === 'female' ? 'selected' : ''}>Female</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="okSelectTokens">Escalation Tokens</label>
+                <select id="okSelectTokens" class="form-control" ${isGlobalAdmin ? '' : 'disabled'}>
+                  <option value="1" ${user.escalation_tokens === 1 ? 'selected' : ''}>1</option>
+                  <option value="2" ${user.escalation_tokens === 2 ? 'selected' : ''}>2</option>
+                  <option value="3" ${user.escalation_tokens === 3 || user.escalation_tokens === undefined || user.escalation_tokens === null ? 'selected' : ''}>3 (Default)</option>
+                </select>
+              </div>
+            </div>
+            <div class="btn-group">
+              <button type="submit" id="okSaveProfileBtn">Save Profile</button>
+              <button type="button" class="secondary" id="okResetPwdBtn">Send Password Reset Email</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- TAB 2: Teams -->
+        <div id="tabContentTeams" class="ok-admin-tab-content" style="display: none;">
+          <h3>Work Teams</h3>
+          <div class="table-container show-desktop">
+            <table class="user-select-table">
+              <thead>
+                <tr>
+                  <th>Team Name</th>
+                  <th>Access Level</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${memberships.length === 0 
+                  ? '<tr><td colspan="3" class="empty-state">No team memberships found.</td></tr>' 
+                  : memberships.map(m => `
+                    <tr>
+                      <td><strong>${escapeHtml(m.teams?.name)}</strong></td>
+                      <td>
+                        <select onchange="window.updateTeamAccessInline('${m.team_id}', this.value)" style="padding:4px; border-radius:4px; border:1px solid var(--border); font-size:0.9em; background:var(--card-bg); color:var(--text);">
+                          <option value="view" ${m.access_level === 'view' ? 'selected' : ''}>View only</option>
+                          <option value="member" ${m.access_level === 'member' ? 'selected' : ''}>Member (OPS)</option>
+                          <option value="lead" ${m.access_level === 'lead' ? 'selected' : ''}>Team lead (OPL)</option>
+                          <option value="oht" ${m.access_level === 'oht' ? 'selected' : ''}>Operations head (OPH)</option>
+                          <option value="admin" ${m.access_level === 'admin' ? 'selected' : ''}>Team admin</option>
+                        </select>
+                      </td>
+                      <td>
+                        <button type="button" class="danger small" onclick="window.removeTeamMemberInline('${m.team_id}')">Remove</button>
+                      </td>
+                    </tr>
+                  `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="show-mobile data-card-list">
+            ${memberships.length === 0 
+              ? '<p class="empty-state">No team memberships found.</p>' 
+              : memberships.map(m => `
+                <article class="data-card data-card--compact">
+                  <div class="data-card-top">
+                    <span class="data-card-title">${escapeHtml(m.teams?.name)}</span>
+                    <button type="button" class="danger small" onclick="window.removeTeamMemberInline('${m.team_id}')">Remove</button>
+                  </div>
+                  <div class="form-group" style="margin-top:8px;">
+                    <label>Access Level</label>
+                    <select onchange="window.updateTeamAccessInline('${m.team_id}', this.value)" style="width:100%; padding:6px; border-radius:6px; border:1px solid var(--border); background:var(--card-bg); color:var(--text);">
+                      <option value="view" ${m.access_level === 'view' ? 'selected' : ''}>View only</option>
+                      <option value="member" ${m.access_level === 'member' ? 'selected' : ''}>Member (OPS)</option>
+                      <option value="lead" ${m.access_level === 'lead' ? 'selected' : ''}>Team lead (OPL)</option>
+                      <option value="oht" ${m.access_level === 'oht' ? 'selected' : ''}>Operations head (OPH)</option>
+                      <option value="admin" ${m.access_level === 'admin' ? 'selected' : ''}>Team admin</option>
+                    </select>
+                  </div>
+                </article>
+              `).join('')}
+          </div>
+
+          <h4 style="margin-top:24px;">Add to a Team</h4>
+          <form id="okAddUserTeamForm" onsubmit="window.addTeamMemberInline(event)" style="background:var(--bg-secondary); padding:16px; border-radius:8px; border:1px solid var(--border); margin-bottom: 20px;">
+            <div class="form-group" style="margin-bottom:12px;">
+              <label for="okAddTeamSearch">Filter Teams</label>
+              <input type="text" id="okAddTeamSearch" placeholder="Type to filter teams list below..." oninput="window.filterOkAddTeamOptions()" style="width:100%; height:34px; padding:6px; border-radius:6px; border:1px solid var(--border); background:var(--card-bg); color:var(--text);">
+            </div>
+            <div class="form-grid" style="align-items:flex-end; gap:16px; margin-bottom:12px;">
+              <div class="form-group">
+                <label for="okAddTeamSelect">Select Team</label>
+                <select id="okAddTeamSelect" required style="width:100%;">
+                  <option value="">Choose team…</option>
+                  ${availableTeams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="okAddTeamAccess">Access Level</label>
+                <select id="okAddTeamAccess" required style="width:100%;">
+                  <option value="member">Member (OPS)</option>
+                  <option value="lead">Team lead (OPL)</option>
+                  <option value="oht">Operations head (OPH)</option>
+                  <option value="view">View only</option>
+                  <option value="admin">Team admin</option>
+                </select>
+              </div>
+            </div>
+            <button type="submit" id="okAddMemberBtn" ${availableTeams.length === 0 ? 'disabled' : ''}>Add Member</button>
+          </form>
+
+          <h3>Approval Roles (Pools)</h3>
+          ${buildApprovalRolesSection(assignments)}
+        </div>
+
+        <!-- TAB 3: App Access -->
+        <div id="tabContentPermissions" class="ok-admin-tab-content" style="display: none;">
+          <h3>App & Menu Access</h3>
+          <h4 style="margin:12px 0 6px;">Applications</h4>
+          <div class="ok-access-checks" id="okAppChecks" style="margin-bottom:16px; display: flex; flex-wrap: wrap; gap: 10px;">
+            ${OK_APPS.map(a => {
+              const canManage = isGlobalAdmin || managedApps.includes(a.code);
+              const disabled = canManage ? '' : 'disabled';
+              return `
+                <label class="ok-pin-check" style="${canManage ? '' : 'opacity: 0.6; pointer-events: none;'} cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                  <input type="checkbox" data-app="${a.code}" ${appSet.has(a.code) ? 'checked' : ''} ${disabled}>
+                  ${escapeHtml(a.label)}${a.live ? '' : ' (soon)'}
+                </label>
+              `;
+            }).join('')}
+          </div>
+
+          <!-- Conditional App Menu Selection -->
+          <div style="margin-top:16px; margin-bottom:16px;">
+            <label for="okAppMenuConfigureSelect" style="font-weight:600; display:block; margin-bottom:6px; color: var(--text);">Configure App Menus</label>
+            <select id="okAppMenuConfigureSelect" onchange="window.switchAppMenuConfig(this.value)" style="width:100%; height:36px; border-radius:6px; border:1px solid var(--border); padding:6px; background:var(--card-bg); color:var(--text);">
+              <option value="none">Choose app to configure menus…</option>
+              <option value="finance">Finance</option>
+              <option value="gurukul">Gurukul</option>
+              <option value="utilities">Utilities</option>
+              <option value="tasks">Tasks</option>
+              <option value="konnect">Konnect</option>
+            </select>
+          </div>
+
+          <!-- Finance Menus Config Panel -->
+          <div id="okMenuConfigFinance" class="ok-menu-config-panel" style="display:none; border:1px solid var(--border); border-radius:6px; padding:12px; background:var(--bg-secondary); margin-bottom:16px;">
+            <h4 style="margin:0 0 10px; color: var(--text);">Finance Menu Permissions</h4>
+            <div class="ok-access-checks ok-access-checks--menus" id="okMenuChecks" style="max-height:200px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;">
+              ${FINANCE_MENU_KEYS.map(m => `
+                <label style="cursor:pointer; display:flex; align-items:center; gap:8px; color: var(--text-secondary); font-size: 0.9em;">
+                  <input type="checkbox" data-menu="${m.key}" ${menuSet.has(m.key) ? 'checked' : ''}>
+                  ${escapeHtml(m.label)}
+                </label>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Gurukul Menus Config Panel -->
+          <div id="okMenuConfigGurukul" class="ok-menu-config-panel" style="display:none; border:1px solid var(--border); border-radius:6px; padding:12px; background:var(--bg-secondary); margin-bottom:16px;">
+            <p class="empty-state" style="font-size:0.85em; margin:0; color: var(--text-secondary);">Gurukul menus will be configurable once the module is live.</p>
+          </div>
+
+          <!-- Generic Config Panel -->
+          <div id="okMenuConfigGeneric" class="ok-menu-config-panel" style="display:none; border:1px solid var(--border); border-radius:6px; padding:12px; background:var(--bg-secondary); margin-bottom:16px;">
+            <p class="empty-state" style="font-size:0.85em; margin:0; color: var(--text-secondary);">No custom menus to configure for this app.</p>
+          </div>
+
+          <div class="btn-group" style="margin-top:24px;">
+            <button type="button" class="success save-access-btn" id="okSaveAccess">Save Permissions</button>
+          </div>
+        </div>
+
+        <!-- TAB 4: Chat Clearances -->
+        <div id="tabContentChat" class="ok-admin-tab-content" style="display: none;">
+          <h3>Konnect Messaging Clearances</h3>
+          <div class="form-grid" style="margin-bottom:16px;">
+            <div class="form-group" style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="okAllowOpposite" ${allowOpposite ? 'checked' : ''} style="cursor:pointer; width:16px; height:16px;">
+              <label for="okAllowOpposite" style="cursor:pointer; font-weight:600; margin:0; user-select:none; color: var(--text);">Allow opposite gender messaging</label>
+            </div>
+            <div class="form-group">
+              <label for="okCrossTeam" style="color: var(--text);">Cross-team clearance</label>
+              <select id="okCrossTeam" style="width:100%; height:36px; border-radius:6px; border:1px solid var(--border); padding:6px; background:var(--card-bg); color:var(--text);">
+                <option value="none" ${crossTeam === 'none' ? 'selected' : ''}>None (Shared teams only)</option>
+                <option value="team" ${crossTeam === 'team' ? 'selected' : ''}>Team (All team channels visible)</option>
+                <option value="global" ${crossTeam === 'global' ? 'selected' : ''}>Global (All users visible)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Role Clearances Override -->
+          <h4 style="margin:12px 0 6px; color: var(--text);">Explicit Role Permissions</h4>
+          <p class="section-hint" style="margin-bottom:8px;">Grant this user permission to message anyone with these roles, regardless of gender or team limits.</p>
+          <div id="okAllowedRolesList" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
+            <label style="cursor:pointer; display: flex; align-items: center; gap: 4px; color: var(--text-secondary);"><input type="checkbox" data-role-clearance="fin" ${allowedRolesList.includes('fin') ? 'checked' : ''}> FIN</label>
+            <label style="cursor:pointer; display: flex; align-items: center; gap: 4px; color: var(--text-secondary);"><input type="checkbox" data-role-clearance="fip" ${allowedRolesList.includes('fip') ? 'checked' : ''}> FIP</label>
+            <label style="cursor:pointer; display: flex; align-items: center; gap: 4px; color: var(--text-secondary);"><input type="checkbox" data-role-clearance="oh" ${allowedRolesList.includes('oh') ? 'checked' : ''}> OH (FIH)</label>
+            <label style="cursor:pointer; display: flex; align-items: center; gap: 4px; color: var(--text-secondary);"><input type="checkbox" data-role-clearance="caoh" ${allowedRolesList.includes('caoh') ? 'checked' : ''}> CAOH (CAO)</label>
+            <label style="cursor:pointer; display: flex; align-items: center; gap: 4px; color: var(--text-secondary);"><input type="checkbox" data-role-clearance="ceo" ${allowedRolesList.includes('ceo') ? 'checked' : ''}> CEO</label>
+            <label style="cursor:pointer; display: flex; align-items: center; gap: 4px; color: var(--text-secondary);"><input type="checkbox" data-role-clearance="admin" ${allowedRolesList.includes('admin') ? 'checked' : ''}> Admin</label>
+          </div>
+
+          <!-- Team Clearances Override with Search -->
+          <h4 style="margin:12px 0 6px; color: var(--text);">Explicit Team Permissions</h4>
+          <p class="section-hint" style="margin-bottom:8px;">Grant this user permission to message anyone belonging to these teams, regardless of gender limits.</p>
+          
+          <input type="text" id="okTeamClearanceSearch" placeholder="Search teams to whitelist..." oninput="window.filterExplicitTeamsClearance()" style="width:100%; margin-bottom:8px; height:34px; padding:6px; border-radius:6px; border:1px solid var(--border); background:var(--card-bg); color:var(--text);">
+          
+          <div style="margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+            <label style="font-size:0.85em; font-weight:600; cursor:pointer; color:var(--text); display: flex; align-items: center; gap: 4px;">
+              <input type="checkbox" id="okSelectAllTeamsClearance" onchange="window.toggleSelectAllTeamsClearance(this.checked)"> Select All Matching
+            </label>
+            <span id="okTeamClearanceCount" style="font-size:0.8em; color:var(--text-secondary);">0 matched</span>
+          </div>
+
+          <div id="okAllowedTeamsList" style="max-height:120px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; padding:8px; display:flex; flex-direction:column; gap:6px; background:var(--bg-secondary); margin-bottom:16px;">
+            ${allTeamsRes.data?.map(t => {
+              const isChecked = allowedTeamsList.includes(t.id);
+              return `<label style="cursor:pointer; display:flex; align-items:center; gap:6px; color: var(--text-secondary); font-size: 0.95em;"><input type="checkbox" data-team-clearance="${t.id}" ${isChecked ? 'checked' : ''}> ${escapeHtml(t.name)}</label>`;
+            }).join('')}
+          </div>
+
+          <!-- Opposite Gender Bulk Filter Checkbox List -->
+          <h4 style="margin:12px 0 6px; color: var(--text);">Explicit Individual Clearances</h4>
+          <p class="section-hint" style="margin-bottom:12px;">Search and whitelist specific individuals (e.g. opposite-gender) for direct chat override.</p>
+          
+          <div class="form-grid-row" style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+            <input type="text" id="okOppositeSearch" placeholder="Search name/email..." oninput="window.filterOppositeGenderUsers()" style="flex:1; min-width: 180px; height:36px; padding:6px; border:1px solid var(--border); border-radius:6px; background:var(--card-bg); color:var(--text);">
+            <select id="okOppositeRoleFilter" onchange="window.filterOppositeGenderUsers()" style="width:120px; height:36px; border-radius:6px; border:1px solid var(--border); padding:6px; background:var(--card-bg); color:var(--text);">
+              <option value="">All Roles</option>
+              <option value="user">User</option>
+              <option value="fin">FIN</option>
+              <option value="fip">FIP</option>
+              <option value="oh">OH</option>
+              <option value="caoh">CAOH</option>
+              <option value="ceo">CEO</option>
+              <option value="admin">Admin</option>
+            </select>
+            <select id="okOppositeGenderFilter" onchange="window.filterOppositeGenderUsers()" style="width:120px; height:36px; border-radius:6px; border:1px solid var(--border); padding:6px; background:var(--card-bg); color:var(--text);">
+              <option value="">All Genders</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+            <select id="okOppositeTeamFilter" onchange="window.filterOppositeGenderUsers()" style="flex:1; min-width:180px; height:36px; border-radius:6px; border:1px solid var(--border); padding:6px; background:var(--card-bg); color:var(--text);">
+              <option value="">All Teams</option>
+              ${(allTeamsRes.data || []).map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
+            </select>
+          </div>
+
+          <div style="margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+            <label style="font-size:0.85em; font-weight:600; cursor:pointer; color:var(--text); display: flex; align-items: center; gap: 4px;">
+              <input type="checkbox" id="okSelectAllOpposite" onchange="window.toggleSelectAllOpposite(this.checked)"> Select All Matching
+            </label>
+            <span id="okOppositeCount" style="font-size:0.8em; color:var(--text-secondary);">0 matched</span>
+          </div>
+
+          <div id="okOppositeList" style="max-height:150px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; padding:8px; background:var(--bg-secondary); display:flex; flex-direction:column; gap:6px; margin-bottom:20px;">
+            <!-- Loaded dynamically -->
+          </div>
+
+          <div class="btn-group">
+            <button type="button" class="success save-access-btn" id="okSaveAccess">Save Permissions</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    removeModal(OK_ADMIN_SELECT_MODAL_ID);
+    createModal(OK_ADMIN_SELECT_MODAL_ID, content, { maxWidth: '720px' });
+    wireUserSelectModal();
+    openModal(OK_ADMIN_SELECT_MODAL_ID);
+
+    document.getElementById('okToggleHold')?.addEventListener('click', () => toggleHold(user));
+    document.getElementById('okToggleAdmin')?.addEventListener('click', () => toggleAdmin(user, isAdmin));
+    document.querySelectorAll('.save-access-btn').forEach(btn => {
+      btn.addEventListener('click', () => saveAccess(userId));
+    });
+    document.getElementById('okResetPwdBtn')?.addEventListener('click', () => sendResetEmailInline(user.email));
 
     // Trigger initial filter load
     window.filterOppositeGenderUsers();
+    window.filterExplicitTeamsClearance();
 
   } catch (err) {
     console.error('Load details error:', err);
-    detail.innerHTML = `<p class="empty-state" style="color:var(--danger);">Error loading details: ${escapeHtml(err.message)}</p>`;
+    removeModal(OK_ADMIN_SELECT_MODAL_ID);
+    createModal(OK_ADMIN_SELECT_MODAL_ID, `<p class="empty-state" style="color:var(--danger);">Error loading details: ${escapeHtml(err.message)}</p>`, { maxWidth: '720px' });
+    wireUserSelectModal();
+    openModal(OK_ADMIN_SELECT_MODAL_ID);
   }
+}
+
+function buildApprovalRolesSection(assignments) {
+  if (!assignments.length) {
+    return `<p class="empty-state" style="font-size:0.9em; margin:0; color: var(--text-secondary);">No approval role assignments.</p>`;
+  }
+
+  const rows = assignments.map(row => {
+    const teamName = row.team_id ? escapeHtml(row.teams?.name || 'Team') : 'Global';
+    const requestType = escapeHtml(row.request_type || 'All');
+    return `
+      <tr>
+        <td><span class="badge badge-info">${escapeHtml(row.role_code)}</span></td>
+        <td>${teamName}</td>
+        <td>${requestType}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <table class="user-select-table show-desktop">
+      <thead>
+        <tr><th>Role</th><th>Team</th><th>Request type</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="show-mobile data-card-list">
+      ${assignments.map(row => `
+        <article class="data-card data-card--compact">
+          <div class="data-card-top">
+            <span class="data-card-title">${escapeHtml(row.role_code)}</span>
+            <span class="badge badge-info">${escapeHtml(row.request_type || 'All')}</span>
+          </div>
+          ${cardRow('Team', row.team_id ? (row.teams?.name || 'Team') : 'Global')}
+        </article>
+      `).join('')}
+    </div>
+  `;
 }
 
 // Inline tab switcher
@@ -498,15 +729,19 @@ window.switchOkAdminTab = (tabName) => {
   const tabProfile = document.getElementById('tabContentProfile');
   const tabTeams = document.getElementById('tabContentTeams');
   const tabPermissions = document.getElementById('tabContentPermissions');
+  const tabChat = document.getElementById('tabContentChat');
+  
   const btnProfile = document.getElementById('btnTabProfile');
   const btnTeams = document.getElementById('btnTabTeams');
   const btnPermissions = document.getElementById('btnTabPermissions');
+  const btnChat = document.getElementById('btnTabChat');
 
   if (tabProfile) tabProfile.style.display = tabName === 'profile' ? 'block' : 'none';
   if (tabTeams) tabTeams.style.display = tabName === 'teams' ? 'block' : 'none';
   if (tabPermissions) tabPermissions.style.display = tabName === 'permissions' ? 'block' : 'none';
+  if (tabChat) tabChat.style.display = tabName === 'chat' ? 'block' : 'none';
 
-  [btnProfile, btnTeams, btnPermissions].forEach(btn => {
+  [btnProfile, btnTeams, btnPermissions, btnChat].forEach(btn => {
     if (btn) {
       btn.classList.remove('active');
       btn.style.borderBottom = 'none';
@@ -522,6 +757,60 @@ window.switchOkAdminTab = (tabName) => {
     activeBtn.style.color = 'var(--text)';
     activeBtn.style.fontWeight = 'bold';
   }
+};
+
+// Filter available teams in Tab 2
+window.filterOkAddTeamOptions = () => {
+  const q = (document.getElementById('okAddTeamSearch')?.value || '').trim().toLowerCase();
+  const select = document.getElementById('okAddTeamSelect');
+  if (!select) return;
+  const matched = (window.availableTeamsCache || []).filter(t => t.name.toLowerCase().includes(q));
+  select.innerHTML = '<option value="">Choose team…</option>' +
+    matched.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+};
+
+// Switch App configuration menus dropdown
+window.switchAppMenuConfig = (appCode) => {
+  document.querySelectorAll('.ok-menu-config-panel').forEach(p => p.style.display = 'none');
+  if (appCode === 'finance') {
+    const el = document.getElementById('okMenuConfigFinance');
+    if (el) el.style.display = 'block';
+  } else if (appCode === 'gurukul') {
+    const el = document.getElementById('okMenuConfigGurukul');
+    if (el) el.style.display = 'block';
+  } else if (appCode !== 'none') {
+    const el = document.getElementById('okMenuConfigGeneric');
+    if (el) el.style.display = 'block';
+  }
+};
+
+// Filter explicit team permissions checklist
+window.filterExplicitTeamsClearance = () => {
+  const q = (document.getElementById('okTeamClearanceSearch')?.value || '').trim().toLowerCase();
+  const container = document.getElementById('okAllowedTeamsList');
+  const countEl = document.getElementById('okTeamClearanceCount');
+  if (!container) return;
+  const labels = container.querySelectorAll('label');
+  let matched = 0;
+  labels.forEach(lbl => {
+    const txt = lbl.textContent.toLowerCase();
+    const isMatch = txt.includes(q);
+    lbl.style.display = isMatch ? 'flex' : 'none';
+    if (isMatch) matched++;
+  });
+  if (countEl) countEl.innerText = `${matched} matched`;
+};
+
+window.toggleSelectAllTeamsClearance = (isChecked) => {
+  const container = document.getElementById('okAllowedTeamsList');
+  if (!container) return;
+  const checkboxes = container.querySelectorAll('input[data-team-clearance]');
+  checkboxes.forEach(cb => {
+    const parentLabel = cb.closest('label');
+    if (parentLabel && parentLabel.style.display !== 'none') {
+      cb.checked = isChecked;
+    }
+  });
 };
 
 // Inline Password Reset
@@ -641,6 +930,8 @@ window.saveUserProfileInline = async (e) => {
 window.filterOppositeGenderUsers = () => {
   const q = (document.getElementById('okOppositeSearch')?.value || '').trim().toLowerCase();
   const roleFilter = document.getElementById('okOppositeRoleFilter')?.value || '';
+  const genderFilter = document.getElementById('okOppositeGenderFilter')?.value || '';
+  const teamFilter = document.getElementById('okOppositeTeamFilter')?.value || '';
   const container = document.getElementById('okOppositeList');
   const countEl = document.getElementById('okOppositeCount');
   if (!container) return;
@@ -648,13 +939,15 @@ window.filterOppositeGenderUsers = () => {
   const matched = window.oppositeGenderUsers.filter(u => {
     const textMatch = !q || (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q);
     const roleMatch = !roleFilter || u.role === roleFilter;
-    return textMatch && roleMatch;
+    const genderMatch = !genderFilter || u.gender === genderFilter;
+    const teamMatch = !teamFilter || (window.allUserTeams || []).some(ut => ut.user_id === u.id && ut.team_id === teamFilter);
+    return textMatch && roleMatch && genderMatch && teamMatch;
   });
 
   if (countEl) countEl.innerText = `${matched.length} matched`;
 
   if (matched.length === 0) {
-    container.innerHTML = `<p class="empty-state" style="font-size:0.85em; margin:0;">No matching users found.</p>`;
+    container.innerHTML = `<p class="empty-state" style="font-size:0.85em; margin:0; color: var(--text-secondary);">No matching users found.</p>`;
     return;
   }
 
@@ -664,7 +957,7 @@ window.filterOppositeGenderUsers = () => {
   container.innerHTML = matched.map(u => {
     const isChecked = window.currentAllowedUsers.has(u.id);
     return `
-      <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer;">
+      <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer; color: var(--text-secondary);">
         <input type="checkbox" data-opposite-user-id="${u.id}" ${isChecked ? 'checked' : ''} onchange="window.toggleIndividualClearanceInline('${u.id}', this.checked)">
         <strong>${escapeHtml(u.name)}</strong> (${escapeHtml(u.role || 'user')})
       </label>
