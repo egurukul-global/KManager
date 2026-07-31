@@ -1,4 +1,7 @@
+import { createClient } from '@supabase/supabase-js';
+
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://nvhaetvreopkktlxxdwg.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52aGFldHZyZW9wa2t0bHh4ZHdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0Mzg3MDcsImV4cCI6MjA5NDAxNDcwN30.yjsQeAhjZfXYV_Od6lkdZCCBSgt00Z9Pb-9Ki-a79kA';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
@@ -11,7 +14,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const accessToken = req.cookies?.['sb-access-token'];
+    let accessToken = req.cookies?.['sb-access-token'];
 
     if (!accessToken) {
       return res.status(401).json({
@@ -20,15 +23,14 @@ export default async function handler(req, res) {
       });
     }
 
-    const { path } = req.query;
+    const urlObj = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const path = urlObj.searchParams.get('path');
     if (!path) {
       return res.status(400).json({ 
         error: 'Missing path parameter' 
       });
     }
-
-    const decodedPath = decodeURIComponent(path);
-    const targetUrl = `${SUPABASE_URL}${decodedPath}`;
+    const targetUrl = `${SUPABASE_URL}${path}`;
 
     const headers = { ...req.headers };
     delete headers.host;
@@ -38,9 +40,8 @@ export default async function handler(req, res) {
     
     headers['authorization'] = `Bearer ${accessToken}`;
     
-    const supabaseKey = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52aGFldHZyZW9wa2t0bHh4ZHdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0Mzg3MDcsImV4cCI6MjA5NDAxNDcwN30.yjsQeAhjZfXYV_Od6lkdZCCBSgt00Z9Pb-9Ki-a79kA';
-    if (supabaseKey && !headers['apikey']) {
-      headers['apikey'] = supabaseKey;
+    if (SUPABASE_ANON_KEY && !headers['apikey']) {
+      headers['apikey'] = SUPABASE_ANON_KEY;
     }
 
     let body = undefined;
@@ -51,25 +52,67 @@ export default async function handler(req, res) {
     }
 
     // ========== MAKE REQUEST TO SUPABASE ==========
-    console.log(`[Proxy] Forwarding to: ${targetUrl}`);
-    console.log(`[Proxy] Auth Header: Bearer ${accessToken ? accessToken.substring(0, 15) : 'NONE'}...`);
-    console.log(`[Proxy] API Key: ${headers['apikey'] ? headers['apikey'].substring(0, 15) : 'NONE'}...`);
-
-    const response = await fetch(targetUrl, {
+    let response = await fetch(targetUrl, {
       method: req.method,
       headers: headers,
       body: body,
       redirect: 'manual'
     });
 
-    // ========== READ RESPONSE ==========
-    const responseData = await response.text();
-    console.log(`[Proxy] Supabase responded with status: ${response.status}`);
-    if (response.status >= 400) {
-      console.log(`[Proxy] Supabase Error Body: ${responseData.substring(0, 200)}`);
+    let responseData = await response.text();
+
+    // Check if the response indicates an expired JWT / auth error
+    const isExpiredToken = response.status === 401 && (
+      responseData.toLowerCase().includes('jwt') || 
+      responseData.toLowerCase().includes('expired') || 
+      responseData.toLowerCase().includes('unauthorized')
+    );
+
+    if (isExpiredToken) {
+      console.log('🔄 Access token expired. Attempting token rotation...');
+      const refreshToken = req.cookies?.['sb-refresh-token'];
+
+      if (refreshToken) {
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession({
+          refresh_token: refreshToken
+        });
+
+        if (!refreshError && refreshData.session) {
+          console.log('✅ Token rotated successfully!');
+          const newAccessToken = refreshData.session.access_token;
+          const newRefreshToken = refreshData.session.refresh_token;
+
+          const cookieOptions = [
+            `Path=/`,
+            `HttpOnly`,
+            `Secure`,
+            `SameSite=Lax`,
+            `Max-Age=${60 * 60 * 24 * 7}`
+          ].join('; ');
+
+          res.setHeader('Set-Cookie', [
+            `sb-access-token=${newAccessToken}; ${cookieOptions}`,
+            `sb-refresh-token=${newRefreshToken}; ${cookieOptions}`
+          ]);
+
+          // Retry the request with the new access token
+          headers['authorization'] = `Bearer ${newAccessToken}`;
+
+          response = await fetch(targetUrl, {
+            method: req.method,
+            headers: headers,
+            body: body,
+            redirect: 'manual'
+          });
+
+          responseData = await response.text();
+        } else {
+          console.error('❌ Token rotation failed:', refreshError);
+        }
+      }
     }
 
-    // ========== FORWARD RESPONSE ==========
     res.status(response.status);
 
     for (const [key, value] of response.headers.entries()) {

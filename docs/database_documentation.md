@@ -22,6 +22,7 @@ Groups of users representing departments, geographic locations, or projects.
 * `id` (`UUID`, PK): Unique team identifier.
 * `name` (`TEXT`, Unique): Display name of the team.
 * `is_personal_team` (`BOOLEAN`): Set to true for private individual work teams.
+* `gender_scope` (`TEXT`): Monastic team classification restrictions (`male`, `female`, `mixed`).
 * `has_budget_access` (`BOOLEAN`): True if team has Budget and Expense features active.
 * `has_tasks_access` (`BOOLEAN`): True if team has Task and Issue Tracker active.
 * `has_lms_access` (`BOOLEAN`): True if team has Gurukul LMS features active.
@@ -121,8 +122,9 @@ Stores budget plan proposals, transaction reconciliations, and submission wizard
 ### `public.user_has_approval_role(p_user_id UUID, p_role_code TEXT, p_team_id UUID)`
 Evaluates if a user has permission to act under a given approval step role:
 * Returns `true` if they hold the active assignment in `request_role_assignments` for that team or globally.
-* Maps built-in roles (e.g., `oh` acts as `FIH`, `caoh` acts as `CAO`, `oh/caoh` can act as `FIP`).
-* Mapped inside `supabase/migrations/038_extend_budget_flow_to_fip.sql`.
+* Maps built-in roles implicitly only for `admin` (all roles), `caoh` (`CAO`), and `ceo` (`CEO`). 
+* Functional roles `FIH`, `FIN`, and `FIP` must be assigned explicitly via `request_role_assignments`.
+* Mapped inside `supabase/migrations/064_pure_role_based_approvals.sql`.
 
 ### `public.user_can_act_on_approval_request(p_request_id UUID)`
 Determines if the active user can approve or reject the request:
@@ -181,5 +183,3 @@ Checks whether user_a is authorized to send direct messages to user_b.
   * Restricts access to group creators and group members using recursion-safe `is_group_member` checks.
 * **`public.users`**:
   * `users_select_all`: Allows all authenticated users to read basic profile records (fixing name lookup joins).
-
-

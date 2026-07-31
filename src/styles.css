@@ -78,12 +78,14 @@ body.dark {
 }
 
 /* ===== GLOBAL SCROLLBARS ===== */
-* { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
-body.dark * { scrollbar-color: #475569 transparent; }
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+* { scrollbar-width: auto; scrollbar-color: #94a3b8 rgba(0, 0, 0, 0.05); }
+body.dark * { scrollbar-color: #475569 rgba(0, 0, 0, 0.05); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.02); }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 body.dark ::-webkit-scrollbar-thumb { background: #475569; }
+body.dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
 /* ===== NEXTGEN ANIMATIONS & UTILITIES ===== */
 .fade-in { animation: fadeIn 0.3s ease-in-out; }
@@ -3127,23 +3129,36 @@ body.dark .status-total {
 }
 
 /* Thicker, high-contrast scrollbars for OneKailasa */
+.ok-shell-theme {
+  scrollbar-width: auto !important;
+}
+.ok-shell-theme.dark {
+  scrollbar-color: rgba(212, 175, 55, 0.65) rgba(0, 0, 0, 0.08) !important;
+}
+.ok-shell-theme.light {
+  scrollbar-color: rgba(139, 0, 0, 0.55) rgba(0, 0, 0, 0.08) !important;
+}
 .ok-shell-theme ::-webkit-scrollbar {
   width: 10px !important;
   height: 10px !important;
 }
 .ok-shell-theme ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05) !important;
+  background: rgba(0, 0, 0, 0.08) !important;
 }
 .ok-shell-theme.dark ::-webkit-scrollbar-thumb {
-  background: rgba(212, 175, 55, 0.4) !important;
+  background: rgba(212, 175, 55, 0.65) !important;
   border-radius: 5px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
 }
 .ok-shell-theme.light ::-webkit-scrollbar-thumb {
-  background: rgba(139, 0, 0, 0.3) !important;
+  background: rgba(139, 0, 0, 0.55) !important;
   border-radius: 5px !important;
+  border: 2px solid transparent !important;
+  background-clip: padding-box !important;
 }
 .ok-shell-theme ::-webkit-scrollbar-thumb:hover {
-  background: rgba(212, 175, 55, 0.6) !important;
+  background: rgba(212, 175, 55, 0.9) !important;
 }
 
 /* ===== GLOBAL MODAL COLOR SYSTEM (MONASTIC STYLE) ===== */

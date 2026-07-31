@@ -163,6 +163,7 @@ async function loadNotifications() {
       .eq('recipient_type', 'user')
       .eq('recipient_id', state.user.id)
       .eq('metadata->>link_type', 'task')
+      .is('read_at', null)
       .order('created_at', { ascending: false });
     taskMsgs = data || [];
   } catch (err) {
@@ -175,9 +176,9 @@ async function loadNotifications() {
   }
 
   let html = '';
+  const mode = getNotificationMode();
   
   if (rows.length) {
-    const mode = getNotificationMode();
     if (mode === 'summary') {
       const lines = summarizeActionable(rows);
       html += `
@@ -194,11 +195,21 @@ async function loadNotifications() {
     }
   }
 
-  html += taskMsgs.map(m => `
-    <button type="button" class="ok-notif ok-notif--line ok-notif--unread" data-task-id="${escapeHtml(m.metadata?.link_id || '')}" style="width:100%; text-align:left; margin-bottom:8px; border-left: 4px solid var(--primary);">
-      <span class="ok-notif-line">${escapeHtml(m.body)}</span>
-    </button>
-  `).join('');
+  if (taskMsgs.length) {
+    if (mode === 'summary') {
+      html += `
+        <button type="button" class="ok-notif ok-notif--summary ok-notif--unread" data-task-summary="1" style="width:100%; text-align:left; margin-bottom:8px; border-left: 4px solid var(--primary);">
+          <span class="ok-notif-line">You have ${taskMsgs.length} task updates.</span>
+        </button>
+      `;
+    } else {
+      html += taskMsgs.map(m => `
+        <button type="button" class="ok-notif ok-notif--line ok-notif--unread" data-task-id="${escapeHtml(m.metadata?.link_id || '')}" data-message-id="${escapeHtml(m.id)}" style="width:100%; text-align:left; margin-bottom:8px; border-left: 4px solid var(--primary);">
+          <span class="ok-notif-line">${escapeHtml(m.body)}</span>
+        </button>
+      `).join('');
+    }
+  }
 
   el.innerHTML = html;
 
@@ -217,12 +228,17 @@ async function loadNotifications() {
     });
   });
 
+  el.querySelectorAll('[data-task-summary="1"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      window.open('/tasks', '_blank');
+    });
+  });
+
   el.querySelectorAll('[data-task-id]').forEach(btn => {
     btn.addEventListener('click', () => {
       const taskId = btn.getAttribute('data-task-id');
       if (taskId) {
-        sessionStorage.setItem('ok_open_task_id', taskId);
-        navigateOk('/tasks');
+        window.open(`/tasks?open_id=${taskId}`, '_blank');
       }
     });
   });

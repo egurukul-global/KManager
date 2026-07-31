@@ -251,7 +251,11 @@ export function initOkShell() {
       const path = el.getAttribute('data-ok-nav');
       if (!path) return;
       closeOkSidebar();
-      navigateOk(path);
+      if (path === '/tasks' || path === '/konnect') {
+        window.open(path, '_blank');
+      } else {
+        navigateOk(path);
+      }
     });
   });
 }

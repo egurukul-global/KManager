@@ -9,6 +9,7 @@ let activeTasks = [];
 let teamMembers = [];
 let editingTaskId = null;
 let tempAttachments = [];
+let unreadTaskIds = new Set();
 
 function escapeHtml(text) {
   return String(text || '')
@@ -71,6 +72,10 @@ export function getTasksPage() {
         <h3 style="margin-top:0; font-size:1em; color:#166534; border-bottom:2px solid #22c55e; padding-bottom:6px;">✅ Completed</h3>
         <div class="kanban-cards-list" id="col-completed" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
+      <div class="kanban-column" data-status="archived">
+        <h3 style="margin-top:0; font-size:1em; color:#6b7280; border-bottom:2px solid #9ca3af; padding-bottom:6px;">🗄️ Archived</h3>
+        <div class="kanban-cards-list" id="col-archived" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
+      </div>
     </div>
 
     <!-- Edit Task Modal -->
@@ -101,6 +106,7 @@ export function getTasksPage() {
                 <option value="todo">To Do</option>
                 <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
+                <option value="archived">Archived</option>
               </select>
             </div>
             <div class="form-group" style="flex:1;">
@@ -199,7 +205,8 @@ export function initTasksPage() {
   wireTaskUploadHandlers();
 
   loadTasksData().then(() => {
-    const autoOpenId = sessionStorage.getItem('ok_open_task_id');
+    const urlParams = new URLSearchParams(window.location.search);
+    const autoOpenId = sessionStorage.getItem('ok_open_task_id') || urlParams.get('open_id');
     if (autoOpenId) {
       sessionStorage.removeItem('ok_open_task_id');
       openEditTaskModal(autoOpenId);
@@ -237,13 +244,28 @@ async function loadTasksData() {
   const colTodo = document.getElementById('col-todo');
   const colInProg = document.getElementById('col-in_progress');
   const colComp = document.getElementById('col-completed');
+  const colArchived = document.getElementById('col-archived');
 
   if (colBacklog) colBacklog.innerHTML = '<p class="empty-state">Loading…</p>';
   if (colTodo) colTodo.innerHTML = '';
   if (colInProg) colInProg.innerHTML = '';
   if (colComp) colComp.innerHTML = '';
+  if (colArchived) colArchived.innerHTML = '';
 
   try {
+    try {
+      const { data: unreadMsgs } = await supabaseClient
+        .from('messages')
+        .select('metadata')
+        .eq('recipient_type', 'user')
+        .eq('recipient_id', state.user.id)
+        .eq('metadata->>link_type', 'task')
+        .is('read_at', null);
+      unreadTaskIds = new Set((unreadMsgs || []).map(m => m.metadata?.link_id).filter(Boolean));
+    } catch (err) {
+      console.warn('Failed to load unread task notifs:', err);
+    }
+
     const query = supabaseClient
       .from('tasks')
       .select('*')
@@ -257,7 +279,11 @@ async function loadTasksData() {
 
     const today = new Date().toISOString().slice(0, 10);
     activeTasks = (tasks || []).map(t => {
-      if (t.status === 'todo' && t.metadata?.finish_by_date && t.metadata.finish_by_date < today) {
+      if (
+        (t.status === 'todo' || t.status === 'in_progress') &&
+        t.metadata?.finish_by_date &&
+        t.metadata.finish_by_date < today
+      ) {
         t.status = 'backlog';
         supabaseClient.from('tasks').update({ status: 'backlog' }).eq('id', t.id).then();
       }
@@ -291,7 +317,8 @@ function renderKanbanBoard() {
     backlog: document.getElementById('col-backlog'),
     todo: document.getElementById('col-todo'),
     in_progress: document.getElementById('col-in_progress'),
-    completed: document.getElementById('col-completed')
+    completed: document.getElementById('col-completed'),
+    archived: document.getElementById('col-archived')
   };
 
   Object.values(cols).forEach(el => {
@@ -302,7 +329,8 @@ function renderKanbanBoard() {
     backlog: '#ef4444',
     todo: '#FFA500',
     in_progress: '#eab308',
-    completed: '#22c55e'
+    completed: '#22c55e',
+    archived: '#6b7280'
   };
 
   activeTasks.forEach(t => {
@@ -337,11 +365,16 @@ function renderKanbanBoard() {
     card.style = 'margin:0; padding:8px 12px; cursor:pointer; background:var(--card-bg); color:var(--text); border:1px solid var(--border); border-left:4px solid ' + statusColors[t.status] + '; display:flex; justify-content:space-between; align-items:center; gap:8px;';
     card.onclick = () => openEditTaskModal(t.id);
     
+    const isUnread = unreadTaskIds.has(t.id);
+    const unreadDot = isUnread 
+      ? `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444; margin-right:6px; flex-shrink:0; box-shadow:0 0 6px #ef4444;" title="Unread updates"></span>` 
+      : '';
+
     const hasAttachments = !!(t.metadata?.attachment_url || (t.metadata?.attachments && t.metadata.attachments.length > 0));
-    
+
     card.innerHTML = `
-      <span style="font-weight:600; font-size:0.85em; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1;">
-        <span style="color:var(--text-secondary); font-weight:500; font-size:0.9em; margin-right:4px;">${escapeHtml(t.task_number)}</span>
+      <span style="font-weight:600; font-size:0.85em; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; display:flex; align-items:center;">
+        ${unreadDot}
         ${escapeHtml(t.title)}
         ${teamBadge}
       </span>
@@ -451,6 +484,20 @@ function openEditTaskModal(id) {
   if (modal) {
     modal.classList.add('active');
     modal.style.display = 'flex';
+  }
+
+  if (unreadTaskIds.has(t.id)) {
+    unreadTaskIds.delete(t.id);
+    supabaseClient.from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('recipient_type', 'user')
+      .eq('recipient_id', state.user.id)
+      .eq('metadata->>link_type', 'task')
+      .eq('metadata->>link_id', t.id)
+      .is('read_at', null)
+      .then(() => {
+        renderKanbanBoard();
+      });
   }
 }
 
@@ -592,6 +639,15 @@ async function saveTaskFormSubmit(e) {
     }
 
     if (savedTaskId) {
+      const oldTask = editingTaskId ? activeTasks.find(t => t.id === editingTaskId) : null;
+      const oldPrimary = oldTask?.assigned_to;
+      const oldAdditional = oldTask?.metadata?.assigned_to_users || [];
+      const oldAssignees = [];
+      if (oldPrimary) oldAssignees.push(oldPrimary);
+      oldAdditional.forEach(id => {
+        if (id && !oldAssignees.includes(id)) oldAssignees.push(id);
+      });
+
       const allAssigneeIds = [];
       if (assignee) allAssigneeIds.push(assignee);
       additionalCheckedIds.forEach(id => {
@@ -601,11 +657,13 @@ async function saveTaskFormSubmit(e) {
       const notifyPromises = allAssigneeIds
         .filter(id => id !== state.user.id)
         .map(id => {
+          const isPreviouslyAssigned = oldAssignees.includes(id);
+          const verb = isPreviouslyAssigned ? 'updated' : 'assigned';
           return supabaseClient.from('messages').insert({
             sender_id: state.user.id,
             recipient_type: 'user',
             recipient_id: id,
-            body: `📋 Task assigned: "${title}"`,
+            body: `📋 Task ${verb}: "${title}"`,
             metadata: {
               link_type: 'task',
               link_id: savedTaskId,
@@ -775,12 +833,23 @@ async function loadTaskDiscussions(taskId) {
 
     if (error) throw error;
 
-    if (!comments || !comments.length) {
+    const uniqueComments = [];
+    const seenKeys = new Set();
+    (comments || []).forEach(c => {
+      const minuteStr = c.created_at ? c.created_at.slice(0, 16) : '';
+      const key = `${c.sender_id}_${c.body}_${minuteStr}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        uniqueComments.push(c);
+      }
+    });
+
+    if (!uniqueComments.length) {
       timeline.innerHTML = '<p class="empty-state" style="font-size:0.8em; margin:10px 0;">No comments yet. Start the discussion!</p>';
       return;
     }
 
-    const userIds = [...new Set(comments.map(c => c.sender_id).filter(Boolean))];
+    const userIds = [...new Set(uniqueComments.map(c => c.sender_id).filter(Boolean))];
     const usersMap = {};
     if (userIds.length) {
       const { data: usersData } = await supabaseClient
@@ -794,7 +863,7 @@ async function loadTaskDiscussions(taskId) {
       }
     }
 
-    timeline.innerHTML = comments.map(c => {
+    timeline.innerHTML = uniqueComments.map(c => {
       const sender = usersMap[c.sender_id];
       const senderName = sender ? sender.name : 'System';
       const timeStr = new Date(c.created_at).toLocaleString();
@@ -827,21 +896,40 @@ async function sendTaskComment() {
   setButtonLoading(btn, true);
 
   try {
-    const { error } = await supabaseClient
-      .from('messages')
-      .insert({
+    const task = activeTasks.find(t => t.id === editingTaskId);
+    const assignees = [];
+    if (task?.assigned_to) assignees.push(task.assigned_to);
+    const additional = task?.metadata?.assigned_to_users || [];
+    additional.forEach(id => {
+      if (id && !assignees.includes(id)) assignees.push(id);
+    });
+    if (assignees.length === 0 && task?.created_by) {
+      assignees.push(task.created_by);
+    }
+
+    const targets = assignees.filter(id => id !== state.user.id);
+    if (targets.length === 0) {
+      targets.push(state.user.id);
+    }
+
+    const commentBody = `💬 Comment on task ${task?.task_number || ''} ("${task?.title || ''}"): ${body}`;
+    const insertPromises = targets.map(id => {
+      return supabaseClient.from('messages').insert({
         sender_id: state.user.id,
-        recipient_type: 'team',
-        recipient_id: state.currentTeam.team_id,
-        body,
+        recipient_type: 'user',
+        recipient_id: id,
+        body: commentBody,
         metadata: {
           link_type: 'task',
           link_id: editingTaskId,
           team_id: state.currentTeam.team_id
         }
       });
+    });
 
-    if (error) throw error;
+    const results = await Promise.all(insertPromises);
+    const firstErr = results.find(r => r.error);
+    if (firstErr) throw firstErr.error;
 
     if (input) input.value = '';
     await loadTaskDiscussions(editingTaskId);

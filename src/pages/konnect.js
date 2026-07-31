@@ -406,6 +406,26 @@ async function loadConversations() {
         const grp = myGroups.find(g => g.id === msg.recipient_id);
         if (!grp) return;
         threadName = grp.name;
+      } else if (msg.recipient_type === 'role') {
+        const userGender = String(state.user?.gender || '').toLowerCase().trim();
+        const userRole = String(state.user?.role || '').toLowerCase().trim();
+        const isAdmin = ['admin', 'caoh', 'oh', 'ceo'].includes(userRole) || !!state.isOkAdmin;
+
+        if (msg.recipient_id === 'all') {
+          threadKey = 'broadcast-all';
+          threadType = 'role';
+          threadName = 'Global (All Users)';
+        } else if (msg.recipient_id === 'male' && (userGender === 'male' || isAdmin)) {
+          threadKey = 'broadcast-male';
+          threadType = 'role';
+          threadName = 'Global (Male Users)';
+        } else if (msg.recipient_id === 'female' && (userGender === 'female' || isAdmin)) {
+          threadKey = 'broadcast-female';
+          threadType = 'role';
+          threadName = 'Global (Female Users)';
+        } else {
+          return;
+        }
       }
 
       if (threadKey && !threads[threadKey]) {
@@ -449,6 +469,35 @@ async function loadConversations() {
           time: new Date(0).toISOString(),
           unreadCount: 0,
           isPinned: starPins.some(p => p.chat_target_id === t.team_id && p.is_pinned)
+        };
+      }
+    });
+
+    const userGender = String(state.user?.gender || '').toLowerCase().trim();
+    const userRole = String(state.user?.role || '').toLowerCase().trim();
+    const isAdmin = ['admin', 'caoh', 'oh', 'ceo'].includes(userRole) || !!state.isOkAdmin;
+
+    const globalChannels = [
+      { id: 'broadcast-all', type: 'role', name: 'Global (All Users)', recipient_id: 'all' }
+    ];
+    if (userGender === 'male' || isAdmin) {
+      globalChannels.push({ id: 'broadcast-male', type: 'role', name: 'Global (Male Users)', recipient_id: 'male' });
+    }
+    if (userGender === 'female' || isAdmin) {
+      globalChannels.push({ id: 'broadcast-female', type: 'role', name: 'Global (Female Users)', recipient_id: 'female' });
+    }
+
+    globalChannels.forEach(c => {
+      if (!threads[c.id]) {
+        threads[c.id] = {
+          id: c.id,
+          type: 'role',
+          name: c.name,
+          lastMessage: 'No announcements yet',
+          time: new Date(0).toISOString(),
+          unreadCount: 0,
+          isPinned: starPins.some(p => p.chat_target_id === c.id && p.is_pinned),
+          recipient_id: c.recipient_id
         };
       }
     });
@@ -752,25 +801,16 @@ async function selectConversation(type, id, name) {
 
   const isPinned = starPins.some(p => p.chat_target_id === id && p.is_pinned);
 
-  area.innerHTML = `
-    <div id="konnectChatHeaderContainer"></div>
+  const isGlobalUser = ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role?.toLowerCase()) || !!state.isOkAdmin;
+  const isReadOnlyBroadcast = type === 'role' && !isGlobalUser;
 
-    <!-- Messages Timeline -->
-    <div id="konnectTimeline" style="flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:3px;">
-      <p class="empty-state">Loading timeline...</p>
-    </div>
-
-    <!-- Reply Context Bar -->
-    <div id="konnectReplyBar" style="display:none; padding:8px 16px; background:var(--bg-secondary); border-top:1px solid var(--border); border-left:4px solid var(--primary); justify-content:space-between; align-items:center; color:var(--text);">
-      <div style="font-size:0.8em;">
-        <strong>Replying to <span id="konnectReplySender"></span></strong>
-        <p id="konnectReplyText" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px; color:var(--text-secondary);"></p>
+  const inputBarHtml = isReadOnlyBroadcast
+    ? `
+      <div style="flex:1; text-align:center; padding:10px 16px; background:var(--bg-secondary); border-radius:8px; border:1px solid var(--border); font-size:0.9em; color:var(--text-secondary); font-style:italic;">
+        📢 Only administrators can send messages to this broadcast channel.
       </div>
-      <button onclick="window.cancelReply()" style="background:none; border:none; color:#ef4444; font-weight:700; cursor:pointer; font-size:1.1em;">&times;</button>
-    </div>
-
-    <!-- Bottom Input -->
-    <div class="konnect-input-bar">
+    `
+    : `
       <!-- Floating Self Destruct Panel -->
       <div id="selfDestructConfigPanel" style="display:none; position:absolute; bottom:65px; left:16px; background:var(--card-bg); border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.2); padding:12px; z-index:100; width:220px; flex-direction:column; gap:8px; color:var(--text);">
         <div style="font-weight:600; font-size:0.85em; display:flex; justify-content:space-between; align-items:center;">
@@ -797,6 +837,28 @@ async function selectConversation(type, id, name) {
 
       <input type="text" id="konnectMsgInput" placeholder="Type a message..." style="flex:1; height:40px; border-radius:8px; border:1px solid var(--border); padding:6px 12px; font-size:0.9em; background:var(--bg-secondary); color:var(--text);" onkeydown="if(event.key==='Enter') window.sendKonnectMessage()">
       <button onclick="window.sendKonnectMessage()" class="primary konnect-send-btn" style="height:40px; width:40px; margin:0; padding:0; display:flex; align-items:center; justify-content:center; font-size:1.1em; border-radius:8px;" title="Send"><i class="fa-solid fa-paper-plane"></i></button>
+    `;
+
+  area.innerHTML = `
+    <div id="konnectChatHeaderContainer"></div>
+
+    <!-- Messages Timeline -->
+    <div id="konnectTimeline" style="flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:3px;">
+      <p class="empty-state">Loading timeline...</p>
+    </div>
+
+    <!-- Reply Context Bar -->
+    <div id="konnectReplyBar" style="display:none; padding:8px 16px; background:var(--bg-secondary); border-top:1px solid var(--border); border-left:4px solid var(--primary); justify-content:space-between; align-items:center; color:var(--text);">
+      <div style="font-size:0.8em;">
+        <strong>Replying to <span id="konnectReplySender"></span></strong>
+        <p id="konnectReplyText" style="margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:400px; color:var(--text-secondary);"></p>
+      </div>
+      <button onclick="window.cancelReply()" style="background:none; border:none; color:#ef4444; font-weight:700; cursor:pointer; font-size:1.1em;">&times;</button>
+    </div>
+
+    <!-- Bottom Input -->
+    <div class="konnect-input-bar">
+      ${inputBarHtml}
     </div>
   `;
 
@@ -813,9 +875,15 @@ async function selectConversation(type, id, name) {
       .eq('sender_id', id)
       .eq('recipient_id', state.user.id);
   } else {
+    let dbRecipientId = id;
+    if (type === 'role') {
+      if (id === 'broadcast-all') dbRecipientId = 'all';
+      else if (id === 'broadcast-male') dbRecipientId = 'male';
+      else if (id === 'broadcast-female') dbRecipientId = 'female';
+    }
     markReadQuery = markReadQuery
       .eq('recipient_type', type)
-      .eq('recipient_id', id)
+      .eq('recipient_id', dbRecipientId)
       .neq('sender_id', state.user.id);
 
     // Group/Team: log read event under read_by_users in metadata
@@ -890,7 +958,13 @@ async function loadMessages() {
           (msg.sender_id === activeThread.id && msg.recipient_id === state.user.id)
         ));
       } else {
-        match = msg.recipient_type === activeThread.type && msg.recipient_id === activeThread.id;
+        let dbRecipientId = activeThread.id;
+        if (activeThread.type === 'role') {
+          if (activeThread.id === 'broadcast-all') dbRecipientId = 'all';
+          else if (activeThread.id === 'broadcast-male') dbRecipientId = 'male';
+          else if (activeThread.id === 'broadcast-female') dbRecipientId = 'female';
+        }
+        match = msg.recipient_type === activeThread.type && msg.recipient_id === dbRecipientId;
       }
 
       if (!match) return false;
@@ -1135,12 +1209,19 @@ async function sendKonnectMessage() {
   }
 
   try {
+    let dbRecipientId = activeThread.id;
+    if (activeThread.type === 'role') {
+      if (activeThread.id === 'broadcast-all') dbRecipientId = 'all';
+      else if (activeThread.id === 'broadcast-male') dbRecipientId = 'male';
+      else if (activeThread.id === 'broadcast-female') dbRecipientId = 'female';
+    }
+
     const { error } = await supabaseClient
       .from('messages')
       .insert({
         sender_id: state.user.id,
         recipient_type: activeThread.type,
-        recipient_id: activeThread.id,
+        recipient_id: dbRecipientId,
         body,
         metadata
       });
@@ -1331,12 +1412,19 @@ async function handleChatFileSelection(e) {
     const { objectKey } = await uploadReceipt(file);
     const publicUrl = resolveReceiptViewUrl(objectKey);
 
+    let dbRecipientId = activeThread.id;
+    if (activeThread.type === 'role') {
+      if (activeThread.id === 'broadcast-all') dbRecipientId = 'all';
+      else if (activeThread.id === 'broadcast-male') dbRecipientId = 'male';
+      else if (activeThread.id === 'broadcast-female') dbRecipientId = 'female';
+    }
+
     const { error: msgErr } = await supabaseClient
       .from('messages')
       .insert({
         sender_id: state.user.id,
         recipient_type: activeThread.type,
-        recipient_id: activeThread.id,
+        recipient_id: dbRecipientId,
         body: `Shared file: ${caption}`,
         attachment_url: publicUrl,
         attachment_name: caption
@@ -1381,9 +1469,15 @@ async function markChatAsUnread(msgId) {
   
   if (!targetMsgId && activeThread) {
     const lastReceived = allMessages.find(m => {
+      let dbRecipientId = activeThread.id;
+      if (activeThread.type === 'role') {
+        if (activeThread.id === 'broadcast-all') dbRecipientId = 'all';
+        else if (activeThread.id === 'broadcast-male') dbRecipientId = 'male';
+        else if (activeThread.id === 'broadcast-female') dbRecipientId = 'female';
+      }
       const isThisThread = activeThread.type === 'user'
         ? (m.recipient_type === 'user' && m.sender_id === activeThread.id && m.recipient_id === state.user.id)
-        : (m.recipient_type === activeThread.type && m.recipient_id === activeThread.id && m.sender_id !== state.user.id);
+        : (m.recipient_type === activeThread.type && m.recipient_id === dbRecipientId && m.sender_id !== state.user.id);
       return isThisThread;
     });
     if (lastReceived) targetMsgId = lastReceived.id;

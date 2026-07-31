@@ -96,6 +96,14 @@ export function getTeamMgmtPage() {
             <label>Team Name *</label>
             <input type="text" id="teamCreateName" required placeholder="e.g. Mumbai Outreach" maxlength="120">
           </div>
+          <div class="form-group" style="margin-top:10px; margin-bottom:12px;">
+            <label for="teamCreateGenderScope">Gender Scope *</label>
+            <select id="teamCreateGenderScope" required style="width:100%;">
+              <option value="mixed">Mixed</option>
+              <option value="male">Male only</option>
+              <option value="female">Female only</option>
+            </select>
+          </div>
           <div class="btn-group">
             <button type="submit">Create Team</button>
             <button type="button" class="secondary" onclick="window.toggleTeamsCreateCard(false)">Cancel</button>
@@ -107,6 +115,14 @@ export function getTeamMgmtPage() {
           <div class="form-group">
             <label>Team Name *</label>
             <input type="text" id="ohtNewTeamName" required placeholder="e.g. Lagos Outreach" maxlength="120">
+          </div>
+          <div class="form-group" style="margin-top:10px; margin-bottom:12px;">
+            <label for="ohtNewTeamGenderScope">Gender Scope *</label>
+            <select id="ohtNewTeamGenderScope" required style="width:100%;">
+              <option value="mixed">Mixed</option>
+              <option value="male">Male only</option>
+              <option value="female">Female only</option>
+            </select>
           </div>
           <div class="btn-group">
             <button type="submit">Create Team</button>
@@ -122,10 +138,14 @@ export function getTeamMgmtPage() {
     <p class="page-intro">Select a team to manage members. Create teams if your role allows.</p>
 
     <div class="card" style="margin-bottom: 24px;">
-      <div class="form-grid-row form-grid-row--team-picker">
-        <div class="form-group" style="flex:1;">
-          <label>Team</label>
-          <select id="teamsPageSelect" onchange="window.onTeamsPageSelectChange()">
+      <div class="form-grid-row form-grid-row--team-picker" style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end;">
+        <div class="form-group" style="width: 220px; margin-bottom: 0;">
+          <label for="teamsPageSearch">Filter List</label>
+          <input type="text" id="teamsPageSearch" placeholder="🔍 Type to filter..." oninput="window.filterTeamsDropdown()" style="width:100%; height:38px; border-radius:6px; border:1px solid var(--border); padding:6px 12px; background:var(--card-bg); color:var(--text); box-sizing:border-box;">
+        </div>
+        <div class="form-group" style="flex:1; min-width: 180px; margin-bottom: 0;">
+          <label for="teamsPageSelect">Team</label>
+          <select id="teamsPageSelect" onchange="window.onTeamsPageSelectChange()" style="width: 100%; height:38px; border-radius:6px; border:1px solid var(--border); padding:6px; background:var(--card-bg); color:var(--text);">
             <option value="">Loading teams…</option>
           </select>
         </div>
@@ -138,13 +158,22 @@ export function getTeamMgmtPage() {
       </div>
       ${isOrgAdmin() ? `
         <form id="teamRenameForm" style="display:none; margin-top:20px; border-top:1px solid var(--border); padding-top:20px;" onsubmit="window.saveTeamRename(event)">
-          <div class="form-grid-row" style="display: flex; gap: 16px; align-items: flex-end;">
-            <div class="form-group" style="flex: 1;">
+          <div class="form-grid-row" style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;">
+            <div class="form-group" style="flex: 1; min-width: 180px;">
               <label for="teamRenameName">Rename Team</label>
               <input type="text" id="teamRenameName" required maxlength="120" placeholder="Edit team name">
             </div>
-            <div class="form-group" style="margin-bottom: 2px;">
+            <div class="form-group" style="width: 150px;">
+              <label for="teamRenameGenderScope">Gender Scope</label>
+              <select id="teamRenameGenderScope" style="width:100%; height:38px; border-radius:6px; border:1px solid var(--border); padding:6px; background:var(--card-bg); color:var(--text);">
+                <option value="mixed">Mixed</option>
+                <option value="male">Male only</option>
+                <option value="female">Female only</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 2px; display: flex; gap: 8px;">
               <button type="submit">Save settings</button>
+              <button type="button" class="danger" onclick="window.deleteTeam()">Delete team</button>
             </div>
           </div>
           <div style="margin-top: 15px;">
@@ -231,20 +260,48 @@ export async function initTeamMgmtPage() {
   window.toggleTeamsCreateCard = toggleTeamsCreateCard;
   window.createOhtTeam = createOhtTeam;
   window.filterTeamMembers = filterTeamMembers;
+  window.filterTeamsDropdown = filterTeamsDropdown;
+  window.deleteTeam = deleteTeam;
 
   await loadUsersCache();
   await loadManageableTeams();
+}
+
+function filterTeamsDropdown() {
+  const q = (document.getElementById('teamsPageSearch')?.value || '').trim().toLowerCase();
+  const select = document.getElementById('teamsPageSelect');
+  if (!select) return;
+
+  const currentVal = select.value;
+  const matched = teamsCache.filter(t => t.name.toLowerCase().includes(q));
+
+  select.innerHTML = matched.length
+    ? '<option value="">Select a team…</option>'
+    : '<option value="">No matching teams</option>';
+
+  matched.forEach(team => {
+    select.innerHTML += `<option value="${team.id}">${escapeHtml(team.name)}</option>`;
+  });
+
+  if (matched.some(t => t.id === currentVal)) {
+    select.value = currentVal;
+  } else {
+    select.value = '';
+  }
 }
 
 async function loadManageableTeams() {
   const select = document.getElementById('teamsPageSelect');
   if (!select) return;
 
+  const searchInput = document.getElementById('teamsPageSearch');
+  if (searchInput) searchInput.value = '';
+
   try {
     if (isOrgAdmin()) {
       const { data: teams, error } = await supabaseClient
         .from('teams')
-        .select('id, name, is_personal_team, has_budget_access, has_tasks_access, has_lms_access')
+        .select('id, name, is_personal_team, has_budget_access, has_tasks_access, has_lms_access, gender_scope')
         .eq('is_personal_team', false)
         .order('name');
       if (error) throw error;
@@ -254,6 +311,7 @@ async function loadManageableTeams() {
         has_budget_access: t.has_budget_access,
         has_tasks_access: t.has_tasks_access,
         has_lms_access: t.has_lms_access,
+        gender_scope: t.gender_scope || 'mixed',
         member_count: 0
       }));
     } else {
@@ -265,6 +323,7 @@ async function loadManageableTeams() {
           has_budget_access: t.has_budget_access,
           has_tasks_access: t.has_tasks_access,
           has_lms_access: t.has_lms_access,
+          gender_scope: t.gender_scope || 'mixed',
           member_count: 0
         }));
     }
@@ -328,9 +387,11 @@ async function onTeamsPageSelectChange() {
     const checkBudget = document.getElementById('teamCheckBudget');
     const checkTasks = document.getElementById('teamCheckTasks');
     const checkLms = document.getElementById('teamCheckLms');
+    const checkGenderScope = document.getElementById('teamRenameGenderScope');
     if (checkBudget) checkBudget.checked = team?.has_budget_access !== false;
     if (checkTasks) checkTasks.checked = team?.has_tasks_access !== false;
     if (checkLms) checkLms.checked = !!team?.has_lms_access;
+    if (checkGenderScope) checkGenderScope.value = team?.gender_scope || 'mixed';
   }
   document.getElementById('memberTeamId').value = teamId;
 
@@ -432,7 +493,8 @@ async function saveTeam(e) {
 
   try {
     const newId = crypto.randomUUID();
-    const { error } = await supabaseClient.from('teams').insert({ id: newId, name });
+    const genderScope = document.getElementById('teamCreateGenderScope')?.value || 'mixed';
+    const { error } = await supabaseClient.from('teams').insert({ id: newId, name, gender_scope: genderScope });
     if (error) throw error;
     showToast('Team created', 'success');
 
@@ -496,6 +558,8 @@ async function saveTeamRename(e) {
   const tasks = checkTasks ? checkTasks.checked : true;
   const lms = checkLms ? checkLms.checked : false;
 
+  const genderScope = document.getElementById('teamRenameGenderScope')?.value || 'mixed';
+
   try {
     const { error } = await supabaseClient
       .from('teams')
@@ -503,7 +567,8 @@ async function saveTeamRename(e) {
         name,
         has_budget_access: budget,
         has_tasks_access: tasks,
-        has_lms_access: lms
+        has_lms_access: lms,
+        gender_scope: genderScope
       })
       .eq('id', teamId);
     if (error) throw error;
@@ -514,6 +579,7 @@ async function saveTeamRename(e) {
       team.has_budget_access = budget;
       team.has_tasks_access = tasks;
       team.has_lms_access = lms;
+      team.gender_scope = genderScope;
     }
 
     showToast('Team settings updated', 'success');
@@ -685,7 +751,7 @@ async function addTeamMember(e) {
     try {
       const pt = await ensurePersonalTeamForUser(userId, user?.name || user?.email, state.user?.id);
       if (pt.created) {
-        showToast(`Personal team "${pt.team.name}" created`, 'success');
+        console.log(`Personal team "${pt.team.name}" created`);
       }
     } catch (ptErr) {
       console.warn('Personal team setup:', ptErr);
@@ -700,7 +766,7 @@ async function addTeamMember(e) {
         state.user?.id
       );
       if (mb.created) {
-        showToast(`Member bucket "${mb.bucket.name}" created on this team`, 'success');
+        console.log(`Member bucket "${mb.bucket.name}" created on this team`);
       }
     } catch (mbErr) {
       console.warn('Member bucket setup:', mbErr);
@@ -842,11 +908,13 @@ async function createOhtTeam(e) {
 
   try {
     const teamId = crypto.randomUUID();
+    const genderScope = document.getElementById('ohtNewTeamGenderScope')?.value || 'mixed';
     const { error: teamError } = await supabaseClient.from('teams').insert({
       id: teamId,
       name,
       is_personal_team: false,
-      created_by_oht_user_id: state.user.id
+      created_by_oht_user_id: state.user.id,
+      gender_scope: genderScope
     });
     if (teamError) throw teamError;
 
@@ -879,4 +947,52 @@ async function createOhtTeam(e) {
       btn.textContent = original || 'Create Team';
     }
   }
+}
+
+async function deleteTeam() {
+  const teamId = activeTeamId || document.getElementById('teamsPageSelect')?.value;
+  if (!teamId) {
+    showToast('Select a team first', 'warning');
+    return;
+  }
+  
+  const team = teamsCache.find(t => t.id === teamId);
+  if (!team) return;
+  
+  showConfirm(`Are you sure you want to delete the team "${team.name}"? This cannot be undone and will delete all member assignments.`, async () => {
+    try {
+      // 1. Delete user_teams association
+      const { error: utError } = await supabaseClient
+        .from('user_teams')
+        .delete()
+        .eq('team_id', teamId);
+      if (utError) throw utError;
+
+      // 2. Delete request_role_assignments association
+      await supabaseClient
+        .from('request_role_assignments')
+        .delete()
+        .eq('team_id', teamId);
+
+      // 3. Delete the team itself
+      const { error: teamError } = await supabaseClient
+        .from('teams')
+        .delete()
+        .eq('id', teamId);
+      if (teamError) throw teamError;
+
+      showToast(`Team "${team.name}" deleted successfully`, 'success');
+      
+      // Reset state and reload list
+      activeTeamId = null;
+      const select = document.getElementById('teamsPageSelect');
+      if (select) select.value = '';
+      await loadManageableTeams();
+      await onTeamsPageSelectChange();
+      await refreshAccessibleTeams();
+    } catch (err) {
+      console.error('Delete team error:', err);
+      showToast(err.message || 'Failed to delete team', 'error');
+    }
+  });
 }

@@ -75,7 +75,7 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
     const teamIds = state.teams.map(t => t.team_id);
     const { data: teamMeta } = await supabaseClient
       .from('teams')
-      .select('id, is_personal_team, has_budget_access, has_tasks_access, has_lms_access')
+      .select('id, is_personal_team, has_budget_access, has_tasks_access, has_lms_access, gender_scope')
       .in('id', teamIds);
 
     const metaMap = Object.fromEntries((teamMeta || []).map(t => [t.id, t]));
@@ -85,6 +85,7 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
       t.has_budget_access = meta.has_budget_access !== false;
       t.has_tasks_access = meta.has_tasks_access !== false;
       t.has_lms_access = !!meta.has_lms_access;
+      t.gender_scope = meta.gender_scope || 'mixed';
     });
   }
 

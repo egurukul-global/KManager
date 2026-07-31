@@ -61,6 +61,10 @@ function roleOptions(selected = 'user') {
   }).join('');
 }
 
+
+
+
+
 export function getOkAdminPage() {
   if (!isOkAdmin()) {
     return renderOkShell({
@@ -74,64 +78,82 @@ export function getOkAdminPage() {
     });
   }
 
+  const defaultTab = window.okAdminDefaultTab || 'users';
+
   return renderOkShell({
     activePath: '/admin',
     title: 'Admin',
     bottomTab: 'admin',
     mainHtml: `
-      <h1 class="page-title">Users</h1>
-      <p class="page-intro">Finance department &amp; One Kailasa: set org roles, manage team rosters, app clearances, and permissions overrides.</p>
+      <!-- Main Tab Headers -->
+      <div class="ok-admin-main-tabs" style="display:flex; gap:16px; margin-bottom:20px; border-bottom:2px solid var(--border); padding-bottom:4px;">
+        <button id="okAdminTabUsers" onclick="window.switchOkAdminMainTab('users')" class="tab-btn${defaultTab === 'users' ? ' active' : ''}" style="font-weight:600; font-size:1.05rem; padding:8px 16px; border:none; background:none; color:var(--text); cursor:pointer; border-bottom:3px solid ${defaultTab === 'users' ? 'var(--primary)' : 'transparent'}; opacity:${defaultTab === 'users' ? '1' : '0.7'};">Users</button>
+        <button id="okAdminTabTeams" onclick="window.switchOkAdminMainTab('teams')" class="tab-btn${defaultTab === 'teams' ? ' active' : ''}" style="font-weight:600; font-size:1.05rem; padding:8px 16px; border:none; background:none; color:var(--text); cursor:pointer; border-bottom:3px solid ${defaultTab === 'teams' ? 'var(--primary)' : 'transparent'}; opacity:${defaultTab === 'teams' ? '1' : '0.7'};">Teams</button>
+      </div>
 
-      <div class="card">
-        <div class="form-grid-row form-grid-row--user-filters">
-          <div class="form-group">
-            <label>Search</label>
-            <input type="text" id="okAdminSearch" placeholder="Name or email" oninput="window.filterOkAdminUsers()">
-          </div>
-          <div class="form-group">
-            <label>Status</label>
-            <select id="okAdminStatusFilter" onchange="window.filterOkAdminUsers()">
-              <option value="active">Active</option>
-              <option value="hold">On hold</option>
-              <option value="all">All</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Org role</label>
-            <select id="okAdminRoleFilter" onchange="window.filterOkAdminUsers()">
-              ${orgRoleFilterOptions()}
-            </select>
-          </div>
-          <div class="form-group user-mgmt-filter-actions">
-            <label>&nbsp;</label>
-            <div class="btn-group">
-              <button type="button" onclick="window.filterOkAdminUsers()">Search</button>
-              <button type="button" class="success" id="okAdminNewBtn">+ New person</button>
+      <!-- Main Tab Contents: Users -->
+      <div id="okAdminMainContentUsers" style="display: ${defaultTab === 'users' ? 'block' : 'none'};">
+        <h1 class="page-title">Users</h1>
+        <p class="page-intro">Finance department &amp; One Kailasa: set org roles, manage team rosters, app clearances, and permissions overrides.</p>
+
+        <div class="card">
+          <div class="form-grid-row form-grid-row--user-filters">
+            <div class="form-group">
+              <label>Search</label>
+              <input type="text" id="okAdminSearch" placeholder="Name or email" oninput="window.filterOkAdminUsers()">
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="okAdminStatusFilter" onchange="window.filterOkAdminUsers()">
+                <option value="active">Active</option>
+                <option value="hold">On hold</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Org role</label>
+              <select id="okAdminRoleFilter" onchange="window.filterOkAdminUsers()">
+                ${orgRoleFilterOptions()}
+              </select>
+            </div>
+            <div class="form-group user-mgmt-filter-actions">
+              <label>&nbsp;</label>
+              <div class="btn-group">
+                <button type="button" onclick="window.filterOkAdminUsers()">Search</button>
+                <button type="button" class="success" id="okAdminNewBtn">+ New person</button>
+              </div>
             </div>
           </div>
         </div>
+
+        <div class="card">
+          <h2>All users</h2>
+          <div class="table-container show-desktop">
+            <table class="table-stack-mobile user-mgmt-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Org role</th>
+                  <th>Teams</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="okAdminTableBody">
+                <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="okAdminMobile" class="show-mobile data-card-list"></div>
+        </div>
       </div>
 
-      <div class="card">
-        <h2>All users</h2>
-        <div class="table-container show-desktop">
-          <table class="table-stack-mobile user-mgmt-table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Org role</th>
-                <th>Teams</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="okAdminTableBody">
-              <tr><td colspan="6" class="empty-state">Loading…</td></tr>
-            </tbody>
-          </table>
+      <!-- Main Tab Contents: Teams -->
+      <div id="okAdminMainContentTeams" style="display: ${defaultTab === 'teams' ? 'block' : 'none'};">
+        <div id="okAdminTeamsInner">
+          <p class="empty-state">Loading Teams management...</p>
         </div>
-        <div id="okAdminMobile" class="show-mobile data-card-list"></div>
       </div>
 
       <div id="okAdminCreateModal" class="modal">
@@ -171,8 +193,49 @@ export function initOkAdminPage() {
   window.selectOkAdminUser = selectUser;
   window.closeUserSelectModal = closeUserSelectModal;
   window.wireUserSelectModal = wireUserSelectModal;
+  window.switchOkAdminMainTab = switchOkAdminMainTab;
   setupCreateModal();
-  loadUsers();
+  
+  const defaultTab = window.okAdminDefaultTab || 'users';
+  if (defaultTab === 'teams') {
+    switchOkAdminMainTab('teams');
+  } else {
+    loadUsers();
+  }
+}
+
+async function switchOkAdminMainTab(tabName) {
+  window.okAdminDefaultTab = tabName;
+  const usersTab = document.getElementById('okAdminTabUsers');
+  const teamsTab = document.getElementById('okAdminTabTeams');
+  const usersContent = document.getElementById('okAdminMainContentUsers');
+  const teamsContent = document.getElementById('okAdminMainContentTeams');
+  
+  if (usersTab && teamsTab && usersContent && teamsContent) {
+    if (tabName === 'users') {
+      usersTab.style.borderBottom = '3px solid var(--primary)';
+      usersTab.style.opacity = '1';
+      teamsTab.style.borderBottom = '3px solid transparent';
+      teamsTab.style.opacity = '0.7';
+      usersContent.style.display = 'block';
+      teamsContent.style.display = 'none';
+      await loadUsers();
+    } else {
+      teamsTab.style.borderBottom = '3px solid var(--primary)';
+      teamsTab.style.opacity = '1';
+      usersTab.style.borderBottom = '3px solid transparent';
+      usersTab.style.opacity = '0.7';
+      usersContent.style.display = 'none';
+      teamsContent.style.display = 'block';
+      
+      const { getTeamMgmtPage, initTeamMgmtPage } = await import('./team-mgmt.js');
+      const inner = document.getElementById('okAdminTeamsInner');
+      if (inner) {
+        inner.innerHTML = getTeamMgmtPage();
+        await initTeamMgmtPage();
+      }
+    }
+  }
 }
 
 function wireUserSelectModal() {
@@ -320,7 +383,7 @@ async function selectUser(userId) {
       supabaseClient.from('ok_admins').select('user_id').eq('user_id', userId).maybeSingle(),
       supabaseClient.from('user_teams').select('id, team_id, access_level, teams:team_id(id, name, is_personal_team)').eq('user_id', userId),
       supabaseClient.from('chat_permissions').select('*').eq('user_id', userId).maybeSingle(),
-      supabaseClient.from('teams').select('id, name').eq('is_personal_team', false).order('name'),
+      supabaseClient.from('teams').select('id, name, gender_scope').eq('is_personal_team', false).order('name'),
       supabaseClient.from('request_role_assignments').select('role_code, team_id, request_type, teams:team_id(name)').eq('user_id', userId).eq('is_active', true).order('role_code')
     ]);
 
@@ -478,16 +541,27 @@ async function selectUser(userId) {
 
           <h4 style="margin-top:24px;">Add to a Team</h4>
           <form id="okAddUserTeamForm" onsubmit="window.addTeamMemberInline(event)" style="background:var(--bg-secondary); padding:16px; border-radius:8px; border:1px solid var(--border); margin-bottom: 20px;">
-            <div class="form-group" style="margin-bottom:12px;">
-              <label for="okAddTeamSearch">Filter Teams</label>
-              <input type="text" id="okAddTeamSearch" placeholder="Type to filter teams list below..." oninput="window.filterOkAddTeamOptions()" style="width:100%; height:34px; padding:6px; border-radius:6px; border:1px solid var(--border); background:var(--card-bg); color:var(--text);">
+            <div class="form-group" style="margin-bottom:12px; display:flex; gap:10px;">
+              <div style="flex:1;">
+                <label for="okAddTeamSearch">Filter Teams</label>
+                <input type="text" id="okAddTeamSearch" placeholder="Type to filter teams list below..." oninput="window.filterOkAddTeamOptions()" style="width:100%; height:34px; padding:6px; border-radius:6px; border:1px solid var(--border); background:var(--card-bg); color:var(--text);">
+              </div>
+              <div style="width:140px;">
+                <label for="okAddTeamGenderScopeFilter">Gender Scope</label>
+                <select id="okAddTeamGenderScopeFilter" onchange="window.filterOkAddTeamOptions()" style="width:100%; height:34px; border-radius:6px; border:1px solid var(--border); padding:6px; background:var(--card-bg); color:var(--text);">
+                  <option value="">All Scopes</option>
+                  <option value="mixed">Mixed</option>
+                  <option value="male">Male only</option>
+                  <option value="female">Female only</option>
+                </select>
+              </div>
             </div>
             <div class="form-grid" style="align-items:flex-end; gap:16px; margin-bottom:12px;">
               <div class="form-group">
                 <label for="okAddTeamSelect">Select Team</label>
                 <select id="okAddTeamSelect" required style="width:100%;">
                   <option value="">Choose team…</option>
-                  ${availableTeams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
+                  ${availableTeams.map(t => `<option value="${t.id}">${escapeHtml(t.name)} (${escapeHtml(t.gender_scope || 'mixed')})</option>`).join('')}
                 </select>
               </div>
               <div class="form-group">
@@ -762,11 +836,18 @@ window.switchOkAdminTab = (tabName) => {
 // Filter available teams in Tab 2
 window.filterOkAddTeamOptions = () => {
   const q = (document.getElementById('okAddTeamSearch')?.value || '').trim().toLowerCase();
+  const genderScopeFilter = document.getElementById('okAddTeamGenderScopeFilter')?.value || '';
   const select = document.getElementById('okAddTeamSelect');
   if (!select) return;
-  const matched = (window.availableTeamsCache || []).filter(t => t.name.toLowerCase().includes(q));
+  
+  const matched = (window.availableTeamsCache || []).filter(t => {
+    const textMatch = t.name.toLowerCase().includes(q);
+    const genderScopeMatch = !genderScopeFilter || t.gender_scope === genderScopeFilter;
+    return textMatch && genderScopeMatch;
+  });
+  
   select.innerHTML = '<option value="">Choose team…</option>' +
-    matched.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+    matched.map(t => `<option value="${t.id}">${escapeHtml(t.name)} (${escapeHtml(t.gender_scope || 'mixed')})</option>`).join('');
 };
 
 // Switch App configuration menus dropdown

@@ -52,6 +52,7 @@ This document tracks all completed and pending project phases. It acts as the si
 * **Access Save & Assign:** If the creator doesn't have direct access to the assignee, they save the record, and a user with correct clearance can perform the assignment later.
 * **Task Integration:** Guruvaks will be stored in the task database with a `"guruvak"` tag/context.
 * **UI Refactors:** Enhance the task search/filter options and expand the message/description space to be much more spacious and UI-friendly.
+* **Task & Team Assignment:** Support assigning tasks directly to whole Teams in addition to individual Users. The OPL (Team Lead) or OPH (Operations Head) of that team can then delegate/re-assign it to specific team members.
 
 ### Phase 4J: FIP Payment & TL Allocation Module
 * **FIP Payments:** Finance Payment (FIP) users receive FIH-approved budgets. They select budgets and allocate payments (via wire transfer, cash, etc.) and mark them as Paid.
@@ -79,6 +80,7 @@ This document tracks all completed and pending project phases. It acts as the si
 ### Phase 8: Messaging & Security Upgrades
 * **Advanced Chats:** Support broadcast messages to group teams, read receipts, and silent mode toggles.
 * **System Broadcasts:** Route system notifications from Finance, Tasks, or Gurukul as messages containing deep links to the target features.
+* **Unified Konnect Approvals & Alert Center:** Consolidate all application transactions, dashboard updates, alerts, and approval workflow state changes into a single stream of deep-linked messages delivered on Konnect to the respective OPL/OPH/Admins. Users monitor action items in Konnect and click the messages to open the corresponding app (Finance, Tasks, etc.) to perform the action.
 
 ### Phase 9: Custom Password Rules & Boss Resets
 * **Password Policy:** Minimum 8 characters, 1 uppercase, 1 special character, 1 number. Must not contain the words: `name`, `Nithya`, `Ananda`, `Shiva`, `Kailasa`.
@@ -86,5 +88,5 @@ This document tracks all completed and pending project phases. It acts as the si
 
 ### Phase 10: Organizational AI Insights & Self-Refinement
 * **AI Search & Retrieval:** Integrate semantic search across tasks, messages, and budget comments.
-* **Executive Summaries:** Generate high-level organizational insight reports for CEO/CAO on operational performance, team workloads, and bottleneck areas.
+* **Executive Summaries:** Generate high-level organizational insight report for CEO/CAO on operational performance, team workloads, and bottleneck areas.
 * **Self-Refinement Audit:** Configure AI analysis to identify patterns of user struggles, slow approval times, or frequent clarifications to recommend UI/feature refinements.

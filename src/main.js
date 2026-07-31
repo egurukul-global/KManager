@@ -644,7 +644,6 @@ function renderAppShell() {
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
-              <div class="nav-subitem" data-page="team-mgmt" onclick="window.showPage('team-mgmt')">Teams</div>
               <div class="nav-subitem" data-page="role-assignments" onclick="window.showPage('role-assignments')">Role Assignments</div>
               <div class="nav-subitem" data-page="budget-calendar" onclick="window.showPage('budget-calendar')">Budget Calendar</div>
               <div class="nav-subitem" data-page="category-master" onclick="window.showPage('category-master')">Category Master</div>
@@ -872,7 +871,16 @@ export function showPage(pageName) {
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
     'user-mgmt': { html: getUserMgmtPage, init: initUserMgmtPage },
-    'team-mgmt': { html: getTeamMgmtPage, init: initTeamMgmtPage },
+    'team-mgmt': {
+      html: () => {
+        setTimeout(() => {
+          window.okAdminDefaultTab = 'teams';
+          navigateOk('/admin');
+        }, 0);
+        return '<div class="card"><p class="empty-state">Redirecting to Admin...</p></div>';
+      },
+      init: () => {}
+    },
     'tasks': { html: getTasksPage, init: initTasksPage },
     'design-preview': { html: getDesignPreviewPage, init: initDesignPreviewPage }
   };
