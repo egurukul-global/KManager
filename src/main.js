@@ -124,6 +124,20 @@ export async function forceLogout() {
   if (lockEl) lockEl.style.display = 'none';
   state.isLocked = false;
 
+  // Clean up all modals to prevent UI freezing
+  document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+  const dynamicModals = ['reviewModal', 'receiveFundsModal', 'approvalActionModal', 'submissionWizardModal'];
+  dynamicModals.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      if (id === 'submissionWizardModal') {
+        el.classList.remove('active');
+      } else {
+        el.remove();
+      }
+    }
+  });
+
   if (window.location.pathname !== '/') {
     window.history.replaceState({}, '', '/');
   }
