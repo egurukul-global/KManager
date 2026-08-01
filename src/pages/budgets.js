@@ -1116,7 +1116,8 @@ function renderBudgetSummaryTable(container, budgets) {
 
      const isTeamLead = state.userTeamAccess?.access_level === 'lead' || 
                         state.userTeamAccess?.access_level === 'admin' || 
-                        ['admin', 'fin', 'fip', 'oh', 'caoh', 'cao', 'ceo'].includes(String(state.user?.role || '').toLowerCase().trim());
+                        state.userTeamAccess?.access_level === 'oht' ||
+                        state.user?.role === 'admin';
     const status = getBudgetStatus(budget);
     const showMarkReceived = isTeamLead && (status === BUDGET_STATUS.PAID || status === BUDGET_STATUS.APPROVED);
     const receivedBtn = showMarkReceived
@@ -1246,7 +1247,8 @@ export function renderBudgetReviewHtml(budget, options = {}) {
 
   const isTeamLead = state.userTeamAccess?.access_level === 'lead' || 
                      state.userTeamAccess?.access_level === 'admin' || 
-                     ['admin', 'fin', 'fip', 'oh', 'caoh', 'cao', 'ceo'].includes(String(state.user?.role || '').toLowerCase().trim());
+                     state.userTeamAccess?.access_level === 'oht' ||
+                     state.user?.role === 'admin';
   const status = getBudgetStatus(budget);
   const showMarkReceived = isTeamLead && (status === BUDGET_STATUS.PAID || status === BUDGET_STATUS.APPROVED);
   const receivedBtn = showMarkReceived
