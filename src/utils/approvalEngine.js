@@ -9,37 +9,11 @@ import {
   clarifyRoleFromStatus,
   getUserApprovalRoleCodes,
   userCanActOnRequest,
-  canCancelRequest
+  canCancelRequest,
+  resolveFlowSteps
 } from './approvalAccess.js';
 import { approveOhfTransfer } from './transferActions.js';
 import { mapApprovalToBudgetStatus } from './budgetStatus.js';
-
-/** Resolve flow steps for request type / team / user (highest priority match). */
-export async function resolveFlowSteps(requestType, teamId = null, userId = null) {
-  const { data: flows, error } = await supabaseClient
-    .from('approval_flow_definitions')
-    .select(`
-      id, request_type, team_id, user_id, priority,
-      approval_flow_steps ( step_order, role_code, is_final )
-    `)
-    .eq('request_type', requestType)
-    .eq('is_active', true)
-    .order('priority', { ascending: false });
-
-  if (error) throw error;
-
-  const list = flows || [];
-  const match =
-    list.find(f => f.team_id === teamId && f.user_id === userId) ||
-    list.find(f => f.team_id === teamId && !f.user_id) ||
-    list.find(f => !f.team_id && f.user_id === userId) ||
-    list.find(f => !f.team_id && !f.user_id);
-
-  if (!match) return [];
-
-  return (match.approval_flow_steps || [])
-    .sort((a, b) => a.step_order - b.step_order);
-}
 
 const TYPE_NOTIFY_LABELS = {
   budget: 'Budget',

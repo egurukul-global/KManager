@@ -8,6 +8,32 @@ export const REQUEST_TYPES = {
   RECONCILIATION_ADJUSTMENT: 'reconciliation_adjustment'
 };
 
+export async function resolveFlowSteps(requestType, teamId = null, userId = null) {
+  const { data: flows, error } = await supabaseClient
+    .from('approval_flow_definitions')
+    .select(`
+      id, request_type, team_id, user_id, priority,
+      approval_flow_steps ( step_order, role_code, is_final )
+    `)
+    .eq('request_type', requestType)
+    .eq('is_active', true)
+    .order('priority', { ascending: false });
+
+  if (error) throw error;
+
+  const list = flows || [];
+  const match =
+    list.find(f => f.team_id === teamId && f.user_id === userId) ||
+    list.find(f => f.team_id === teamId && !f.user_id) ||
+    list.find(f => !f.team_id && f.user_id === userId) ||
+    list.find(f => !f.team_id && !f.user_id);
+
+  if (!match) return [];
+
+  return (match.approval_flow_steps || [])
+    .sort((a, b) => a.step_order - b.step_order);
+}
+
 export const ROLE_CODES = ['OPS', 'OPL', 'OPH', 'FIN', 'FIP', 'FIH', 'CAO', 'CEO', 'SYS', 'LEG', 'LEH', 'GUT', 'GUH'];
 
 /** Org role → built-in approval role codes */
@@ -136,7 +162,6 @@ export async function userCanActOnRequest(request, userId = state.user?.id) {
 
     // Skip level approvals: check if user has a role code defined at a HIGHER step in this flow
     try {
-      const { resolveFlowSteps } = await import('./approvalEngine.js');
       const steps = await resolveFlowSteps(request.request_type, request.team_id);
       const currentStep = steps.find(s => s.step_order === request.current_step_order);
       if (currentStep) {
