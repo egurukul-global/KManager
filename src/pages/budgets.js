@@ -1114,7 +1114,9 @@ function renderBudgetSummaryTable(container, budgets) {
       ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
       : '';
 
-    const isTeamLead = state.userTeamAccess?.access_level === 'lead' || state.userTeamAccess?.access_level === 'admin' || state.user?.role === 'admin';
+     const isTeamLead = state.userTeamAccess?.access_level === 'lead' || 
+                        state.userTeamAccess?.access_level === 'admin' || 
+                        ['admin', 'fin', 'fip', 'oh', 'caoh', 'cao', 'ceo'].includes(String(state.user?.role || '').toLowerCase().trim());
     const status = getBudgetStatus(budget);
     const showMarkReceived = isTeamLead && (status === BUDGET_STATUS.PAID || status === BUDGET_STATUS.APPROVED);
     const receivedBtn = showMarkReceived
@@ -1242,7 +1244,9 @@ export function renderBudgetReviewHtml(budget, options = {}) {
     ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit for approval</button>`
     : '';
 
-  const isTeamLead = state.userTeamAccess?.access_level === 'lead' || state.userTeamAccess?.access_level === 'admin' || state.user?.role === 'admin';
+  const isTeamLead = state.userTeamAccess?.access_level === 'lead' || 
+                     state.userTeamAccess?.access_level === 'admin' || 
+                     ['admin', 'fin', 'fip', 'oh', 'caoh', 'cao', 'ceo'].includes(String(state.user?.role || '').toLowerCase().trim());
   const status = getBudgetStatus(budget);
   const showMarkReceived = isTeamLead && (status === BUDGET_STATUS.PAID || status === BUDGET_STATUS.APPROVED);
   const receivedBtn = showMarkReceived
