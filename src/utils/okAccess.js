@@ -76,12 +76,20 @@ export function isOkAdmin() {
 
 export function hasAppAccess(appCode) {
   if (appCode === 'tasks' || appCode === 'konnect') return true;
+  const globalRoles = ['admin', 'fin', 'fip', 'oh', 'caoh', 'cao', 'ceo'];
+  if (appCode === 'finance' && globalRoles.includes(String(state.user?.role || '').toLowerCase().trim())) {
+    return true;
+  }
   const apps = state.okApps || [];
   return apps.some(a => a.app_code === appCode && a.enabled === true);
 }
 
 export function hasMenuAccess(appCode, menuKey) {
   if (!hasAppAccess(appCode)) return false;
+  const globalRoles = ['admin', 'fin', 'fip', 'oh', 'caoh', 'cao', 'ceo'];
+  if (appCode === 'finance' && globalRoles.includes(String(state.user?.role || '').toLowerCase().trim())) {
+    return true;
+  }
   if (state.isOkAdmin || state.user?.role === 'admin' || (state.okAppAdmins && state.okAppAdmins.includes(appCode))) return true;
   const menus = state.okMenus || [];
   if (!menus.length) return true;
