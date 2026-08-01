@@ -62,7 +62,9 @@ export function getBudgetStatus(budget) {
       fromStatus === 'current' ||
       fromApproval === BUDGET_STATUS.REJECTED ||
       fromApproval === BUDGET_STATUS.SUBMITTED ||
-      fromApproval === BUDGET_STATUS.APPROVED
+      fromApproval === BUDGET_STATUS.APPROVED ||
+      fromApproval === BUDGET_STATUS.PAID ||
+      fromApproval === BUDGET_STATUS.RECEIVED
     ) {
       if (fromStatus === BUDGET_STATUS.APPROVED && fromApproval === BUDGET_STATUS.DRAFT) {
         return BUDGET_STATUS.APPROVED;
