@@ -1116,7 +1116,7 @@ function renderBudgetSummaryTable(container, budgets) {
 
     const isTeamLead = state.userTeamAccess?.access_level === 'lead' || state.userTeamAccess?.access_level === 'admin' || state.user?.role === 'admin';
     const status = getBudgetStatus(budget);
-    const showMarkReceived = isTeamLead && status === BUDGET_STATUS.PAID;
+    const showMarkReceived = isTeamLead && (status === BUDGET_STATUS.PAID || status === BUDGET_STATUS.APPROVED);
     const receivedBtn = showMarkReceived
       ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.markBudgetReceived('${budget.id}')">Received</button>`
       : '';
@@ -1244,7 +1244,7 @@ export function renderBudgetReviewHtml(budget, options = {}) {
 
   const isTeamLead = state.userTeamAccess?.access_level === 'lead' || state.userTeamAccess?.access_level === 'admin' || state.user?.role === 'admin';
   const status = getBudgetStatus(budget);
-  const showMarkReceived = isTeamLead && status === BUDGET_STATUS.PAID;
+  const showMarkReceived = isTeamLead && (status === BUDGET_STATUS.PAID || status === BUDGET_STATUS.APPROVED);
   const receivedBtn = showMarkReceived
     ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.markBudgetReceived('${budget.id}')">Received</button>`
     : '';
