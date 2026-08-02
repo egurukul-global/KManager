@@ -26,7 +26,16 @@ Groups of users representing departments, geographic locations, or projects.
 * `has_budget_access` (`BOOLEAN`): True if team has Budget and Expense features active.
 * `has_tasks_access` (`BOOLEAN`): True if team has Task and Issue Tracker active.
 * `has_lms_access` (`BOOLEAN`): True if team has Gurukul LMS features active.
+* `team_type` (`TEXT`): Custom tier label (e.g. 'Department', 'Division').
+* `department` (`TEXT`): Scoped department classification (e.g. 'Finance', 'Legal').
+* `prefix` (`VARCHAR(10)`, Unique): Persistent task numbering code (e.g. 'DUB', 'GBB').
 * `created_at` (`TIMESTAMPTZ`): Creation timestamp.
+
+### `public.team_relationships`
+Stores parent-child relationships between teams for hierarchical routing and visibility.
+* `parent_id` (`UUID`, PK): References `public.teams(id)`.
+* `child_id` (`UUID`, PK): References `public.teams(id)`.
+* `created_at` (`TIMESTAMPTZ`): Association timestamp.
 
 ### `public.user_teams`
 Maps users to teams with specific permission levels.
@@ -173,6 +182,12 @@ Cross-gender and cross-team security filters.
 Checks whether user_a is authorized to send direct messages to user_b.
 * Blocks messaging if genders differ unless both have `allow_opposite_gender = true`.
 * Restricts messaging boundaries if cross-team rules are `'none'` (restricting to shared teams).
+
+### `public.get_sub_teams_recursive(p_team_id UUID)`
+Returns all sub-team IDs recursively descending from the given parent team.
+
+### `public.get_parent_teams_recursive(p_team_id UUID)`
+Returns all parent team IDs recursively ascending from the given child team.
 
 ---
 

@@ -45,25 +45,38 @@ function userLabel(user) {
   return name || email || 'Unknown';
 }
 
-function accessLevelOptions(selected = 'member') {
-  return ACCESS_LEVELS.map(l => {
-    const sel = l.value === selected ? ' selected' : '';
-    return `<option value="${l.value}"${sel}>${l.label}</option>`;
-  }).join('');
-}
+function getRoleLabelForTeam(accessLevel, team) {
+  const dept = String(team?.department || '').trim();
+  if (!dept) {
+    if (accessLevel === 'member') return 'Member (OPS)';
+    if (accessLevel === 'lead') return 'Team lead (OPL)';
+    if (accessLevel === 'oht') return 'Operations head (OPH)';
+    if (accessLevel === 'view') return 'View only';
+    if (accessLevel === 'admin') return 'Team admin';
+    return accessLevel;
+  }
 
-const OHT_ASSIGNABLE_LEVELS = [
-  { value: 'view', label: 'View only' },
-  { value: 'member', label: 'Member (OPS)' },
-  { value: 'lead', label: 'Team lead (OPL)' },
-  { value: 'oht', label: 'Operations head (OPH)' }
-];
+  const deptLower = dept.toLowerCase();
+  if (deptLower === 'finance') {
+    if (accessLevel === 'member') return 'Finance Officer (OPS)';
+    if (accessLevel === 'lead') return 'Finance Lead (OPL)';
+    if (accessLevel === 'oht') return 'Finance Head (OPH)';
+  } else if (deptLower === 'legal') {
+    if (accessLevel === 'member') return 'Legal Associate (OPS)';
+    if (accessLevel === 'lead') return 'Legal Lead (OPL)';
+    if (accessLevel === 'oht') return 'Legal Head (OPH)';
+  } else if (deptLower === 'gurukul') {
+    if (accessLevel === 'member') return 'Gurukul Teacher (OPS)';
+    if (accessLevel === 'lead') return 'Gurukul Coordinator (OPL)';
+    if (accessLevel === 'oht') return 'Gurukul Principal (OPH)';
+  }
 
-function ohtAccessLevelOptions(selected = 'member') {
-  return OHT_ASSIGNABLE_LEVELS.map(l => {
-    const sel = l.value === selected ? ' selected' : '';
-    return `<option value="${l.value}"${sel}>${l.label}</option>`;
-  }).join('');
+  if (accessLevel === 'member') return `${dept} Member (OPS)`;
+  if (accessLevel === 'lead') return `${dept} Lead (OPL)`;
+  if (accessLevel === 'oht') return `${dept} Head (OPH)`;
+  if (accessLevel === 'view') return 'View only';
+  if (accessLevel === 'admin') return 'Team admin';
+  return accessLevel;
 }
 
 function canAccessTeamsPage() {
@@ -74,9 +87,13 @@ function canCreateTeamsOnPage() {
   return isOrgAdmin() || !!state.canCreateOhtTeam;
 }
 
-function memberAccessOptions(selected = 'member') {
-  if (isOrgAdmin()) return accessLevelOptions(selected);
-  return ohtAccessLevelOptions(selected);
+function memberAccessOptions(selected = 'member', team = null) {
+  const levels = isOrgAdmin() ? ACCESS_LEVELS : OHT_ASSIGNABLE_LEVELS;
+  return levels.map(l => {
+    const sel = l.value === selected ? ' selected' : '';
+    const label = team ? getRoleLabelForTeam(l.value, team) : l.label;
+    return `<option value="${l.value}"${sel}>${label}</option>`;
+  }).join('');
 }
 
 export function getTeamMgmtPage() {
@@ -95,6 +112,18 @@ export function getTeamMgmtPage() {
           <div class="form-group">
             <label>Team Name *</label>
             <input type="text" id="teamCreateName" required placeholder="e.g. Mumbai Outreach" maxlength="120">
+          </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label for="teamCreateType">Team Type</label>
+            <input type="text" id="teamCreateType" placeholder="e.g. Department, Outreach, Division" value="Department">
+          </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label for="teamCreateDepartment">Department</label>
+            <input type="text" id="teamCreateDepartment" placeholder="e.g. Finance, Administration, Kitchen">
+          </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label for="teamCreatePrefix">Team Prefix *</label>
+            <input type="text" id="teamCreatePrefix" placeholder="e.g. GBB, DUB" maxlength="5" style="text-transform: uppercase; width: 100%;">
           </div>
           <div class="form-group" style="margin-top:10px; margin-bottom:12px;">
             <label for="teamCreateGenderScope">Gender Scope *</label>
@@ -115,6 +144,18 @@ export function getTeamMgmtPage() {
           <div class="form-group">
             <label>Team Name *</label>
             <input type="text" id="ohtNewTeamName" required placeholder="e.g. Lagos Outreach" maxlength="120">
+          </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label for="ohtNewTeamType">Team Type</label>
+            <input type="text" id="ohtNewTeamType" placeholder="e.g. Department, Outreach, Division" value="Department">
+          </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label for="ohtNewTeamDepartment">Department</label>
+            <input type="text" id="ohtNewTeamDepartment" placeholder="e.g. Finance, Administration, Kitchen">
+          </div>
+          <div class="form-group" style="margin-top:10px;">
+            <label for="ohtNewTeamPrefix">Team Prefix *</label>
+            <input type="text" id="ohtNewTeamPrefix" placeholder="e.g. GBB, DUB" maxlength="5" style="text-transform: uppercase; width: 100%;">
           </div>
           <div class="form-group" style="margin-top:10px; margin-bottom:12px;">
             <label for="ohtNewTeamGenderScope">Gender Scope *</label>
@@ -162,6 +203,18 @@ export function getTeamMgmtPage() {
             <div class="form-group" style="flex: 1; min-width: 180px;">
               <label for="teamRenameName">Rename Team</label>
               <input type="text" id="teamRenameName" required maxlength="120" placeholder="Edit team name">
+            </div>
+            <div class="form-group" style="width: 150px;">
+              <label for="teamRenameType">Team Type</label>
+              <input type="text" id="teamRenameType" placeholder="Team type">
+            </div>
+            <div class="form-group" style="width: 150px;">
+              <label for="teamRenameDepartment">Department</label>
+              <input type="text" id="teamRenameDepartment" placeholder="Department">
+            </div>
+            <div class="form-group" style="width: 100px;">
+              <label for="teamRenamePrefix">Prefix</label>
+              <input type="text" id="teamRenamePrefix" placeholder="Prefix" maxlength="5" style="text-transform: uppercase;">
             </div>
             <div class="form-group" style="width: 150px;">
               <label for="teamRenameGenderScope">Gender Scope</label>
@@ -229,6 +282,50 @@ export function getTeamMgmtPage() {
       </div>
       <div id="teamMembersMobile" class="show-mobile data-card-list"></div>
     </div>
+
+    <div class="card team-relationships-panel" id="teamRelationshipsPanel" style="display:none; margin-top:24px;">
+      <h2>🔗 Team Hierarchy & Relationships</h2>
+      <p class="page-intro">Configure parent and sub-team associations for the selected team.</p>
+      
+      <div class="form-grid-row" style="display:flex; gap:16px; margin-bottom:20px; flex-wrap:wrap; align-items: stretch;">
+        <div class="form-group" style="width:250px; margin-bottom: 0;">
+          <label for="relTeamSearch">Search Teams</label>
+          <input type="text" id="relTeamSearch" placeholder="🔍 Type to filter..." oninput="window.filterRelTeamsList()" style="width:100%; height:38px; box-sizing:border-box;">
+        </div>
+        <div class="form-group" style="flex:1.5; min-width: 250px; margin-bottom: 0; display:flex; flex-direction:column;">
+          <label style="display:flex; align-items:center; gap:6px; font-weight: 600;">
+            <input type="checkbox" id="relSelectAllTeams" onchange="window.toggleAllRelTeams(this.checked)"> 
+            Select Teams to Associate
+          </label>
+          <div id="relTeamsChecklist" style="border:1px solid var(--border); border-radius:6px; background:var(--card-bg); max-height:120px; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:6px; margin-top:4px; flex:1;">
+            <!-- Generated dynamically -->
+          </div>
+        </div>
+        <div class="form-group" style="width:300px; margin-bottom: 0; display:flex; flex-direction:column;">
+          <label for="relTypeSelect">Relationship Type</label>
+          <select id="relTypeSelect" style="width:100%; height:38px; margin-top:4px;">
+            <option value="child">are Sub-teams (Children) of this team</option>
+            <option value="parent">are Parent Teams of this team</option>
+          </select>
+          <button type="button" onclick="window.addTeamRelationship()" style="height:38px; margin-top: auto; width:100%;">Add Relationships</button>
+        </div>
+      </div>
+      
+      <div style="display:flex; gap:20px; flex-wrap:wrap;">
+        <div class="relationship-list-col" style="flex:1; min-width:220px; background:var(--bg-secondary); padding:12px; border-radius:6px; border:1px solid var(--border);">
+          <h4 style="margin:0 0 10px;">Parent Teams</h4>
+          <ul id="parentTeamsList" style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px;">
+            <li class="empty-state">No parent teams</li>
+          </ul>
+        </div>
+        <div class="relationship-list-col" style="flex:1; min-width:220px; background:var(--bg-secondary); padding:12px; border-radius:6px; border:1px solid var(--border);">
+          <h4 style="margin:0 0 10px;">Sub-teams (Children)</h4>
+          <ul id="childTeamsList" style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px;">
+            <li class="empty-state">No sub-teams</li>
+          </ul>
+        </div>
+      </div>
+    </div>
   `;
 }
 
@@ -248,6 +345,10 @@ export async function initTeamMgmtPage() {
   window.filterTeamMembers = filterTeamMembers;
   window.filterTeamsDropdown = filterTeamsDropdown;
   window.deleteTeam = deleteTeam;
+  window.addTeamRelationship = addTeamRelationship;
+  window.removeTeamRelationship = removeTeamRelationship;
+  window.filterRelTeamsList = filterRelTeamsList;
+  window.toggleAllRelTeams = toggleAllRelTeams;
 
   await loadUsersCache();
   await loadManageableTeams();
@@ -287,7 +388,7 @@ async function loadManageableTeams() {
     if (isOrgAdmin()) {
       const { data: teams, error } = await supabaseClient
         .from('teams')
-        .select('id, name, is_personal_team, has_budget_access, has_tasks_access, has_lms_access, gender_scope')
+        .select('id, name, is_personal_team, has_budget_access, has_tasks_access, has_lms_access, gender_scope, team_type, department')
         .eq('is_personal_team', false)
         .order('name');
       if (error) throw error;
@@ -298,20 +399,34 @@ async function loadManageableTeams() {
         has_tasks_access: t.has_tasks_access,
         has_lms_access: t.has_lms_access,
         gender_scope: t.gender_scope || 'mixed',
+        team_type: t.team_type || 'Department',
+        department: t.department || '',
         member_count: 0
       }));
     } else {
-      teamsCache = (state.teams || [])
+      // For non-admin, load OHT scope teams from DB directly to get types/departments
+      const ohtTeamIds = (state.teams || [])
         .filter(t => String(t.access_level || '').toLowerCase() === 'oht')
-        .map(t => ({
-          id: t.team_id,
-          name: t.team_name,
-          has_budget_access: t.has_budget_access,
-          has_tasks_access: t.has_tasks_access,
-          has_lms_access: t.has_lms_access,
-          gender_scope: t.gender_scope || 'mixed',
-          member_count: 0
-        }));
+        .map(t => t.team_id);
+      
+      const { data: teams, error } = await supabaseClient
+        .from('teams')
+        .select('id, name, is_personal_team, has_budget_access, has_tasks_access, has_lms_access, gender_scope, team_type, department')
+        .in('id', ohtTeamIds)
+        .order('name');
+      if (error) throw error;
+
+      teamsCache = (teams || []).map(t => ({
+        id: t.id,
+        name: t.name,
+        has_budget_access: t.has_budget_access,
+        has_tasks_access: t.has_tasks_access,
+        has_lms_access: t.has_lms_access,
+        gender_scope: t.gender_scope || 'mixed',
+        team_type: t.team_type || 'Department',
+        department: t.department || '',
+        member_count: 0
+      }));
     }
 
     select.innerHTML = teamsCache.length
@@ -351,6 +466,8 @@ async function onTeamsPageSelectChange() {
     if (hint) hint.style.display = '';
     if (title) title.textContent = 'Members';
     if (renameRow) renameRow.style.display = 'none';
+    const relPanel = document.getElementById('teamRelationshipsPanel');
+    if (relPanel) relPanel.style.display = 'none';
     const tbody = document.getElementById('teamMembersBody');
     if (tbody) {
       const cols = isOrgAdmin() ? 4 : 3;
@@ -372,8 +489,21 @@ async function onTeamsPageSelectChange() {
     renameInput.value = team?.name || '';
     const checkGenderScope = document.getElementById('teamRenameGenderScope');
     if (checkGenderScope) checkGenderScope.value = team?.gender_scope || 'mixed';
+    const checkType = document.getElementById('teamRenameType');
+    if (checkType) checkType.value = team?.team_type || 'Department';
+    const checkDept = document.getElementById('teamRenameDepartment');
+    if (checkDept) checkDept.value = team?.department || '';
+    const checkPrefix = document.getElementById('teamRenamePrefix');
+    if (checkPrefix) checkPrefix.value = team?.prefix || '';
   }
   document.getElementById('memberTeamId').value = teamId;
+
+  const relPanel = document.getElementById('teamRelationshipsPanel');
+  if (relPanel) {
+    relPanel.style.display = '';
+    loadTeamRelationships(teamId);
+    populateRelationshipChecklist(teamId);
+  }
 
   const teamMatch = state.teams.find(t => t.team_id === teamId);
   if (teamMatch) {
@@ -474,7 +604,37 @@ async function saveTeam(e) {
   try {
     const newId = crypto.randomUUID();
     const genderScope = document.getElementById('teamCreateGenderScope')?.value || 'mixed';
-    const { error } = await supabaseClient.from('teams').insert({ id: newId, name, gender_scope: genderScope });
+    const teamType = document.getElementById('teamCreateType')?.value?.trim() || 'Department';
+    const department = document.getElementById('teamCreateDepartment')?.value?.trim() || '';
+    let prefix = document.getElementById('teamCreatePrefix')?.value?.trim()?.toUpperCase() || '';
+
+    if (!prefix) {
+      const cleaned = name.replace(/\s+/g, '');
+      const base = cleaned.slice(0, Math.min(3, cleaned.length)).toUpperCase() || 'TSK';
+      prefix = base;
+      let counter = 1;
+      while (teamsCache.some(t => t.prefix?.toUpperCase() === prefix)) {
+        prefix = base.slice(0, 2) + counter.toString();
+        counter++;
+      }
+    } else {
+      const prefixDuplicate = teamsCache.find(t => t.prefix?.toUpperCase() === prefix);
+      if (prefixDuplicate) {
+        showToast('A team with this prefix already exists', 'error');
+        btn.textContent = originalText;
+        btn.disabled = false;
+        return;
+      }
+    }
+
+    const { error } = await supabaseClient.from('teams').insert({
+      id: newId,
+      name,
+      gender_scope: genderScope,
+      team_type: teamType,
+      department: department,
+      prefix: prefix
+    });
     if (error) throw error;
     showToast('Team created', 'success');
 
@@ -531,13 +691,38 @@ async function saveTeamRename(e) {
   btn.disabled = true;
 
   const genderScope = document.getElementById('teamRenameGenderScope')?.value || 'mixed';
+  const teamType = document.getElementById('teamRenameType')?.value?.trim() || 'Department';
+  const department = document.getElementById('teamRenameDepartment')?.value?.trim() || '';
+  let prefix = document.getElementById('teamRenamePrefix')?.value?.trim()?.toUpperCase() || '';
+
+  if (!prefix) {
+    const cleaned = name.replace(/\s+/g, '');
+    const base = cleaned.slice(0, Math.min(3, cleaned.length)).toUpperCase() || 'TSK';
+    prefix = base;
+    let counter = 1;
+    while (teamsCache.some(t => t.prefix?.toUpperCase() === prefix && t.id !== teamId)) {
+      prefix = base.slice(0, 2) + counter.toString();
+      counter++;
+    }
+  } else {
+    const prefixDuplicate = teamsCache.find(t => t.prefix?.toUpperCase() === prefix && t.id !== teamId);
+    if (prefixDuplicate) {
+      showToast('A team with this prefix already exists', 'error');
+      btn.textContent = originalText;
+      btn.disabled = false;
+      return;
+    }
+  }
 
   try {
     const { error } = await supabaseClient
       .from('teams')
       .update({
         name,
-        gender_scope: genderScope
+        gender_scope: genderScope,
+        team_type: teamType,
+        department: department,
+        prefix: prefix
       })
       .eq('id', teamId);
     if (error) throw error;
@@ -546,6 +731,8 @@ async function saveTeamRename(e) {
     if (team) {
       team.name = name;
       team.gender_scope = genderScope;
+      team.team_type = teamType;
+      team.department = department;
     }
 
     showToast('Team settings updated', 'success');
@@ -612,10 +799,11 @@ async function loadTeamMembers(teamId) {
     }
 
     let mobileHtml = '';
+    const activeTeam = teamsCache.find(t => t.id === teamId);
     tbody.innerHTML = membersCache.map(member => {
       const user = member.user;
       const isSelf = member.user_id === state.user?.id;
-      const accessSelect = `<select class="team-access-select" onchange="window.updateMemberAccess('${member.id}', this.value)" ${isSelf && !isOrgAdmin() ? 'disabled' : ''}>${memberAccessOptions(member.access_level || 'member')}</select>`;
+      const accessSelect = `<select class="team-access-select" onchange="window.updateMemberAccess('${member.id}', this.value)" ${isSelf && !isOrgAdmin() ? 'disabled' : ''}>${memberAccessOptions(member.access_level || 'member', activeTeam)}</select>`;
       const primaryBadge = isOrgAdmin()
         ? (member.is_primary
           ? '<span class="badge badge-success">★ Default</span>'
@@ -867,12 +1055,40 @@ async function createOhtTeam(e) {
   try {
     const teamId = crypto.randomUUID();
     const genderScope = document.getElementById('ohtNewTeamGenderScope')?.value || 'mixed';
+    const teamType = document.getElementById('ohtNewTeamType')?.value?.trim() || 'Department';
+    const department = document.getElementById('ohtNewTeamDepartment')?.value?.trim() || '';
+    let prefix = document.getElementById('ohtNewTeamPrefix')?.value?.trim()?.toUpperCase() || '';
+
+    if (!prefix) {
+      const cleaned = name.replace(/\s+/g, '');
+      const base = cleaned.slice(0, Math.min(3, cleaned.length)).toUpperCase() || 'TSK';
+      prefix = base;
+      let counter = 1;
+      while (teamsCache.some(t => t.prefix?.toUpperCase() === prefix)) {
+        prefix = base.slice(0, 2) + counter.toString();
+        counter++;
+      }
+    } else {
+      const prefixDuplicate = teamsCache.find(t => t.prefix?.toUpperCase() === prefix);
+      if (prefixDuplicate) {
+        showToast('A team with this prefix already exists', 'error');
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+        return;
+      }
+    }
+    
     const { error: teamError } = await supabaseClient.from('teams').insert({
       id: teamId,
       name,
       is_personal_team: false,
       created_by_oht_user_id: state.user.id,
-      gender_scope: genderScope
+      gender_scope: genderScope,
+      team_type: teamType,
+      department: department,
+      prefix: prefix
     });
     if (teamError) throw teamError;
 
@@ -951,6 +1167,159 @@ async function deleteTeam() {
     } catch (err) {
       console.error('Delete team error:', err);
       showToast(err.message || 'Failed to delete team', 'error');
+    }
+  });
+}
+
+function populateRelationshipChecklist(activeId) {
+  const checklist = document.getElementById('relTeamsChecklist');
+  if (!checklist) return;
+
+  const searchInput = document.getElementById('relTeamSearch');
+  if (searchInput) searchInput.value = '';
+
+  const selectAllCheckbox = document.getElementById('relSelectAllTeams');
+  if (selectAllCheckbox) selectAllCheckbox.checked = false;
+
+  const otherTeams = teamsCache.filter(t => t.id !== activeId);
+
+  checklist.innerHTML = otherTeams.length
+    ? otherTeams.map(t => `
+        <label class="rel-team-checkbox-row" data-team-name="${escapeAttr(t.name.toLowerCase())}" style="display:flex; align-items:center; gap:8px; cursor:pointer; padding:2px 0; font-size:0.9em;">
+          <input type="checkbox" class="rel-team-checkbox" value="${t.id}">
+          <span>${escapeHtml(t.name)}</span>
+        </label>
+      `).join('')
+    : '<p class="empty-state" style="margin:0; font-size:0.85em;">No other teams available</p>';
+}
+
+function filterRelTeamsList() {
+  const q = (document.getElementById('relTeamSearch')?.value || '').trim().toLowerCase();
+  const rows = document.querySelectorAll('.rel-team-checkbox-row');
+  rows.forEach(row => {
+    const match = !q || row.dataset.teamName.includes(q);
+    row.style.display = match ? 'flex' : 'none';
+    if (!match) {
+      const checkbox = row.querySelector('.rel-team-checkbox');
+      if (checkbox) checkbox.checked = false;
+    }
+  });
+}
+
+function toggleAllRelTeams(checked) {
+  const checkboxes = document.querySelectorAll('.rel-team-checkbox');
+  checkboxes.forEach(cb => {
+    const parentLabel = cb.closest('.rel-team-checkbox-row');
+    if (parentLabel && parentLabel.style.display !== 'none') {
+      cb.checked = checked;
+    }
+  });
+}
+
+async function loadTeamRelationships(teamId) {
+  const parentList = document.getElementById('parentTeamsList');
+  const childList = document.getElementById('childTeamsList');
+  if (!parentList || !childList) return;
+
+  parentList.innerHTML = '<li class="empty-state">Loading…</li>';
+  childList.innerHTML = '<li class="empty-state">Loading…</li>';
+
+  try {
+    const { data: parentsData, error: parentsErr } = await supabaseClient
+      .from('team_relationships')
+      .select('parent_id')
+      .eq('child_id', teamId);
+    if (parentsErr) throw parentsErr;
+
+    const { data: childrenData, error: childrenErr } = await supabaseClient
+      .from('team_relationships')
+      .select('child_id')
+      .eq('parent_id', teamId);
+    if (childrenErr) throw childrenErr;
+
+    const parents = (parentsData || []).map(r => teamsCache.find(t => t.id === r.parent_id)).filter(Boolean);
+    parentList.innerHTML = parents.length
+      ? parents.map(p => `
+          <li style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid var(--border-light); font-size:0.9em;">
+            <span><strong>${escapeHtml(p.name)}</strong> (${escapeHtml(p.team_type || 'Team')})</span>
+            <button type="button" class="danger small" style="padding:2px 6px; font-size:0.8em; line-height:1;" onclick="window.removeTeamRelationship('${p.id}', '${teamId}')">Remove</button>
+          </li>
+        `).join('')
+      : '<li class="empty-state">No parent teams</li>';
+
+    const children = (childrenData || []).map(r => teamsCache.find(t => t.id === r.child_id)).filter(Boolean);
+    childList.innerHTML = children.length
+      ? children.map(c => `
+          <li style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid var(--border-light); font-size:0.9em;">
+            <span><strong>${escapeHtml(c.name)}</strong> (${escapeHtml(c.team_type || 'Team')})</span>
+            <button type="button" class="danger small" style="padding:2px 6px; font-size:0.8em; line-height:1;" onclick="window.removeTeamRelationship('${teamId}', '${c.id}')">Remove</button>
+          </li>
+        `).join('')
+      : '<li class="empty-state">No sub-teams</li>';
+
+  } catch (err) {
+    console.error('Load team relationships error:', err);
+    parentList.innerHTML = `<li class="empty-state error">Error: ${escapeHtml(err.message)}</li>`;
+    childList.innerHTML = `<li class="empty-state error">Error: ${escapeHtml(err.message)}</li>`;
+  }
+}
+
+async function addTeamRelationship() {
+  const teamId = activeTeamId || document.getElementById('teamsPageSelect')?.value;
+  const relType = document.getElementById('relTypeSelect')?.value;
+
+  const checkedBoxes = [...document.querySelectorAll('.rel-team-checkbox:checked')];
+  if (!teamId || !relType || checkedBoxes.length === 0) {
+    showToast('Select at least one team and relationship type', 'warning');
+    return;
+  }
+
+  const insertRows = checkedBoxes.map(cb => {
+    const targetId = cb.value;
+    const parentId = relType === 'child' ? teamId : targetId;
+    const childId = relType === 'child' ? targetId : teamId;
+    return { parent_id: parentId, child_id: childId };
+  });
+
+  try {
+    const { error } = await supabaseClient
+      .from('team_relationships')
+      .insert(insertRows);
+    if (error) {
+      if (error.code === '23505') {
+        showToast('One or more of these relationships already exist', 'warning');
+      } else {
+        throw error;
+      }
+    } else {
+      showToast('Relationships added successfully', 'success');
+      checkedBoxes.forEach(cb => { cb.checked = false; });
+      const selectAllCheckbox = document.getElementById('relSelectAllTeams');
+      if (selectAllCheckbox) selectAllCheckbox.checked = false;
+      
+      await loadTeamRelationships(teamId);
+    }
+  } catch (err) {
+    console.error('Add team relationships error:', err);
+    showToast(err.message || 'Failed to add relationships', 'error');
+  }
+}
+
+async function removeTeamRelationship(parentId, childId) {
+  const teamId = activeTeamId || document.getElementById('teamsPageSelect')?.value;
+  showConfirm('Are you sure you want to remove this relationship?', async () => {
+    try {
+      const { error } = await supabaseClient
+        .from('team_relationships')
+        .delete()
+        .eq('parent_id', parentId)
+        .eq('child_id', childId);
+      if (error) throw error;
+      showToast('Relationship removed', 'success');
+      await loadTeamRelationships(teamId);
+    } catch (err) {
+      console.error('Remove team relationship error:', err);
+      showToast(err.message || 'Failed to remove relationship', 'error');
     }
   });
 }

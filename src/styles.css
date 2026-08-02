@@ -2775,22 +2775,50 @@ tr.selected { background: #F5EDE8 !important; }
 
 /* ===== KANBAN BOARD ===== */
 .kanban-board {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  overflow-x: auto;
   padding-bottom: 16px;
   align-items: flex-start;
 }
 .kanban-column {
-  flex: 1;
-  min-width: 260px;
   background: #f3f4f6;
   border-radius: 8px;
   padding: 12px;
+  display: flex;
+  flex-direction: column;
 }
 body.dark .kanban-column {
   background: #1e293b;
   border: 1px solid var(--border);
+}
+.mobile-toggle-arrow {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .kanban-board {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  .kanban-column {
+    min-width: 100% !important;
+    width: 100% !important;
+    box-sizing: border-box;
+    padding: 10px 14px !important;
+    cursor: pointer;
+  }
+  .kanban-column .kanban-cards-list {
+    display: none !important;
+  }
+  .kanban-column.expanded .kanban-cards-list {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .mobile-toggle-arrow {
+    display: inline-block !important;
+  }
 }
 
 /* ===== NEXTGEN DARK MODE CONTRAST OVERRIDES ===== */

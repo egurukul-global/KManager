@@ -56,24 +56,46 @@ export function getTasksPage() {
 
     <!-- Kanban Board -->
     <div class="kanban-board">
-      <div class="kanban-column" data-status="backlog">
-        <h3 style="margin-top:0; font-size:1em; color:#4b5563; border-bottom:2px solid #9ca3af; padding-bottom:6px;">📥 Backlog</h3>
+      <div class="kanban-column" data-status="backlog" onclick="window.toggleMobileColumn(this)">
+        <h3 style="margin-top:0; font-size:1em; color:#4b5563; border-bottom:2px solid #9ca3af; padding-bottom:6px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+          <span>📥 Backlog <span id="count-backlog" class="col-count"></span></span>
+          <span class="mobile-toggle-arrow">▼</span>
+        </h3>
         <div class="kanban-cards-list" id="col-backlog" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
-      <div class="kanban-column" data-status="todo">
-        <h3 style="margin-top:0; font-size:1em; color:var(--brand-saffron, #FFA500); border-bottom:2px solid var(--brand-saffron, #FFA500); padding-bottom:6px;">📋 To Do</h3>
+      <div class="kanban-column" data-status="todo" onclick="window.toggleMobileColumn(this)">
+        <h3 style="margin-top:0; font-size:1em; color:var(--brand-saffron, #FFA500); border-bottom:2px solid var(--brand-saffron, #FFA500); padding-bottom:6px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+          <span>📋 To Do <span id="count-todo" class="col-count"></span></span>
+          <span class="mobile-toggle-arrow">▼</span>
+        </h3>
         <div class="kanban-cards-list" id="col-todo" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
-      <div class="kanban-column" data-status="in_progress">
-        <h3 style="margin-top:0; font-size:1em; color:#854d0e; border-bottom:2px solid #eab308; padding-bottom:6px;">⚡ In Progress</h3>
+      <div class="kanban-column" data-status="in_progress" onclick="window.toggleMobileColumn(this)">
+        <h3 style="margin-top:0; font-size:1em; color:#854d0e; border-bottom:2px solid #eab308; padding-bottom:6px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+          <span>⚡ In Progress <span id="count-in_progress" class="col-count"></span></span>
+          <span class="mobile-toggle-arrow">▼</span>
+        </h3>
         <div class="kanban-cards-list" id="col-in_progress" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
-      <div class="kanban-column" data-status="completed">
-        <h3 style="margin-top:0; font-size:1em; color:#166534; border-bottom:2px solid #22c55e; padding-bottom:6px;">✅ Completed</h3>
+      <div class="kanban-column" data-status="completed" onclick="window.toggleMobileColumn(this)">
+        <h3 style="margin-top:0; font-size:1em; color:#166534; border-bottom:2px solid #22c55e; padding-bottom:6px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+          <span>✅ Completed <span id="count-completed" class="col-count"></span></span>
+          <span class="mobile-toggle-arrow">▼</span>
+        </h3>
         <div class="kanban-cards-list" id="col-completed" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
-      <div class="kanban-column" data-status="archived">
-        <h3 style="margin-top:0; font-size:1em; color:#6b7280; border-bottom:2px solid #9ca3af; padding-bottom:6px;">🗄️ Archived</h3>
+      <div class="kanban-column" data-status="assigned" onclick="window.toggleMobileColumn(this)">
+        <h3 style="margin-top:0; font-size:1em; color:#1e40af; border-bottom:2px solid #3b82f6; padding-bottom:6px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+          <span>👤 Assigned <span id="count-assigned" class="col-count"></span></span>
+          <span class="mobile-toggle-arrow">▼</span>
+        </h3>
+        <div class="kanban-cards-list" id="col-assigned" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
+      </div>
+      <div class="kanban-column" data-status="archived" onclick="window.toggleMobileColumn(this)">
+        <h3 style="margin-top:0; font-size:1em; color:#6b7280; border-bottom:2px solid #9ca3af; padding-bottom:6px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+          <span>🗄️ Archived <span id="count-archived" class="col-count"></span></span>
+          <span class="mobile-toggle-arrow">▼</span>
+        </h3>
         <div class="kanban-cards-list" id="col-archived" style="display:flex; flex-direction:column; gap:10px; margin-top:10px; min-height:100px;"></div>
       </div>
     </div>
@@ -121,6 +143,15 @@ export function getTasksPage() {
               <label>Finish By</label>
               <input type="date" id="taskFormFinishBy" style="height:38px; border-radius:6px; border:1px solid var(--border); padding:0 8px; width:100%;">
             </div>
+          </div>
+
+          <div class="form-group" id="taskFormDistributionGroup" style="margin-top:10px;">
+            <label for="taskFormDistribution">Distribution Mode (Cascade Copy)</label>
+            <select id="taskFormDistribution" style="width:100%; height:38px; border-radius:6px; border:1px solid var(--border); padding:6px; background:white; color:var(--text);">
+              <option value="none">None (Single Task)</option>
+              <option value="teams">To Sub-teams recursively (assigned to each OPL)</option>
+              <option value="members">To Members recursively (assigned to each user)</option>
+            </select>
           </div>
 
           <!-- Panel Tabs -->
@@ -201,6 +232,7 @@ export function initTasksPage() {
   window.sendTaskComment = sendTaskComment;
   window.toggleTaskPanel = toggleTaskPanel;
   window.handleModalTeamChange = handleModalTeamChange;
+  window.toggleMobileColumn = toggleMobileColumn;
 
   wireTaskUploadHandlers();
 
@@ -244,12 +276,14 @@ async function loadTasksData() {
   const colTodo = document.getElementById('col-todo');
   const colInProg = document.getElementById('col-in_progress');
   const colComp = document.getElementById('col-completed');
+  const colAssigned = document.getElementById('col-assigned');
   const colArchived = document.getElementById('col-archived');
 
   if (colBacklog) colBacklog.innerHTML = '<p class="empty-state">Loading…</p>';
   if (colTodo) colTodo.innerHTML = '';
   if (colInProg) colInProg.innerHTML = '';
   if (colComp) colComp.innerHTML = '';
+  if (colAssigned) colAssigned.innerHTML = '';
   if (colArchived) colArchived.innerHTML = '';
 
   try {
@@ -318,6 +352,7 @@ function renderKanbanBoard() {
     todo: document.getElementById('col-todo'),
     in_progress: document.getElementById('col-in_progress'),
     completed: document.getElementById('col-completed'),
+    assigned: document.getElementById('col-assigned'),
     archived: document.getElementById('col-archived')
   };
 
@@ -330,12 +365,29 @@ function renderKanbanBoard() {
     todo: '#FFA500',
     in_progress: '#eab308',
     completed: '#22c55e',
+    assigned: '#3b82f6',
     archived: '#6b7280'
   };
 
+  const counts = { backlog: 0, todo: 0, in_progress: 0, completed: 0, assigned: 0, archived: 0 };
+  const colUnread = { backlog: 0, todo: 0, in_progress: 0, completed: 0, assigned: 0, archived: 0 };
+
   activeTasks.forEach(t => {
-    const el = cols[t.status];
-       const assignee = teamMembers.find(m => m.id === t.assigned_to);
+    let targetColKey = t.status;
+    if (t.created_by === state.user?.id && t.assigned_to !== state.user?.id && t.status !== 'completed' && t.status !== 'archived') {
+      targetColKey = 'assigned';
+    }
+
+    counts[targetColKey]++;
+    const isUnread = unreadTaskIds.has(t.id);
+    if (isUnread) {
+      colUnread[targetColKey]++;
+    }
+
+    const el = cols[targetColKey];
+    if (!el) return;
+
+    const assignee = teamMembers.find(m => m.id === t.assigned_to);
     
     const assignees = [];
     if (assignee) assignees.push(assignee);
@@ -362,10 +414,9 @@ function renderKanbanBoard() {
 
     const card = document.createElement('div');
     card.className = 'kanban-card card';
-    card.style = 'margin:0; padding:8px 12px; cursor:pointer; background:var(--card-bg); color:var(--text); border:1px solid var(--border); border-left:4px solid ' + statusColors[t.status] + '; display:flex; justify-content:space-between; align-items:center; gap:8px;';
+    card.style = 'margin:0; padding:8px 12px; cursor:pointer; background:var(--card-bg); color:var(--text); border:1px solid var(--border); border-left:4px solid ' + statusColors[targetColKey] + '; display:flex; justify-content:space-between; align-items:center; gap:8px;';
     card.onclick = () => openEditTaskModal(t.id);
     
-    const isUnread = unreadTaskIds.has(t.id);
     const unreadDot = isUnread 
       ? `<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444; margin-right:6px; flex-shrink:0; box-shadow:0 0 6px #ef4444;" title="Unread updates"></span>` 
       : '';
@@ -392,6 +443,18 @@ function renderKanbanBoard() {
       el.innerHTML = `<p class="empty-state" style="margin:20px 0; font-size:0.8em;">No tasks</p>`;
     }
   });
+
+  // Update headers count & unread notifications
+  Object.keys(counts).forEach(status => {
+    const countSpan = document.getElementById(`count-${status}`);
+    if (countSpan) {
+      const unreadCount = colUnread[status];
+      const unreadBadge = unreadCount > 0 
+        ? ` <span class="badge badge-danger" style="background:#ef4444; color:white; font-size:0.7em; padding:1px 5px; border-radius:10px; font-weight:bold; margin-left:4px; display:inline-block; vertical-align:middle;">${unreadCount} new</span>` 
+        : '';
+      countSpan.innerHTML = `(${counts[status]})${unreadBadge}`;
+    }
+  });
 }
 
 function openCreateTaskModal() {
@@ -406,6 +469,11 @@ function openCreateTaskModal() {
   tempAttachments = [];
   renderTaskAttachmentsList();
 
+  const distGroup = document.getElementById('taskFormDistributionGroup');
+  if (distGroup) distGroup.style.display = 'block';
+  const distVal = document.getElementById('taskFormDistribution');
+  if (distVal) distVal.value = 'none';
+
   resetTaskPanels();
   document.getElementById('tabBtnDiscussions').style.display = 'none';
   document.getElementById('badgeAssignees').textContent = '0';
@@ -415,7 +483,7 @@ function openCreateTaskModal() {
   const defaultTeamId = state.currentTeam.team_id === 'all' ? (state.teams?.[0]?.team_id || '') : state.currentTeam.team_id;
   const teamDropdown = document.getElementById('taskFormTeamId');
   if (teamDropdown) teamDropdown.value = defaultTeamId;
-  handleModalTeamChange(defaultTeamId);
+  handleModalTeamChange(defaultTeamId, state.user.id);
 
   const delBtn = document.getElementById('taskDeleteBtn');
   if (delBtn) delBtn.style.display = 'none';
@@ -439,6 +507,9 @@ function openEditTaskModal(id) {
   document.getElementById('taskFormStatus').value = t.status;
   document.getElementById('taskFormPriority').value = t.priority;
   document.getElementById('taskFormFinishBy').value = t.metadata?.finish_by_date || '';
+
+  const distGroup = document.getElementById('taskFormDistributionGroup');
+  if (distGroup) distGroup.style.display = 'none';
 
   tempAttachments = t.metadata?.attachments ? JSON.parse(JSON.stringify(t.metadata.attachments)) : [];
   if (t.metadata?.attachment_url && !tempAttachments.some(a => a.url === t.metadata.attachment_url)) {
@@ -591,51 +662,119 @@ async function saveTaskFormSubmit(e) {
       if (error) throw error;
       showToast('Task updated', 'success');
     } else {
-      const selectedTeam = state.teams.find(t => t.team_id === teamId);
-      const teamPrefix = (selectedTeam?.team_name || selectedTeam?.name || 'TSK').slice(0, 3).toUpperCase();
-      
-      const { data: allTasks } = await supabaseClient
-        .from('tasks')
-        .select('task_number')
-        .eq('team_id', teamId);
+      const distMode = document.getElementById('taskFormDistribution')?.value || 'none';
+      let teamsToCreateFor = [teamId];
 
-      let nextNum = 100001;
-      if (allTasks && allTasks.length > 0) {
-        const nums = allTasks.map(t => {
-          const parts = (t.task_number || '').split('-');
-          if (parts.length > 1) {
-            const parsed = parseInt(parts[1], 10);
-            return isNaN(parsed) ? 0 : parsed;
-          }
-          return 0;
-        });
-        const maxNum = Math.max(...nums);
-        if (maxNum >= 100001) {
-          nextNum = maxNum + 1;
+      if (distMode === 'teams' || distMode === 'members') {
+        const { data: subTeams } = await supabaseClient.rpc('get_sub_teams_recursive', { p_team_id: teamId });
+        if (subTeams && subTeams.length > 0) {
+          subTeams.forEach(st => {
+            if (st.team_id && !teamsToCreateFor.includes(st.team_id)) {
+              teamsToCreateFor.push(st.team_id);
+            }
+          });
         }
       }
 
-      const taskNo = `${teamPrefix}-${nextNum}`;
+      if (distMode === 'members') {
+        const mQuery = supabaseClient
+          .from('user_teams')
+          .select('user_id, team_id')
+          .eq('is_active', true);
+        
+        if (teamsToCreateFor.length === 1) {
+          mQuery.eq('team_id', teamsToCreateFor[0]);
+        } else {
+          mQuery.in('team_id', teamsToCreateFor);
+        }
 
-      const { data: newTasks, error } = await supabaseClient
-        .from('tasks')
-        .insert({
-          task_number: taskNo,
-          title,
-          description,
-          status,
-          priority,
-          assigned_to: assignee,
-          created_by: state.user.id,
-          team_id: teamId,
-          context_app: 'finance',
-          metadata
-        })
-        .select('id');
+        const { data: membersData } = await mQuery;
 
-      if (error) throw error;
-      if (newTasks?.[0]) savedTaskId = newTasks[0].id;
-      showToast('Task created', 'success');
+        const uniqueMembers = [];
+        const seen = new Set();
+        (membersData || []).forEach(m => {
+          const key = `${m.user_id}-${m.team_id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            uniqueMembers.push(m);
+          }
+        });
+
+        if (uniqueMembers.length > 0) {
+          for (const member of uniqueMembers) {
+            const taskNo = await generateTaskNumberForTeam(member.team_id);
+            console.log('Inserting member task with number:', taskNo);
+            const { data: newTasks, error } = await supabaseClient
+              .from('tasks')
+              .insert({
+                task_number: taskNo,
+                title,
+                description,
+                status,
+                priority,
+                assigned_to: member.user_id,
+                created_by: state.user.id,
+                team_id: member.team_id,
+                context_app: 'finance',
+                metadata
+              })
+              .select('id');
+            if (error) throw error;
+            if (newTasks?.[0]) savedTaskId = newTasks[0].id;
+          }
+          showToast(`Created ${uniqueMembers.length} member tasks`, 'success');
+        } else {
+          showToast('No team members found to assign tasks to', 'warning');
+          setButtonLoading(btn, false);
+          return;
+        }
+      } else if (distMode === 'teams') {
+        for (const tId of teamsToCreateFor) {
+          const taskNo = await generateTaskNumberForTeam(tId);
+          console.log('Inserting team task with number:', taskNo);
+          const leadId = await getTeamLeadForTeam(tId);
+          const { data: newTasks, error } = await supabaseClient
+            .from('tasks')
+            .insert({
+              task_number: taskNo,
+              title,
+              description,
+              status,
+              priority,
+              assigned_to: leadId,
+              created_by: state.user.id,
+              team_id: tId,
+              context_app: 'finance',
+              metadata
+            })
+            .select('id');
+          if (error) throw error;
+          if (newTasks?.[0]) savedTaskId = newTasks[0].id;
+        }
+        showToast(`Created ${teamsToCreateFor.length} team tasks`, 'success');
+      } else {
+        const taskNo = await generateTaskNumberForTeam(teamId);
+        console.log('Inserting single task with number:', taskNo);
+        const { data: newTasks, error } = await supabaseClient
+          .from('tasks')
+          .insert({
+            task_number: taskNo,
+            title,
+            description,
+            status,
+            priority,
+            assigned_to: assignee,
+            created_by: state.user.id,
+            team_id: teamId,
+            context_app: 'finance',
+            metadata
+          })
+          .select('id');
+
+        if (error) throw error;
+        if (newTasks?.[0]) savedTaskId = newTasks[0].id;
+        showToast('Task created', 'success');
+      }
     }
 
     if (savedTaskId) {
@@ -999,8 +1138,79 @@ async function handleModalTeamChange(teamId, selectedId = '', selectedAdditional
       .eq('team_id', teamId);
     
     teamMembers = (members || []).map(m => m.users).filter(Boolean);
-    populateAssigneeSelect(selectedId, selectedAdditionalIds);
+    const activeSelectedId = selectedId || (teamMembers.some(m => m.id === state.user?.id) ? state.user.id : '');
+    populateAssigneeSelect(activeSelectedId, selectedAdditionalIds);
   } catch (err) {
     console.error(err);
+  }
+}
+
+async function getTeamLeadForTeam(tId) {
+  const { data: ut } = await supabaseClient
+    .from('user_teams')
+    .select('user_id')
+    .eq('team_id', tId)
+    .eq('access_level', 'lead')
+    .eq('is_active', true)
+    .limit(1);
+  if (ut && ut.length > 0) return ut[0].user_id;
+
+  const { data: utOht } = await supabaseClient
+    .from('user_teams')
+    .select('user_id')
+    .eq('team_id', tId)
+    .eq('access_level', 'oht')
+    .eq('is_active', true)
+    .limit(1);
+  if (utOht && utOht.length > 0) return utOht[0].user_id;
+
+  return null;
+}
+
+async function generateTaskNumberForTeam(tId) {
+  const { data: teamData } = await supabaseClient
+    .from('teams')
+    .select('prefix')
+    .eq('id', tId)
+    .single();
+  const teamPrefix = teamData?.prefix || 'TSK';
+
+  const { data: allTasks } = await supabaseClient
+    .from('tasks')
+    .select('task_number')
+    .eq('team_id', tId);
+
+  let nextNum = 100001;
+  if (allTasks && allTasks.length > 0) {
+    const nums = allTasks.map(t => {
+      const parts = (t.task_number || '').split('-');
+      if (parts.length > 1) {
+        const parsed = parseInt(parts[1], 10);
+        return isNaN(parsed) ? 0 : parsed;
+      }
+      return 0;
+    });
+    const maxNum = Math.max(...nums);
+    if (maxNum >= 100001) {
+      nextNum = maxNum + 1;
+    }
+  }
+  return `${teamPrefix}-${nextNum}`;
+}
+
+function toggleMobileColumn(columnEl) {
+  if (window.innerWidth > 768) return;
+  const isExpanded = columnEl.classList.contains('expanded');
+  
+  document.querySelectorAll('.kanban-column').forEach(el => {
+    el.classList.remove('expanded');
+    const arrow = el.querySelector('.mobile-toggle-arrow');
+    if (arrow) arrow.textContent = '▼';
+  });
+
+  if (!isExpanded) {
+    columnEl.classList.add('expanded');
+    const arrow = columnEl.querySelector('.mobile-toggle-arrow');
+    if (arrow) arrow.textContent = '▲';
   }
 }
