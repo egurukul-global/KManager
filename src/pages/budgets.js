@@ -231,6 +231,7 @@ export function getCreateBudgetPage() {
 }
 
 export async function initCreateBudgetPage() {
+  console.log('BUDGET PAGE LOADED');
   if (!state.canCreateBudgets) return;
 
   await ensureExchangeRatesLoaded();
@@ -997,6 +998,7 @@ export function getViewBudgetsPage() {
 }
 
 export async function initViewBudgetsPage() {
+  console.log('BUDGET PAGE LOADED');
   window.submitBudgetApproval = submitBudgetApprovalHandler;
   window.onBudgetStatusFilterChange = onBudgetStatusFilterChange;
   window.backToBudgetList = backToBudgetList;
@@ -2828,14 +2830,12 @@ function setEditBudgetFormLocked(locked, budget) {
   const rateEl = document.getElementById('editBudgetRate');
   const statusEl = document.getElementById('editBudgetStatus');
 
-  if (nameInput && isMonthlyBudgetType(budget?.budget_type)) {
-    nameInput.readOnly = true;
-  } else if (nameInput) {
-    nameInput.readOnly = !linesEditable;
+  if (nameInput) {
+    nameInput.disabled = !linesEditable;
   }
 
   if (currencyEl) currencyEl.disabled = !linesEditable;
-  if (rateEl) rateEl.readOnly = !linesEditable;
+  if (rateEl) rateEl.disabled = !linesEditable;
 
   if (statusEl) {
     const canArchive = canArchiveBudget(budget);
@@ -2845,8 +2845,12 @@ function setEditBudgetFormLocked(locked, budget) {
   document.querySelectorAll('#editBudgetCategoriesContainer .category-row').forEach(row => {
     const localEl = row.querySelector('.budget-cat-local');
     const nameEl = row.querySelector('.budget-cat-name');
-    if (localEl) localEl.readOnly = !linesEditable;
-    if (nameEl) nameEl.readOnly = !linesEditable;
+    const selectEl = row.querySelector('.budget-cat-category');
+    const subSelectEl = row.querySelector('.budget-cat-subcategory');
+    if (localEl) localEl.disabled = !linesEditable;
+    if (nameEl) nameEl.disabled = !linesEditable;
+    if (selectEl) selectEl.disabled = !linesEditable;
+    if (subSelectEl) subSelectEl.disabled = !linesEditable;
     if (!linesEditable) {
       row.querySelectorAll('.budget-line-card-actions').forEach(el => { el.style.visibility = 'hidden'; });
     }
