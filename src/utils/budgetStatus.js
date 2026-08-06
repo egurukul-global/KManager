@@ -108,7 +108,8 @@ export function canEditBudgetLines(budget) {
   if (isSystemAdmin()) return true;
   if (!state.canEditBudgets) return false;
   const status = getBudgetStatus(budget);
-  return status === BUDGET_STATUS.DRAFT || status === BUDGET_STATUS.REJECTED;
+  const isClarify = String(budget?.approval_status || '').toUpperCase() === 'CLARIFY-OPL';
+  return status === BUDGET_STATUS.DRAFT || status === BUDGET_STATUS.REJECTED || isClarify;
 }
 
 /** Open the editor at all (view + maybe archive). */

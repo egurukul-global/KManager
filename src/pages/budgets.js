@@ -2798,13 +2798,19 @@ window.editBudgetPlan = async function(id) {
   const note = document.getElementById('editBudgetRateNote');
   const addBtn = document.getElementById('addEditCatBtn');
   const saveBtn = document.getElementById('saveEditBudgetBtn');
+  const saveSubmitBtn = document.getElementById('saveEditBudgetSubmitBtn');
 
   setEditBudgetFormLocked(!linesEditable, budget);
 
   if (note) {
     if (linesEditable) {
-      note.style.color = '#666';
-      updateBudgetLineAmountHint();
+      if (String(budget?.approval_status || '').toUpperCase() === 'CLARIFY-OPL') {
+        note.textContent = 'ℹ️ This budget is open for clarification/revision. Save changes, then reply to the clarification in the Portal.';
+        note.style.color = '#0056b3';
+      } else {
+        note.style.color = '#666';
+        updateBudgetLineAmountHint();
+      }
     } else {
       note.textContent = isSystemAdmin()
         ? 'SYS override: you can edit this budget.'
@@ -2818,6 +2824,9 @@ window.editBudgetPlan = async function(id) {
     saveBtn.textContent = 'Save Changes';
     saveBtn.disabled = false;
     saveBtn.style.display = (linesEditable || canArchiveBudget(budget) || isSystemAdmin()) ? '' : 'none';
+  }
+  if (saveSubmitBtn) {
+    saveSubmitBtn.style.display = (canSubmitBudgetByStatus(budget) && linesEditable && !isSystemAdmin()) ? 'inline-block' : 'none';
   }
 
   document.getElementById('editBudgetModal').classList.add('active');
