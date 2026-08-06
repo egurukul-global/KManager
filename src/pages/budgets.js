@@ -1834,13 +1834,14 @@ window.wizardNextStep = async function() {
   }
 
   if (Object.keys(updatePayload).length > 0) {
-    try {
-      await supabaseClient
-        .from('budget_plans')
-        .update(updatePayload)
-        .eq('id', wizardBudget.id);
-    } catch (err) {
-      console.warn('Autosave failed:', err);
+    const { error: autosaveErr } = await supabaseClient
+      .from('budget_plans')
+      .update(updatePayload)
+      .eq('id', wizardBudget.id);
+    if (autosaveErr) {
+      console.error('Autosave failed:', autosaveErr);
+      showToast(`Autosave failed: ${autosaveErr.message}`, 'error');
+      return;
     }
   }
 
@@ -1859,6 +1860,7 @@ window.renderWizardStep = function() {
 
   const steps = getWizardStepsForBudget(wizardBudget);
   const currentConfig = steps.find(s => s.step === wizardStep);
+  if (!currentConfig) return;
   title.textContent = `${currentConfig.title}`;
   fill.style.width = `${(wizardStep / steps.length) * 100}%`;
   prevBtn.style.display = wizardStep === 1 ? 'none' : 'inline-block';
