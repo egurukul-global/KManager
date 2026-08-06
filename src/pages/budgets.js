@@ -1474,10 +1474,8 @@ async function syncWizardDataToDB() {
   }
 }
 
-window.closeWizardModal = function() {
-  showConfirm('Quit the submission wizard? Unsaved changes in this step will be saved, and you can resume later.', async () => {
-    saveStepData();
-    await syncWizardDataToDB();
+window.closeWizardModal = function(force = false) {
+  const doClose = () => {
     document.getElementById('submissionWizardModal').classList.remove('active');
     const btn = document.getElementById('wizardNextBtn');
     if (btn) {
@@ -1490,7 +1488,17 @@ window.closeWizardModal = function() {
     wizardOpenBudgets = [];
     wizardBuckets = [];
     wizardMembers = [];
-  });
+  };
+
+  if (force) {
+    doClose();
+  } else {
+    showConfirm('Quit the submission wizard? Unsaved changes in this step will be saved, and you can resume later.', async () => {
+      saveStepData();
+      await syncWizardDataToDB();
+      doClose();
+    });
+  }
 };
 
 window.wizardPrevStep = async function() {
@@ -1800,7 +1808,7 @@ window.wizardNextStep = async function() {
 
       const request = await submitBudgetForApproval(wizardBudget);
       showToast(`Submitted as ${request.request_number}`, 'success');
-      window.closeWizardModal();
+      window.closeWizardModal(true);
       await initViewBudgetsPage();
     } catch (err) {
       console.error(err);
