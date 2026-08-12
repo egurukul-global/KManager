@@ -8,7 +8,42 @@ export const REQUEST_TYPES = {
   RECONCILIATION_ADJUSTMENT: 'reconciliation_adjustment'
 };
 
+const flowStepsCache = new Map();
+let userRoleAssignments = null;
+let cachedUserId = null;
+
+export function clearFlowStepsCache() {
+  flowStepsCache.clear();
+}
+
+export function clearApprovalAccessCache() {
+  userRoleAssignments = null;
+  cachedUserId = null;
+  flowStepsCache.clear();
+}
+
+export async function loadUserRoleAssignments(userId = state.user?.id) {
+  if (!userId) return [];
+  const { data, error } = await supabaseClient
+    .from('request_role_assignments')
+    .select('role_code, team_id')
+    .eq('user_id', userId)
+    .eq('is_active', true);
+  if (error) {
+    console.warn('request_role_assignments load failed:', error);
+    return [];
+  }
+  userRoleAssignments = data || [];
+  cachedUserId = userId;
+  return userRoleAssignments;
+}
+
 export async function resolveFlowSteps(requestType, teamId = null, userId = null) {
+  const cacheKey = `${requestType}:${teamId}:${userId}`;
+  if (flowStepsCache.has(cacheKey)) {
+    return flowStepsCache.get(cacheKey);
+  }
+
   const { data: flows, error } = await supabaseClient
     .from('approval_flow_definitions')
     .select(`
@@ -28,10 +63,25 @@ export async function resolveFlowSteps(requestType, teamId = null, userId = null
     list.find(f => !f.team_id && f.user_id === userId) ||
     list.find(f => !f.team_id && !f.user_id);
 
-  if (!match) return [];
+  const result = match
+    ? (match.approval_flow_steps || []).sort((a, b) => a.step_order - b.step_order)
+    : [];
 
-  return (match.approval_flow_steps || [])
-    .sort((a, b) => a.step_order - b.step_order);
+  flowStepsCache.set(cacheKey, result);
+  return result;
+}
+
+export async function hasPassedCaoApproval(request) {
+  if (!request) return false;
+  try {
+    const steps = await resolveFlowSteps(request.request_type, request.team_id);
+    const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
+    if (!caoStep) return true; // If no CAO step defined, consider it passed CAO
+    return request.current_step_order > caoStep.step_order || isFinalStatus(request.status);
+  } catch (e) {
+    console.warn('Failed to resolve flow steps for CAO check:', e);
+    return false;
+  }
 }
 
 export const ROLE_CODES = ['OPS', 'OPL', 'OPH', 'FIN', 'FIP', 'FIH', 'CAO', 'CEO', 'SYS', 'LEG', 'LEH', 'GUT', 'GUH'];
@@ -94,25 +144,30 @@ export function getLocalRoleCodesForTeam(teamId) {
   return codes;
 }
 
-/** Load FIN/LEG/etc. assignments from DB and merge with local codes. */
 export async function getUserApprovalRoleCodes(userId = state.user?.id, teamId = null) {
-  const codes = teamId ? getLocalRoleCodesForTeam(teamId) : orgRoleToApprovalCodes(state.user?.role);
+  let orgRole = state.user?.role;
+  if (userId && userId !== state.user?.id) {
+    try {
+      const { data: profile } = await supabaseClient
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .single();
+      orgRole = profile?.role || 'user';
+    } catch (e) {
+      orgRole = 'user';
+    }
+  }
+
+  const codes = teamId ? getLocalRoleCodesForTeam(teamId) : orgRoleToApprovalCodes(orgRole);
 
   if (!userId) return [...codes];
 
-  let query = supabaseClient
-    .from('request_role_assignments')
-    .select('role_code, team_id')
-    .eq('user_id', userId)
-    .eq('is_active', true);
-
-  const { data, error } = await query;
-  if (error) {
-    console.warn('request_role_assignments:', error);
-    return [...codes];
+  if (!userRoleAssignments || cachedUserId !== userId) {
+    await loadUserRoleAssignments(userId);
   }
 
-  (data || []).forEach(row => {
+  (userRoleAssignments || []).forEach(row => {
     if (!row.team_id || !teamId || row.team_id === teamId) {
       codes.add(String(row.role_code || '').toUpperCase());
     }
@@ -121,8 +176,49 @@ export async function getUserApprovalRoleCodes(userId = state.user?.id, teamId =
   return [...codes];
 }
 
-export async function userCanActOnRequest(request, userId = state.user?.id) {
+export function canSkipLevel(userRoles, currentRole, request, steps) {
+  const userRoleUpper = userRoles.map(r => String(r).toUpperCase());
+  const curUpper = String(currentRole).toUpperCase();
+
+  // 1. CAO, CEO, and admin have absolute bypass authority (can approve any step early)
+  if (userRoleUpper.includes('CAO') || userRoleUpper.includes('CEO') || state.user?.role === 'admin') {
+    return true;
+  }
+
+  if (!steps || !request) return false;
+
+  const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
+  const userStep = steps.find(s => userRoleUpper.includes(String(s.role_code).toUpperCase()));
+  if (!userStep || !caoStep) return false;
+
+  // 2. If the request is currently in the payment stage (post-CAO) or AT the CAO step, no skip-level is allowed
+  const currentStep = steps.find(s => s.step_order === request.current_step_order);
+  if (currentStep && currentStep.step_order >= caoStep.step_order) {
+    return false;
+  }
+
+  // 3. Before CAO approval, users can only skip-approve if their step is before the CAO step
+  if (userStep.step_order < caoStep.step_order) {
+    return true;
+  }
+
+  return false;
+}
+
+export async function userCanActOnRequest(request, userId = state.user?.id, approvedRequestIds = null) {
   if (!request || !userId) return false;
+
+  const steps = await resolveFlowSteps(request.request_type, request.team_id);
+  const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
+  const isPostCao = caoStep ? request.current_step_order > caoStep.step_order : false;
+
+  if (!isPostCao) {
+    if (approvedRequestIds) {
+      if (approvedRequestIds.has(request.id)) return false;
+    } else if (await hasUserApprovedRequest(request.id, userId)) {
+      return false;
+    }
+  }
 
   const status = String(request.status || '').toUpperCase();
   if (isFinalStatus(status)) return false;
@@ -163,12 +259,22 @@ export async function userCanActOnRequest(request, userId = state.user?.id) {
     // Skip level approvals: check if user has a role code defined at a HIGHER step in this flow
     try {
       const steps = await resolveFlowSteps(request.request_type, request.team_id);
-      const currentStep = steps.find(s => s.step_order === request.current_step_order);
-      if (currentStep) {
-        const higherSteps = steps.filter(s => s.step_order > currentStep.step_order);
-        const hasHigherRole = higherSteps.some(s => upperCodes.includes(String(s.role_code).toUpperCase()));
-        if (hasHigherRole) {
-          return true;
+      if (canSkipLevel(upperCodes, request.current_role_code, request, steps)) {
+        const currentStep = steps.find(s => s.step_order === request.current_step_order);
+        if (currentStep) {
+          const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
+          const isStandardUser = !upperCodes.includes('CAO') && !upperCodes.includes('CEO') && state.user?.role !== 'admin';
+          
+          const higherSteps = steps.filter(s => {
+            if (s.step_order <= currentStep.step_order) return false;
+            if (isStandardUser && caoStep && s.step_order >= caoStep.step_order) return false;
+            return true;
+          });
+          
+          const hasHigherRole = higherSteps.some(s => upperCodes.includes(String(s.role_code).toUpperCase()));
+          if (hasHigherRole) {
+            return true;
+          }
         }
       }
     } catch (e) {
@@ -198,4 +304,28 @@ export function canSubmitBudgetApproval() {
   if (state.user?.role === 'admin') return true;
   const level = String(state.userTeamAccess?.access_level || '').toLowerCase();
   return level === 'lead' || level === 'admin';
+}
+
+export async function hasUserApprovedRequest(requestId, userId = state.user?.id) {
+  if (!requestId || !userId) return false;
+  try {
+    const { data: msgs } = await supabaseClient
+      .from('messages')
+      .select('sender_id, body')
+      .eq('metadata->>link_id', requestId)
+      .eq('sender_id', userId);
+    
+    if (msgs && msgs.length > 0) {
+      return msgs.some(m => {
+        const b = String(m.body);
+        return b.includes('[Approval System] Approved') || 
+               b.includes('[Approval System] Rejected') || 
+               b.includes('Approved and sent forward') ||
+               b.includes('Approved request');
+      });
+    }
+  } catch (err) {
+    console.warn('Failed to check approval history:', err);
+  }
+  return false;
 }

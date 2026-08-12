@@ -200,3 +200,19 @@ Returns all parent team IDs recursively ascending from the given child team.
   * Restricts access to group creators and group members using recursion-safe `is_group_member` checks.
 * **`public.users`**:
   * `users_select_all`: Allows all authenticated users to read basic profile records (fixing name lookup joins).
+
+---
+
+## 6. Core Database Triggers
+
+### `trg_enforce_approval_requests_integrity`
+Fires `BEFORE UPDATE` on `public.approval_requests` to validate state-machine transitions and workflow progression:
+* Enforces segregation of duties by blocking request creators from approving their own requests.
+* Restricts updates to workflow columns only for non-creator approvers.
+* Enforces sequential step-by-step progression (`get_next_active_workflow_step`) for standard users.
+* **Allows legitimate skip-level approvals**: Permits the request to jump to the step immediately following the user's highest assigned role in the flow, resolving skips cleanly at the database layer (introduced in Migration `069`). Normal sequentially-targeted approval is preserved if the actor holds the active role for the current step.
+* **Prevents duplicate approvals**: Queries the communication log (`public.messages`) to ensure the current actor has not previously approved the request, blocking a single user from approving twice.
+* **Auto-skips satisfied approval steps**: Automatically advances past any approval-phase workflow steps (up to `CAO`) that have already been approved by a user holding that step's role code on the request, handling multi-role users dynamically.
+
+
+

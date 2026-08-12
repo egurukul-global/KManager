@@ -81,7 +81,28 @@ export function budgetStatusBadge(budgetOrStatus) {
   if (budgetOrStatus && typeof budgetOrStatus === 'object') {
     const approval = String(budgetOrStatus.approval_status || '').toUpperCase();
     if (approval.startsWith('CLARIFY-')) {
-      return { label: 'Needs clarification', class: 'badge-warning', status: BUDGET_STATUS.SUBMITTED };
+      return { label: 'Clarification Requested', class: 'badge-warning', status: BUDGET_STATUS.SUBMITTED };
+    }
+    if (approval === 'SUBMITTED') {
+      return { label: 'Awaiting OPH Approval', class: 'badge-info', status: BUDGET_STATUS.SUBMITTED };
+    }
+    if (approval === 'OPH-REVIEWED' || approval === 'OPH-APPROVED') {
+      return { label: 'Awaiting FIN Approval', class: 'badge-info', status: BUDGET_STATUS.SUBMITTED };
+    }
+    if (approval === 'FIN-REVIEWED' || approval === 'FIN-APPROVED') {
+      return { label: 'Awaiting FIH Approval', class: 'badge-info', status: BUDGET_STATUS.SUBMITTED };
+    }
+    if (approval === 'FIH-REVIEWED' || approval === 'FIH-APPROVED') {
+      return { label: 'Awaiting CAO Approval', class: 'badge-info', status: BUDGET_STATUS.SUBMITTED };
+    }
+    if (approval === 'CAO-REVIEWED' || approval === 'CAO-APPROVED') {
+      return { label: 'Awaiting Payment', class: 'badge-info', status: BUDGET_STATUS.APPROVED };
+    }
+    if (approval === 'FIP-APPROVED' || approval === 'PAID') {
+      return { label: 'Paid', class: 'badge-success', status: BUDGET_STATUS.PAID };
+    }
+    if (approval === 'RECEIVED') {
+      return { label: 'Received', class: 'badge-success', status: BUDGET_STATUS.RECEIVED };
     }
   }
   const status = typeof budgetOrStatus === 'string'

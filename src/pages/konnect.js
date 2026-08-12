@@ -429,17 +429,21 @@ async function loadConversations() {
       }
 
       if (threadKey && !threads[threadKey]) {
+        const isMsgRead = msg.read_at || (msg.recipient_type !== 'user' && msg.metadata?.read_by_users?.[state.user.id]);
+        const isUnread = (msg.sender_id !== state.user.id && !isMsgRead);
         threads[threadKey] = {
           id: threadKey,
           type: threadType,
           name: threadName,
           lastMessage: msg.body,
           time: msg.created_at,
-          unreadCount: (msg.sender_id !== state.user.id && !msg.read_at) ? 1 : 0,
+          unreadCount: isUnread ? 1 : 0,
           isPinned: starPins.some(p => p.chat_target_id === threadKey && p.is_pinned)
         };
       } else if (threadKey) {
-        if (msg.sender_id !== state.user.id && !msg.read_at) {
+        const isMsgRead = msg.read_at || (msg.recipient_type !== 'user' && msg.metadata?.read_by_users?.[state.user.id]);
+        const isUnread = (msg.sender_id !== state.user.id && !isMsgRead);
+        if (isUnread) {
           threads[threadKey].unreadCount++;
         }
       }
@@ -865,34 +869,30 @@ async function selectConversation(type, id, name) {
   updateChatHeaderAndBulkBar();
   await loadMessages();
   
-  let markReadQuery = supabaseClient.from('messages')
-    .update({ read_at: new Date().toISOString() })
-    .is('read_at', null);
-
   if (type === 'user') {
-    markReadQuery = markReadQuery
+    const { error } = await supabaseClient.from('messages')
+      .update({ read_at: new Date().toISOString() })
+      .is('read_at', null)
       .eq('recipient_type', 'user')
       .eq('sender_id', id)
       .eq('recipient_id', state.user.id);
-  } else {
-    let dbRecipientId = id;
-    if (type === 'role') {
-      if (id === 'broadcast-all') dbRecipientId = 'all';
-      else if (id === 'broadcast-male') dbRecipientId = 'male';
-      else if (id === 'broadcast-female') dbRecipientId = 'female';
+    if (error) {
+      console.error("Failed to mark messages as read:", error);
     }
-    markReadQuery = markReadQuery
-      .eq('recipient_type', type)
-      .eq('recipient_id', dbRecipientId)
-      .neq('sender_id', state.user.id);
-
-    // Group/Team: log read event under read_by_users in metadata
+  } else {
+    // Group/Team/Role: log read event ONLY under read_by_users in metadata
     try {
+      let dbRecipientId = id;
+      if (type === 'role') {
+        if (id === 'broadcast-all') dbRecipientId = 'all';
+        else if (id === 'broadcast-male') dbRecipientId = 'male';
+        else if (id === 'broadcast-female') dbRecipientId = 'female';
+      }
       const { data: unreadMsgs } = await supabaseClient
         .from('messages')
         .select('*')
         .eq('recipient_type', type)
-        .eq('recipient_id', id)
+        .eq('recipient_id', dbRecipientId)
         .neq('sender_id', state.user.id);
       
       const toUpdate = (unreadMsgs || []).filter(m => !m.metadata?.read_by_users?.[state.user.id]);
@@ -906,14 +906,7 @@ async function selectConversation(type, id, name) {
       console.warn("Failed to log read event under metadata:", e);
     }
   }
-
-  const { error } = await markReadQuery;
-
-  if (error) {
-    console.error("Failed to mark messages as read:", error);
-  } else {
-    await loadConversations();
-  }
+  await loadConversations();
 }
 
 let activeThreadMemberCount = 2;
@@ -1489,12 +1482,32 @@ async function markChatAsUnread(msgId) {
   }
 
   try {
-    const { error } = await supabaseClient
+    const { data: msg, error: fetchErr } = await supabaseClient
       .from('messages')
-      .update({ read_at: null })
-      .eq('id', targetMsgId);
+      .select('*')
+      .eq('id', targetMsgId)
+      .single();
 
-    if (error) throw error;
+    if (fetchErr || !msg) throw new Error('Message not found');
+
+    if (msg.recipient_type === 'user') {
+      const { error } = await supabaseClient
+        .from('messages')
+        .update({ read_at: null })
+        .eq('id', targetMsgId);
+      if (error) throw error;
+    } else {
+      const metadata = msg.metadata || {};
+      if (metadata.read_by_users) {
+        delete metadata.read_by_users[state.user.id];
+      }
+      const { error } = await supabaseClient
+        .from('messages')
+        .update({ metadata })
+        .eq('id', targetMsgId);
+      if (error) throw error;
+    }
+
     showToast('Message marked unread', 'success');
     await loadConversations();
     document.querySelectorAll('.msg-actions-dropdown').forEach(el => el.style.display = 'none');

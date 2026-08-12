@@ -262,6 +262,8 @@ export async function handleLogout() {
 
   try {
     await secureLogout();
+    const { clearApprovalAccessCache } = await import('./utils/approvalAccess.js');
+    clearApprovalAccessCache();
   } catch (err) {
     console.error('Logout error:', err);
   }

@@ -231,7 +231,6 @@ export function getCreateBudgetPage() {
 }
 
 export async function initCreateBudgetPage() {
-  console.log('BUDGET PAGE LOADED');
   if (!state.canCreateBudgets) return;
 
   await ensureExchangeRatesLoaded();
@@ -998,7 +997,6 @@ export function getViewBudgetsPage() {
 }
 
 export async function initViewBudgetsPage() {
-  console.log('BUDGET PAGE LOADED');
   window.submitBudgetApproval = submitBudgetApprovalHandler;
   window.onBudgetStatusFilterChange = onBudgetStatusFilterChange;
   window.backToBudgetList = backToBudgetList;
@@ -1228,6 +1226,61 @@ function renderBudgetSummaryTable(container, budgets) {
   `;
 }
 
+function renderWizardDetailsHtml(budget) {
+  if (!budget || budget.budget_type !== 'monthly') return '';
+
+  const explanation = budget.open_budgets_explanation?.text || budget.open_budgets_explanation || '';
+  const cash = budget.recon_cash_balance != null ? `$${parseFloat(budget.recon_cash_balance).toFixed(2)}` : '—';
+  const bank = budget.recon_bank_balance != null ? `$${parseFloat(budget.recon_bank_balance).toFixed(2)}` : '—';
+  const remaining = budget.recon_remaining_funds != null ? `$${parseFloat(budget.recon_remaining_funds).toFixed(2)}` : '—';
+
+  const housing = budget.submission_housing_info || {};
+  const housingDetails = `
+    Address: ${housing.address || '—'}<br>
+    Rent: ${housing.rentAmount || '—'} | Roommates: ${housing.roommatesCount || '—'}<br>
+    Landlord: ${housing.landlordContact || '—'} | Utilities: ${housing.utilitiesDetails || '—'}
+  `;
+
+  const accomplishments = (budget.submission_accomplishments?.data || budget.submission_accomplishments || [])
+    .map(a => `<li><strong>${a.member || 'Member'}:</strong> ${a.accomplishments || '—'}</li>`).join('');
+
+  const members = (budget.submission_team_info?.members || [])
+    .map(m => `<li>${m.name || m}</li>`).join('');
+
+  return `
+    <div class="wizard-details-section" style="margin-top:20px; border-top:1px dashed var(--border); padding-top:16px;">
+      <h4 style="margin:0 0 10px; color:var(--primary);">📋 Submission Metadata (Wizard Details)</h4>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <details style="background:var(--card-bg); border:1px solid var(--border); border-radius:4px; padding:10px;">
+          <summary style="cursor:pointer; font-weight:600; font-size:0.9rem;">Balances & Reconciliation</summary>
+          <div style="margin-top:8px; font-size:0.85rem; line-height:1.5;">
+            <div><strong>Cash Balance:</strong> ${cash}</div>
+            <div><strong>Bank Balance:</strong> ${bank}</div>
+            <div><strong>Remaining Funds:</strong> ${remaining}</div>
+            ${explanation ? `<div style="margin-top:6px;"><strong>Prior Unresolved Budgets Explanation:</strong><br>${explanation}</div>` : ''}
+          </div>
+        </details>
+        <details style="background:var(--card-bg); border:1px solid var(--border); border-radius:4px; padding:10px;">
+          <summary style="cursor:pointer; font-weight:600; font-size:0.9rem;">Team Members & Housing</summary>
+          <div style="margin-top:8px; font-size:0.85rem; line-height:1.5;">
+            <div><strong>Members:</strong></div>
+            <ul style="margin:4px 0 8px 16px; padding:0;">${members || '<li>None</li>'}</ul>
+            <div><strong>Housing Info:</strong></div>
+            <div style="padding-left:6px; margin-top:4px; line-height:1.4;">${housingDetails}</div>
+          </div>
+        </details>
+        ${accomplishments ? `
+        <details style="background:var(--card-bg); border:1px solid var(--border); border-radius:4px; padding:10px;">
+          <summary style="cursor:pointer; font-weight:600; font-size:0.9rem;">Accomplishments & Goals</summary>
+          <div style="margin-top:8px; font-size:0.85rem; line-height:1.4;">
+            <ul style="margin:4px 0 0 16px; padding:0;">${accomplishments}</ul>
+          </div>
+        </details>` : ''}
+      </div>
+    </div>
+  `;
+}
+
 /**
  * Shared budget detail markup (View Budgets + Approval review modal).
  * @param {object} budget
@@ -1241,6 +1294,17 @@ export function renderBudgetReviewHtml(budget, options = {}) {
   let tableRows = '';
   let mobileCards = '';
   const statusBadge = budgetStatusBadgeHtml(budget);
+
+  let paymentInfoHtml = '';
+  if (budget.paid_amount != null || budget.funding_notes) {
+    const amt = budget.paid_amount != null ? `$${parseFloat(budget.paid_amount).toFixed(2)}` : '—';
+    const notes = budget.funding_notes || '—';
+    paymentInfoHtml = `
+      <div class="payment-info-box" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:4px; padding:10px; margin: 15px 0; font-size:0.85rem; color:#166534;">
+        <strong>💰 Payment Recorded:</strong> Paid Amount: <strong>${amt}</strong> | Notes: <em>${escapeHtmlAttr(notes)}</em>
+      </div>
+    `;
+  }
 
   const canSubmitApproval = showActions && canSubmitBudgetApproval() && canSubmitBudgetByStatus(budget);
   const submitBtn = canSubmitApproval
@@ -1350,6 +1414,7 @@ export function renderBudgetReviewHtml(budget, options = {}) {
             Total Budgeted: $${totalBudgetedUSD.toFixed(2)}
           </div>
         </div>
+        ${renderWizardDetailsHtml(budget)}
       </div>
     `;
   }
@@ -1383,6 +1448,7 @@ export function renderBudgetReviewHtml(budget, options = {}) {
           <div class="label">Used</div>
         </div>
       </div>
+      ${paymentInfoHtml}
       <h4 style="margin: 20px 0 15px;">Category Breakdown</h4>
       <div class="table-container show-desktop">
         <table class="table-stack-mobile">
@@ -1399,6 +1465,7 @@ export function renderBudgetReviewHtml(budget, options = {}) {
         </table>
       </div>
       <div class="show-mobile data-card-list">${mobileCards || '<p class="empty-state">No categories</p>'}</div>
+      ${renderWizardDetailsHtml(budget)}
     </div>
   `;
 }

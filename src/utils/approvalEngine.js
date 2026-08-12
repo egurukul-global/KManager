@@ -10,7 +10,8 @@ import {
   getUserApprovalRoleCodes,
   userCanActOnRequest,
   canCancelRequest,
-  resolveFlowSteps
+  resolveFlowSteps,
+  canSkipLevel
 } from './approvalAccess.js';
 import { approveOhfTransfer } from './transferActions.js';
 import { mapApprovalToBudgetStatus } from './budgetStatus.js';
@@ -511,6 +512,59 @@ async function advanceAfterSend(request, steps) {
   return updated;
 }
 
+async function resolveNextUnsatisfiedStepOrder(request, currentStep, steps, approverIds) {
+  console.log(`🔍 FRONTEND DIAGNOSTIC resolveNextUnsatisfiedStepOrder:
+    request_id: ${request.id}
+    team_id: ${request.team_id}
+    currentStep_order: ${currentStep.step_order}
+    steps: ${steps.map(s => `${s.step_order}:${s.role_code}`).join(', ')}
+    approverIds: ${approverIds.join(', ')}
+  `);
+  
+  const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
+  let currentSearchStep = currentStep;
+  let targetStepOrder = currentStep.step_order;
+
+  while (true) {
+    const nextStep = steps.find(s => s.step_order > currentSearchStep.step_order);
+    if (!nextStep) {
+      console.log('🔍 FRONTEND DIAGNOSTIC: No more steps. Request is fully approved.');
+      targetStepOrder = null;
+      break;
+    }
+
+    const isApprovalStep = caoStep ? nextStep.step_order <= caoStep.step_order : true;
+    let isSatisfied = false;
+    if (isApprovalStep) {
+      for (const uid of approverIds) {
+        const { data: hasRole } = await supabaseClient.rpc('user_has_approval_role', {
+          p_user_id: uid,
+          p_role_code: nextStep.role_code,
+          p_team_id: request.team_id
+        });
+        console.log(`🔍 FRONTEND DIAGNOSTIC: user_has_approval_role check for user ${uid}, role ${nextStep.role_code}:`, hasRole);
+        if (hasRole) {
+          isSatisfied = true;
+          break;
+        }
+      }
+    }
+
+    console.log(`🔍 FRONTEND DIAGNOSTIC: nextStep ${nextStep.step_order}:${nextStep.role_code}, isSatisfied:`, isSatisfied);
+
+    if (isSatisfied) {
+      currentSearchStep = nextStep;
+      targetStepOrder = nextStep.step_order;
+    } else {
+      targetStepOrder = nextStep.step_order;
+      break;
+    }
+  }
+
+  console.log('🔍 FRONTEND DIAGNOSTIC: resolved targetStepOrder:', targetStepOrder);
+  return targetStepOrder;
+}
+
 export async function approveRequest(requestId, message = '') {
   const request = await loadRequest(requestId);
   if (!(await userCanActOnRequest(request))) {
@@ -524,11 +578,46 @@ export async function approveRequest(requestId, message = '') {
   let targetStepOrder = request.current_step_order;
   const currentStep = steps.find(s => s.step_order === request.current_step_order);
 
-  if (currentStep && !upperCodes.includes(String(request.current_role_code).toUpperCase())) {
-    const higherStep = steps.find(s => s.step_order > currentStep.step_order && upperCodes.includes(String(s.role_code).toUpperCase()));
-    if (higherStep) {
-      targetStepOrder = higherStep.step_order;
+  if (currentStep) {
+    let highestPermittedStep = currentStep;
+    if (!upperCodes.includes(String(request.current_role_code).toUpperCase()) && canSkipLevel(upperCodes, request.current_role_code, request, steps)) {
+      const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
+      const allowedSkipSteps = steps.filter(s => {
+        if (upperCodes.includes(String(s.role_code).toUpperCase())) {
+          if (upperCodes.includes('CAO') || upperCodes.includes('CEO') || state.user?.role === 'admin') {
+            return true;
+          }
+          if (caoStep && s.step_order < caoStep.step_order) {
+            return true;
+          }
+        }
+        return false;
+      });
+      const higherStep = allowedSkipSteps.find(s => s.step_order > currentStep.step_order);
+      if (higherStep) {
+        highestPermittedStep = higherStep;
+      }
     }
+
+    // Get all approval messages for this request to find who approved
+    const { data: approvalMsgs } = await supabaseClient
+      .from('messages')
+      .select('sender_id, body')
+      .eq('metadata->>link_id', request.id);
+
+    const approverIds = [state.user.id];
+    if (approvalMsgs) {
+      for (const msg of approvalMsgs) {
+        const b = String(msg.body);
+        if (b.includes('[Approval System] Approved') || b.includes('Approved and sent forward')) {
+          if (!approverIds.includes(msg.sender_id)) {
+            approverIds.push(msg.sender_id);
+          }
+        }
+      }
+    }
+
+    targetStepOrder = await resolveNextUnsatisfiedStepOrder(request, highestPermittedStep, steps, approverIds);
   }
 
   await insertMessage(requestId, message);
@@ -555,30 +644,99 @@ export async function approveAndSendRequest(requestId, message = '') {
   const codes = await getUserApprovalRoleCodes(state.user.id, request.team_id);
   const upperCodes = codes.map(c => String(c).toUpperCase());
 
-  let targetStepOrder = request.current_step_order;
   const currentStep = steps.find(s => s.step_order === request.current_step_order);
+  if (!currentStep) throw new Error('Invalid current flow step');
 
-  if (currentStep && !upperCodes.includes(String(request.current_role_code).toUpperCase())) {
-    const higherStep = steps.find(s => s.step_order > currentStep.step_order && upperCodes.includes(String(s.role_code).toUpperCase()));
+  let highestPermittedStep = currentStep;
+  if (!upperCodes.includes(String(request.current_role_code).toUpperCase()) && canSkipLevel(upperCodes, request.current_role_code, request, steps)) {
+    const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
+    const isStandardUser = !upperCodes.includes('CAO') && !upperCodes.includes('CEO') && state.user?.role !== 'admin';
+    const allowedSkipSteps = steps.filter(s => {
+      if (upperCodes.includes(String(s.role_code).toUpperCase())) {
+        if (!isStandardUser) return true;
+        if (caoStep && s.step_order < caoStep.step_order) return true;
+      }
+      return false;
+    });
+    const higherStep = allowedSkipSteps.find(s => s.step_order > currentStep.step_order);
     if (higherStep) {
-      targetStepOrder = higherStep.step_order;
+      highestPermittedStep = higherStep;
     }
   }
 
+  // Get all approval messages for this request to find who approved
+  const { data: approvalMsgs } = await supabaseClient
+    .from('messages')
+    .select('sender_id, body')
+    .eq('metadata->>link_id', request.id);
+
+  const approverIds = [state.user.id];
+  if (approvalMsgs) {
+    for (const msg of approvalMsgs) {
+      const b = String(msg.body);
+      if (b.includes('[Approval System] Approved') || b.includes('Approved and sent forward')) {
+        if (!approverIds.includes(msg.sender_id)) {
+          approverIds.push(msg.sender_id);
+        }
+      }
+    }
+  }
+
+  const targetStepOrder = await resolveNextUnsatisfiedStepOrder(request, highestPermittedStep, steps, approverIds);
   await insertMessage(requestId, message || 'Approved and sent forward');
 
-  const patch = { step_approved: true };
-  if (targetStepOrder !== request.current_step_order) {
-    patch.current_step_order = targetStepOrder;
-    const targetStep = steps.find(s => s.step_order === targetStepOrder);
-    if (targetStep) {
-      patch.current_role_code = targetStep.role_code;
-    }
-  }
+  const isApproved = (targetStepOrder === null);
+  const following = isApproved ? null : steps.find(s => s.step_order === targetStepOrder);
 
-  await updateRequest(requestId, patch);
-  const refreshed = await loadRequest(requestId);
-  return advanceAfterSend(refreshed, steps);
+  // Clear prior-step home alerts
+  await clearOkMessagesForRequest(request.id);
+
+  if (isApproved) {
+    // Complete the request
+    const finalRole = following ? following.role_code : currentStep.role_code;
+    const finalStatus = `${String(finalRole).toUpperCase()}-APPROVED`;
+    
+    const updated = await updateRequest(requestId, {
+      status: finalStatus,
+      current_step_order: following ? following.step_order : currentStep.step_order,
+      current_role_code: null,
+      step_approved: false,
+      completed_at: new Date().toISOString()
+    });
+
+    if (request.request_type === REQUEST_TYPES.BUDGET && request.budget_plan_id) {
+      await applyBudgetStatus(request.budget_plan_id, finalStatus, request.id);
+    }
+    if (request.request_type === REQUEST_TYPES.MONEY_TRANSFER) {
+      await onTransferRequestCompleted(updated);
+    }
+    if (request.request_type === REQUEST_TYPES.RECONCILIATION_ADJUSTMENT) {
+      await onReconciliationRequestCompleted(updated);
+    }
+    await notifyUserForRequest(
+      request.created_by,
+      updated,
+      `${updated.request_number || request.request_number}  ${request.title || ''}  Approved`.replace(/\s+/g, ' ').trim()
+    );
+    return updated;
+  } else {
+    // Advance to the following step
+    const currentRole = String(currentStep.role_code).toUpperCase();
+    const reviewedStatus = `${currentRole}-REVIEWED`;
+    
+    const updated = await updateRequest(requestId, {
+      status: reviewedStatus,
+      current_step_order: following.step_order,
+      current_role_code: following.role_code,
+      step_approved: false
+    });
+
+    if (request.request_type === REQUEST_TYPES.BUDGET && request.budget_plan_id) {
+      await applyBudgetStatus(request.budget_plan_id, reviewedStatus, request.id);
+    }
+    await notifyRoleForRequest(updated, following.role_code);
+    return updated;
+  }
 }
 
 export async function sendApprovedRequest(requestId, message = '') {

@@ -9,7 +9,11 @@ import {
   userCanActOnRequest,
   canCancelRequest,
   getUserApprovalRoleCodes,
-  clarifyRoleFromStatus
+  clarifyRoleFromStatus,
+  loadUserRoleAssignments,
+  clearApprovalAccessCache,
+  resolveFlowSteps,
+  isFinalStatus
 } from '../utils/approvalAccess.js';
 import {
   fetchApprovalInboxRaw,
@@ -122,7 +126,7 @@ export function getApprovalPortalPage() {
         <button type="button" class="close-modal" onclick="window.portalCloseReviewModal()">&times;</button>
         <h2 id="approvalReviewModalTitle">Review</h2>
         <div id="approvalReviewModalBody"><p class="empty-state">Loading…</p></div>
-        <div class="btn-group" style="margin-top:16px;">
+        <div id="approvalReviewModalFooter" class="btn-group" style="margin-top:16px; display:flex; gap:8px; justify-content:flex-end;">
           <button type="button" class="secondary" onclick="window.portalCloseReviewModal()">Close</button>
         </div>
       </div>
@@ -203,6 +207,7 @@ export function getApprovalPortalPage() {
 }
 
 export async function initApprovalPortalPage() {
+  await loadUserRoleAssignments();
   window.searchApprovalPortal = searchApprovalPortal;
   window.refreshApprovalPortal = searchApprovalPortal;
   window.portalToggleSelect = portalToggleSelect;
@@ -221,7 +226,7 @@ export async function initApprovalPortalPage() {
   // Bind Select All checkbox logic
   const selectAll = document.getElementById('approvalActionSelectAll');
   if (selectAll) {
-    selectAll.checked = true;
+    selectAll.checked = false;
     selectAll.addEventListener('change', () => {
       document.querySelectorAll('#approvalActionModal .vis-role').forEach(cb => {
         cb.checked = selectAll.checked;
@@ -229,7 +234,7 @@ export async function initApprovalPortalPage() {
     });
   }
   document.querySelectorAll('#approvalActionModal .vis-role').forEach(cb => {
-    cb.checked = true;
+    cb.checked = (cb.value === 'OPL');
     cb.addEventListener('change', () => {
       const selectAll = document.getElementById('approvalActionSelectAll');
       if (selectAll) {
@@ -373,11 +378,44 @@ async function loadInboxFromServer() {
   if (tableBody) tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">Loading…</td></tr>';
   if (mobileEl) mobileEl.innerHTML = '<p class="empty-state">Loading…</p>';
 
+  clearApprovalAccessCache();
+  await loadUserRoleAssignments();
+
   inboxCache = await fetchApprovalInboxRaw();
   rowCanActMap = new Map();
   rowCommentCountMap = new Map();
+
+  const approvedIds = new Set();
+  try {
+    const requestIds = inboxCache.map(r => r.id);
+    if (requestIds.length > 0 && state.user?.id) {
+      const { data: approvalMsgs } = await supabaseClient
+        .from('messages')
+        .select('metadata, body')
+        .eq('sender_id', state.user.id)
+        .in('metadata->>link_id', requestIds);
+
+      if (approvalMsgs) {
+        approvalMsgs.forEach(m => {
+          const body = String(m.body || '');
+          const reqId = m.metadata?.link_id;
+          if (reqId && (
+            body.includes('[Approval System] Approved') ||
+            body.includes('[Approval System] Rejected') ||
+            body.includes('Approved and sent forward') ||
+            body.includes('Approved request')
+          )) {
+            approvedIds.add(reqId);
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to batch load approval messages:', err);
+  }
+
   await Promise.all(inboxCache.map(async row => {
-    rowCanActMap.set(row.id, await userCanActOnRequest(row));
+    rowCanActMap.set(row.id, await userCanActOnRequest(row, state.user?.id, approvedIds));
   }));
 
   try {
@@ -432,17 +470,19 @@ function searchApprovalPortal() {
 function rowActionDropdown(row) {
   const canAct = rowIsActionable(row);
   const isMine = row.created_by === state.user?.id;
+  const status = String(row.status || '').toUpperCase();
   const clarifyRole = clarifyRoleFromStatus(row.status);
   const canCancel = canCancelRequest(row);
+  const showApproveRejectClarify = canAct && !status.startsWith('CLARIFY-');
 
   return `
     <div class="approval-action-select-wrapper" style="display:flex; align-items:center; gap:5px;">
       <select class="approval-action-select" style="padding:4px 6px; font-size:13px; height:28px; border:1px solid var(--border); border-radius:4px; max-width:130px; background:var(--card-bg); color:var(--text);">
         <option value="">Action</option>
         <option value="open">Open</option>
-        ${canAct ? '<option value="approve">Approve</option>' : ''}
-        ${canAct ? '<option value="reject">Reject</option>' : ''}
-        ${canAct ? '<option value="clarify">Clarify</option>' : ''}
+        ${showApproveRejectClarify ? '<option value="approve">Approve</option>' : ''}
+        ${showApproveRejectClarify ? '<option value="reject">Reject</option>' : ''}
+        ${showApproveRejectClarify ? '<option value="clarify">Clarify</option>' : ''}
         ${clarifyRole && (canAct || isMine) ? '<option value="reply">Reply</option>' : ''}
         ${canCancel ? '<option value="cancel">Cancel</option>' : ''}
       </select>
@@ -454,12 +494,15 @@ function rowActionDropdown(row) {
 function rowActionButtons(row) {
   const canAct = rowIsActionable(row);
   const isMine = row.created_by === state.user?.id;
+  const status = String(row.status || '').toUpperCase();
   const clarifyRole = clarifyRoleFromStatus(row.status);
   const canCancel = canCancelRequest(row);
   const buttons = [
     `<button type="button" class="small secondary" onclick="event.stopPropagation(); window.portalOpenDetail('${row.id}')">Open</button>`
   ];
-  if (canAct) {
+  const showApproveRejectClarify = canAct && !status.startsWith('CLARIFY-');
+
+  if (showApproveRejectClarify) {
     buttons.push(`<button type="button" class="small success" onclick="event.stopPropagation(); window.portalAction(event,'approve','${row.id}')">Approve</button>`);
     buttons.push(`<button type="button" class="small secondary danger" onclick="event.stopPropagation(); window.portalAction(event,'reject','${row.id}')">Reject</button>`);
     buttons.push(`<button type="button" class="small secondary" onclick="event.stopPropagation(); window.portalAction(event,'clarify','${row.id}')">Clarify</button>`);
@@ -605,6 +648,33 @@ async function portalOpenReviewModal(id) {
         ${cardRow('Team', escapeHtml(row.teams?.name || '—'))}
         ${row.amount_usd != null ? cardRow('Amount', `$${parseFloat(row.amount_usd).toFixed(2)}`) : ''}`;
     }
+    // Render workflow buttons in detail modal
+    const footerEl = document.getElementById('approvalReviewModalFooter');
+    if (footerEl) {
+      const canAct = rowIsActionable(row);
+      const isMine = row.created_by === state.user?.id;
+      const status = String(row.status || '').toUpperCase();
+      const clarifyRole = clarifyRoleFromStatus(row.status);
+      const canCancel = canCancelRequest(row);
+      const modalButtons = [];
+      const showApproveRejectClarify = canAct && !status.startsWith('CLARIFY-');
+
+      if (showApproveRejectClarify) {
+        modalButtons.push(`<button type="button" class="success" onclick="event.stopPropagation(); window.portalAction(event,'approve','${row.id}')">Approve</button>`);
+        modalButtons.push(`<button type="button" class="danger" onclick="event.stopPropagation(); window.portalAction(event,'reject','${row.id}')">Reject</button>`);
+        modalButtons.push(`<button type="button" class="warning" onclick="event.stopPropagation(); window.portalAction(event,'clarify','${row.id}')">Request Clarification</button>`);
+      }
+      if (clarifyRole && (canAct || isMine)) {
+        modalButtons.push(`<button type="button" class="success" onclick="event.stopPropagation(); window.portalAction(event,'reply','${row.id}')">Clarify Reply</button>`);
+      }
+      if (canCancel) {
+        modalButtons.push(`<button type="button" class="danger" onclick="event.stopPropagation(); window.portalAction(event,'cancel','${row.id}')">Cancel Request</button>`);
+      }
+      footerEl.innerHTML = `
+        <button type="button" class="secondary" onclick="window.portalCloseReviewModal()">Close</button>
+        ${modalButtons.join(' ')}
+      `;
+    }
   } catch (err) {
     console.error(err);
     if (titleEl) titleEl.textContent = `${row.request_number} — ${row.title || 'Review'}`;
@@ -617,6 +687,10 @@ function portalCloseReviewModal() {
   modal?.classList.remove('active');
   const bodyEl = document.getElementById('approvalReviewModalBody');
   if (bodyEl) bodyEl.innerHTML = '';
+  const footerEl = document.getElementById('approvalReviewModalFooter');
+  if (footerEl) {
+    footerEl.innerHTML = `<button type="button" class="secondary" onclick="window.portalCloseReviewModal()">Close</button>`;
+  }
 }
 
 async function buildBudgetReviewBody(budgetPlanId) {
@@ -764,9 +838,37 @@ function openApprovalActionModal(requestId, actionType) {
   document.getElementById('approvalActionAttachmentFile').value = '';
   document.getElementById('approvalActionAttachmentLabel').textContent = '📎 Click to upload receipt or screen print';
   
-  document.querySelectorAll('#approvalActionModal .vis-role').forEach(cb => cb.checked = true);
+  const request = inboxCache.find(r => r.id === requestId);
+  const checkedRoles = new Set(['OPL']);
+  if (request) {
+    if (request.current_role_code) {
+      checkedRoles.add(String(request.current_role_code).toUpperCase());
+    }
+    try {
+      resolveFlowSteps(request.request_type, request.team_id).then(steps => {
+        const currentIdx = steps.findIndex(s => s.step_order === request.current_step_order);
+        if (currentIdx >= 0 && currentIdx < steps.length - 1) {
+          const nextRole = steps[currentIdx + 1]?.role_code;
+          if (nextRole) {
+            checkedRoles.add(String(nextRole).toUpperCase());
+          }
+        }
+        document.querySelectorAll('#approvalActionModal .vis-role').forEach(cb => {
+          cb.checked = checkedRoles.has(String(cb.value).toUpperCase());
+        });
+      }).catch(err => {
+        console.warn('resolveFlowSteps vis:', err);
+      });
+    } catch (e) {
+      console.warn('resolveFlowSteps vis:', e);
+    }
+  }
+
+  document.querySelectorAll('#approvalActionModal .vis-role').forEach(cb => {
+    cb.checked = checkedRoles.has(String(cb.value).toUpperCase());
+  });
   const selectAll = document.getElementById('approvalActionSelectAll');
-  if (selectAll) selectAll.checked = true;
+  if (selectAll) selectAll.checked = false;
 
   const titleEl = document.getElementById('approvalActionModalTitle');
   const confirmBtn = document.getElementById('approvalActionConfirmBtn');
@@ -792,15 +894,28 @@ function openApprovalActionModal(requestId, actionType) {
 
   const paymentFields = document.getElementById('approvalPaymentFields');
   if (paymentFields) {
-    const request = inboxCache.find(r => r.id === requestId);
     const isBudget = request?.request_type === 'budget';
-    const isApprover = myStepCodes.includes('FIP') || myStepCodes.includes('FIH') || myStepCodes.includes('FIN') || state.user?.role === 'admin';
-    if (actionType === 'approve' && isBudget && isApprover) {
-      paymentFields.style.display = 'flex';
-      const amountInput = document.getElementById('approvalPaymentAmount');
-      if (amountInput) amountInput.value = request.amount_usd || '';
-      const notesInput = document.getElementById('approvalPaymentNotes');
-      if (notesInput) notesInput.value = '';
+    if (request) {
+      getUserApprovalRoleCodes(state.user?.id, request.team_id).then(userCodes => {
+        const isPaymentApprover = userCodes.includes('FIP') || userCodes.includes('FIH') || state.user?.role === 'admin';
+        resolveFlowSteps(request.request_type, request.team_id).then(steps => {
+          const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
+          const passedCao = caoStep ? (request.current_step_order > caoStep.step_order || isFinalStatus(request.status)) : true;
+          if (actionType === 'approve' && isBudget && isPaymentApprover && passedCao) {
+            paymentFields.style.display = 'flex';
+            const amountInput = document.getElementById('approvalPaymentAmount');
+            if (amountInput) amountInput.value = request.amount_usd || '';
+            const notesInput = document.getElementById('approvalPaymentNotes');
+            if (notesInput) notesInput.value = '';
+          } else {
+            paymentFields.style.display = 'none';
+          }
+        }).catch(() => {
+          paymentFields.style.display = 'none';
+        });
+      }).catch(() => {
+        paymentFields.style.display = 'none';
+      });
     } else {
       paymentFields.style.display = 'none';
     }
@@ -827,7 +942,11 @@ function onApprovalAttachmentChange(input) {
   }
 }
 
+let isSubmittingApproval = false;
+
 async function submitApprovalAction() {
+  if (isSubmittingApproval) return;
+  
   const confirmBtn = document.getElementById('approvalActionConfirmBtn');
   const id = document.getElementById('approvalActionRequestId').value;
   const action = document.getElementById('approvalActionType').value;
@@ -843,6 +962,7 @@ async function submitApprovalAction() {
     visibleTo.push('ALL');
   }
 
+  isSubmittingApproval = true;
   setButtonLoading(confirmBtn, true);
   try {
     let finalAttachmentUrl = attachmentUrl;
@@ -855,65 +975,51 @@ async function submitApprovalAction() {
       finalAttachmentUrl = objectKey;
     }
 
-    if (comment || finalAttachmentUrl) {
-      const { data: requestData } = await supabaseClient
-        .from('approval_requests')
-        .select('team_id, request_number, title')
-        .eq('id', id)
-        .single();
-      const teamId = requestData?.team_id;
+    const { data: requestData } = await supabaseClient
+      .from('approval_requests')
+      .select('team_id, request_number, title')
+      .eq('id', id)
+      .single();
+    const teamId = requestData?.team_id;
 
-      if (!teamId) throw new Error('Could not find team associated with this request');
+    if (!teamId) throw new Error('Could not find team associated with this request');
 
-      let actionLabel = 'Commented';
-      if (action === 'reject') actionLabel = 'Rejected';
-      else if (action === 'approve') actionLabel = 'Approved';
-      else if (action === 'clarify') actionLabel = 'Requested Clarification';
-      else if (action === 'reply') actionLabel = 'Replied';
+    let actionLabel = 'Commented';
+    if (action === 'reject') actionLabel = 'Rejected';
+    else if (action === 'approve') actionLabel = 'Approved';
+    else if (action === 'clarify') actionLabel = 'Requested Clarification';
+    else if (action === 'reply') actionLabel = 'Replied';
 
-      const reqNum = requestData?.request_number || 'Request';
-      const reqTitle = requestData?.title || '';
-      const commentText = comment || (finalAttachmentUrl ? 'Attachment shared' : '');
-      const formattedBody = `[Approval System] ${actionLabel} on ${reqNum} "${reqTitle}"${commentText ? `: ${commentText}` : ''}`;
-
-      const { error: commentErr } = await supabaseClient
-        .from('messages')
-        .insert({
-          sender_id: state.user.id,
-          recipient_type: 'team',
-          recipient_id: teamId,
-          body: formattedBody,
-          attachment_url: finalAttachmentUrl || null,
-          attachment_name: finalAttachmentName || null,
-          metadata: {
-            link_type: 'budget',
-            link_id: id,
-            visible_to: visibleTo
-          }
-        });
-      if (commentErr) throw commentErr;
-    }
+    const reqNum = requestData?.request_number || 'Request';
+    const reqTitle = requestData?.title || '';
+    const commentText = comment || (finalAttachmentUrl ? 'Attachment shared' : '');
+    const formattedBody = `[Approval System] ${actionLabel} on ${reqNum} "${reqTitle}"${commentText ? `: ${commentText}` : ''}`;
 
     const { approveAndSendRequest, rejectRequest, clarifyRequest, replyClarification } = await import('../utils/approvalEngine.js');
     if (action === 'approve') {
       const request = inboxCache.find(r => r.id === id);
       const isBudget = request?.request_type === 'budget';
-      const isApprover = myStepCodes.includes('FIP') || myStepCodes.includes('FIH') || myStepCodes.includes('FIN') || state.user?.role === 'admin';
-      if (isBudget && isApprover) {
-        const paidAmount = parseFloat(document.getElementById('approvalPaymentAmount')?.value) || 0;
-        const fundingNotes = document.getElementById('approvalPaymentNotes')?.value?.trim() || '';
-        if (paidAmount > 0 && request.budget_plan_id) {
-          const { error: updateErr } = await supabaseClient
-            .from('budget_plans')
-            .update({
-              paid_amount: paidAmount,
-              funding_notes: fundingNotes
-            })
-            .eq('id', request.budget_plan_id);
-          if (updateErr) console.warn('Failed to update paid_amount on budget plan:', updateErr.message);
+      const userCodes = await getUserApprovalRoleCodes(state.user?.id, request?.team_id);
+      const isPaymentApprover = userCodes.includes('FIP') || userCodes.includes('FIH') || state.user?.role === 'admin';
+      if (isBudget && isPaymentApprover && request) {
+        const steps = await resolveFlowSteps(request.request_type, request.team_id);
+        const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
+        const passedCao = caoStep ? (request.current_step_order > caoStep.step_order || isFinalStatus(request.status)) : true;
+        if (passedCao) {
+          const paidAmount = parseFloat(document.getElementById('approvalPaymentAmount')?.value) || 0;
+          const fundingNotes = document.getElementById('approvalPaymentNotes')?.value?.trim() || '';
+          if (paidAmount > 0 && request.budget_plan_id) {
+            const { error: updateErr } = await supabaseClient
+              .from('budget_plans')
+              .update({
+                paid_amount: paidAmount,
+                funding_notes: fundingNotes
+              })
+              .eq('id', request.budget_plan_id);
+            if (updateErr) console.warn('Failed to update paid_amount on budget plan:', updateErr.message);
+          }
         }
       }
-
       await approveAndSendRequest(id, comment);
       showToast('1 request approved', 'success');
     } else if (action === 'reject') {
@@ -926,16 +1032,34 @@ async function submitApprovalAction() {
       await replyClarification(id, comment);
       showToast('Reply sent', 'success');
     }
+
+    const { error: commentErr } = await supabaseClient
+      .from('messages')
+      .insert({
+        sender_id: state.user.id,
+        recipient_type: 'team',
+        recipient_id: teamId,
+        body: formattedBody,
+        attachment_url: finalAttachmentUrl || null,
+        attachment_name: finalAttachmentName || null,
+        metadata: {
+          link_type: 'budget',
+          link_id: id,
+          visible_to: visibleTo
+        }
+      });
+    if (commentErr) throw commentErr;
     
-    closeApprovalActionModal();
-    portalCloseReviewModal();
-    await loadInboxFromServer();
-    searchApprovalPortal();
   } catch (err) {
     console.error(err);
     showToast(err.message || 'Action failed', 'error');
   } finally {
+    isSubmittingApproval = false;
     setButtonLoading(confirmBtn, false);
+    closeApprovalActionModal();
+    portalCloseReviewModal();
+    await loadInboxFromServer();
+    searchApprovalPortal();
   }
 }
 
