@@ -3,9 +3,22 @@ import { createClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://nvhaetvreopkktlxxdwg.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52aGFldHZyZW9wa2t0bHh4ZHdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0Mzg3MDcsImV4cCI6MjA5NDAxNDcwN30.yjsQeAhjZfXYV_Od6lkdZCCBSgt00Z9Pb-9Ki-a79kA';
 
+const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000'
+];
+if (process.env.APP_ORIGIN) {
+  ALLOWED_ORIGINS.push(process.env.APP_ORIGIN);
+}
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Prefer, x-client-info, apikey');
 
@@ -30,7 +43,20 @@ export default async function handler(req, res) {
         error: 'Missing path parameter' 
       });
     }
-    const targetUrl = `${SUPABASE_URL}${path}`;
+
+    // SSRF Prevention: Validate path format and target origin
+    if (path.includes('://') || path.startsWith('//') || path.includes('@')) {
+      return res.status(400).json({ error: 'Invalid path format' });
+    }
+
+    const trustedSupabaseUrl = new URL(SUPABASE_URL);
+    const targetUrlObj = new URL(path, trustedSupabaseUrl);
+
+    if (targetUrlObj.protocol !== trustedSupabaseUrl.protocol || targetUrlObj.hostname !== trustedSupabaseUrl.hostname) {
+      return res.status(403).json({ error: 'SSRF target forbidden' });
+    }
+
+    const targetUrl = targetUrlObj.toString();
 
     const headers = { ...req.headers };
     delete headers.host;

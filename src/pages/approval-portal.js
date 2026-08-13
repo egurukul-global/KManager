@@ -1,5 +1,6 @@
 /* ========== APPROVAL PORTAL ========== */
 import { state } from '../state.js';
+import { safeAttachmentUrl } from '../utils/urlValidator.js';
 import { supabaseClient } from '../db.js';
 import { showToast, showConfirm, showPrompt } from '../components/toasts.js';
 import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
@@ -1180,7 +1181,7 @@ async function openCommentsTimeline(requestId) {
         const name = c.attachment_name || 'View Attachment';
         attachmentHtml = `
           <div style="margin-top: 8px; font-size: 0.9em;">
-            📎 <a href="${c.resolvedUrl}" target="_blank" style="color: var(--primary); text-decoration: underline;">${escapeHtml(name)}</a>
+            📎 <a href="${safeAttachmentUrl(c.resolvedUrl)}" target="_blank" style="color: var(--primary); text-decoration: underline;">${escapeHtml(name)}</a>
           </div>`;
       }
 

@@ -1,6 +1,7 @@
 // ==================== KONNECT MESSAGING HUB ====================
 import { supabaseClient } from '../db.js';
 import { state } from '../state.js';
+import { safeAttachmentUrl } from '../utils/urlValidator.js';
 import { renderOkShell } from './ok-shell.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { uploadReceipt, resolveReceiptViewUrl } from '../utils/upload.js';
@@ -934,12 +935,25 @@ async function loadMessages() {
       }
     }
 
-    const { data: messages, error } = await supabaseClient
-      .from('messages')
-      .select('*')
-      .order('created_at', { ascending: true });
+    let msgQuery = supabaseClient.from('messages').select('*');
+    if (activeThread.type === 'user') {
+      msgQuery = msgQuery.or(`and(sender_id.eq.${state.user.id},recipient_id.eq.${activeThread.id}),and(sender_id.eq.${activeThread.id},recipient_id.eq.${state.user.id})`);
+    } else {
+      let dbRecipientId = activeThread.id;
+      if (activeThread.type === 'role') {
+        if (activeThread.id === 'broadcast-all') dbRecipientId = 'all';
+        else if (activeThread.id === 'broadcast-male') dbRecipientId = 'male';
+        else if (activeThread.id === 'broadcast-female') dbRecipientId = 'female';
+      }
+      msgQuery = msgQuery.eq('recipient_type', activeThread.type).eq('recipient_id', dbRecipientId);
+    }
+
+    const { data: rawMessages, error } = await msgQuery
+      .order('created_at', { ascending: false })
+      .limit(50);
 
     if (error) throw error;
+    const messages = (rawMessages || []).slice().reverse();
     allMessages = messages || [];
 
     const filtered = (messages || []).filter(msg => {
@@ -1014,7 +1028,7 @@ async function loadMessages() {
         attachHtml = `
           <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:4px; padding:2px 6px; display:inline-flex; align-items:center; gap:6px; font-size:0.8em; color:var(--primary); vertical-align:middle;">
             <span>📎</span>
-            <a href="${msg.attachment_url}" target="_blank" style="color:inherit; font-weight:600; text-decoration:underline; word-break:break-all;">
+            <a href="${safeAttachmentUrl(msg.attachment_url)}" target="_blank" style="color:inherit; font-weight:600; text-decoration:underline; word-break:break-all;">
               ${escapeHtml(msg.attachment_name || 'Attached file')}
             </a>
           </div>
