@@ -609,7 +609,7 @@ export async function approveRequest(requestId, message = '') {
     if (approvalMsgs) {
       for (const msg of approvalMsgs) {
         const b = String(msg.body);
-        if (b.includes('[Approval System] Approved') || b.includes('Approved and sent forward')) {
+        if (b.includes('[Approval System] Approved') || b.includes('Approved') || b.includes('Approved and sent forward')) {
           if (!approverIds.includes(msg.sender_id)) {
             approverIds.push(msg.sender_id);
           }
@@ -674,7 +674,7 @@ export async function approveAndSendRequest(requestId, message = '') {
   if (approvalMsgs) {
     for (const msg of approvalMsgs) {
       const b = String(msg.body);
-      if (b.includes('[Approval System] Approved') || b.includes('Approved and sent forward')) {
+      if (b.includes('[Approval System] Approved') || b.includes('Approved') || b.includes('Approved and sent forward')) {
         if (!approverIds.includes(msg.sender_id)) {
           approverIds.push(msg.sender_id);
         }
@@ -685,7 +685,23 @@ export async function approveAndSendRequest(requestId, message = '') {
   const targetStepOrder = await resolveNextUnsatisfiedStepOrder(request, highestPermittedStep, steps, approverIds);
   await insertMessage(requestId, message || 'Approved and sent forward');
 
-  const isApproved = (targetStepOrder === null);
+  let isApproved = (targetStepOrder === null);
+
+  if (!isApproved && request.request_type === REQUEST_TYPES.BUDGET && request.budget_plan_id) {
+    try {
+      const { data: budget } = await supabaseClient
+        .from('budget_plans')
+        .select('paid_amount')
+        .eq('id', request.budget_plan_id)
+        .maybeSingle();
+      if (budget && parseFloat(budget.paid_amount) > 0) {
+        isApproved = true;
+      }
+    } catch (e) {
+      console.warn('Failed to check budget paid_amount:', e);
+    }
+  }
+
   const following = isApproved ? null : steps.find(s => s.step_order === targetStepOrder);
 
   // Clear prior-step home alerts
@@ -953,9 +969,11 @@ export async function loadRequestMessages(requestId) {
   }));
 }
 
-/** Load all visible approval requests once (no UI filters). */
 export async function fetchApprovalInboxRaw() {
-  const { data, error } = await supabaseClient
+  if (!state.user?.id) return [];
+  const teamIds = (state.teams || []).map(t => t.team_id).filter(Boolean);
+  
+  let query = supabaseClient
     .from('approval_requests')
     .select(`
       id, request_number, request_type, team_id, status, title, amount_usd,
@@ -964,7 +982,17 @@ export async function fetchApprovalInboxRaw() {
       budget_plan_id, transfer_id,
       teams:team_id ( name )
     `)
-    .eq('is_deleted', false)
+    .eq('is_deleted', false);
+
+  if (state.user?.role !== 'admin' && !state.isOkAdmin) {
+    if (teamIds.length > 0) {
+      query = query.or(`created_by.eq.${state.user.id},team_id.in.(${teamIds.join(',')})`);
+    } else {
+      query = query.eq('created_by', state.user.id);
+    }
+  }
+
+  const { data, error } = await query
     .order('updated_at', { ascending: false })
     .limit(500);
 
@@ -976,12 +1004,45 @@ export async function fetchApprovalInboxRaw() {
 export async function loadActionableApprovalNotifs() {
   const rows = await fetchApprovalInboxRaw();
   const out = [];
-  for (const row of rows) {
-    if (!(await userCanActOnRequest(row))) continue;
-    if (!isActiveStatus(row.status) || row.status === 'DRAFT') continue;
-    out.push(row);
+  const approvedIds = new Set();
+  
+  if (rows.length > 0 && state.user?.id) {
+    try {
+      const requestIds = rows.map(r => r.id);
+      const { data: approvalMsgs } = await supabaseClient
+        .from('messages')
+        .select('metadata, body')
+        .eq('sender_id', state.user.id)
+        .in('metadata->>link_id', requestIds);
+
+      if (approvalMsgs) {
+        approvalMsgs.forEach(m => {
+          const body = String(m.body || '');
+          const reqId = m.metadata?.link_id;
+          if (reqId && (
+            body.includes('[Approval System] Approved') ||
+            body.includes('[Approval System] Rejected') ||
+            body.includes('Approved and sent forward') ||
+            body.includes('Approved request')
+          )) {
+            approvedIds.add(reqId);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to batch check approval history:', err);
+    }
   }
-  return out;
+
+  await Promise.all(rows.map(async row => {
+    if (await userCanActOnRequest(row, state.user?.id, approvedIds)) {
+      if (isActiveStatus(row.status) && row.status !== 'DRAFT') {
+        out.push(row);
+      }
+    }
+  }));
+
+  return out.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 }
 
 /**

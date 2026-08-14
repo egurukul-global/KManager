@@ -123,6 +123,7 @@ export async function forceLogout() {
   const lockEl = document.getElementById('lockScreen');
   if (lockEl) lockEl.style.display = 'none';
   state.isLocked = false;
+  sessionStorage.removeItem('ok-session-locked');
 
   // Clean up all modals to prevent UI freezing
   document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
@@ -163,6 +164,7 @@ function resetInactivityTimer() {
 function lockSession() {
   if (!state.session) return;
   state.isLocked = true;
+  sessionStorage.setItem('ok-session-locked', 'true');
   initLockScreenDOM();
   const emailEl = document.getElementById('lockUserEmail');
   if (emailEl) emailEl.innerText = state.session.user?.email || '';
@@ -227,6 +229,7 @@ async function handleUnlockSession(e) {
     state.session = { user: data.user, expires_at: data.expires_at };
     
     state.isLocked = false;
+    sessionStorage.removeItem('ok-session-locked');
     const lock = document.getElementById('lockScreen');
     if (lock) lock.style.display = 'none';
     document.getElementById('lockPassword').value = '';
@@ -292,6 +295,14 @@ async function checkExistingSession() {
   const result = await secureVerify();
   if (result.authenticated && result.user) {
     state.session = { user: result.user, offline: result.offline };
+    if (sessionStorage.getItem('ok-session-locked') === 'true') {
+      state.isLocked = true;
+      initLockScreenDOM();
+      const lockEl = document.getElementById('lockScreen');
+      if (lockEl) lockEl.style.display = 'flex';
+      const emailEl = document.getElementById('lockUserEmail');
+      if (emailEl) emailEl.innerText = state.session.user?.email || '';
+    }
     await initializeApp();
   } else {
     renderLoginScreen();

@@ -402,7 +402,9 @@ async function loadInboxFromServer() {
           const reqId = m.metadata?.link_id;
           if (reqId && (
             body.includes('[Approval System] Approved') ||
+            body.includes('Approved') ||
             body.includes('[Approval System] Rejected') ||
+            body.includes('Rejected') ||
             body.includes('Approved and sent forward') ||
             body.includes('Approved request')
           )) {
@@ -421,11 +423,15 @@ async function loadInboxFromServer() {
 
   try {
     const requestIds = inboxCache.map(r => r.id);
+    const teamIds = [...new Set(inboxCache.map(r => r.team_id).filter(Boolean))];
     if (requestIds.length) {
       const { data: commentCounts, error: commentError } = await supabaseClient
         .from('messages')
         .select('metadata')
-        .eq('metadata->>link_type', 'budget');
+        .eq('recipient_type', 'team')
+        .in('recipient_id', teamIds)
+        .eq('metadata->>link_type', 'budget')
+        .in('metadata->>link_id', requestIds);
       if (!commentError && commentCounts) {
         const counts = {};
         commentCounts.forEach(c => {
@@ -994,7 +1000,7 @@ async function submitApprovalAction() {
     const reqNum = requestData?.request_number || 'Request';
     const reqTitle = requestData?.title || '';
     const commentText = comment || (finalAttachmentUrl ? 'Attachment shared' : '');
-    const formattedBody = `[Approval System] ${actionLabel} on ${reqNum} "${reqTitle}"${commentText ? `: ${commentText}` : ''}`;
+    const formattedBody = `${actionLabel} ${reqNum} "${reqTitle}"${commentText ? `: ${commentText}` : ''}`;
 
     const { approveAndSendRequest, rejectRequest, clarifyRequest, replyClarification } = await import('../utils/approvalEngine.js');
     if (action === 'approve') {
@@ -1007,8 +1013,25 @@ async function submitApprovalAction() {
         const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
         const passedCao = caoStep ? (request.current_step_order > caoStep.step_order || isFinalStatus(request.status)) : true;
         if (passedCao) {
-          const paidAmount = parseFloat(document.getElementById('approvalPaymentAmount')?.value) || 0;
+          const paidAmountInput = document.getElementById('approvalPaymentAmount');
+          const paidAmount = paidAmountInput ? parseFloat(paidAmountInput.value) : 0;
           const fundingNotes = document.getElementById('approvalPaymentNotes')?.value?.trim() || '';
+
+          if (Number.isNaN(paidAmount) || paidAmount < 0) {
+            showToast('Paid amount cannot be negative or invalid', 'error');
+            isSubmittingApproval = false;
+            setButtonLoading(confirmBtn, false);
+            return;
+          }
+
+          const budgetLimit = parseFloat(request.amount_usd || 0);
+          if (paidAmount > budgetLimit) {
+            showToast(`Paid amount ($${paidAmount.toFixed(2)}) cannot exceed the budget total amount ($${budgetLimit.toFixed(2)})`, 'error');
+            isSubmittingApproval = false;
+            setButtonLoading(confirmBtn, false);
+            return;
+          }
+
           if (paidAmount > 0 && request.budget_plan_id) {
             const { error: updateErr } = await supabaseClient
               .from('budget_plans')
@@ -1017,7 +1040,13 @@ async function submitApprovalAction() {
                 funding_notes: fundingNotes
               })
               .eq('id', request.budget_plan_id);
-            if (updateErr) console.warn('Failed to update paid_amount on budget plan:', updateErr.message);
+            if (updateErr) {
+              console.warn('Failed to update paid_amount on budget plan:', updateErr.message);
+              showToast('Database failed to save payment: ' + updateErr.message, 'error');
+              isSubmittingApproval = false;
+              setButtonLoading(confirmBtn, false);
+              return;
+            }
           }
         }
       }

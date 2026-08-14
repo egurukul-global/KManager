@@ -232,6 +232,33 @@ export function getCreateBudgetPage() {
   `;
 }
 
+async function populateCopyBudgetSelect(budgetType) {
+  const select = document.getElementById('copyBudgetSelect');
+  if (!select) return;
+  const teamId = state.currentTeam?.team_id;
+  if (!teamId) {
+    select.innerHTML = '<option value="">— Select a budget to copy —</option>';
+    return;
+  }
+  try {
+    const { data } = await supabaseClient
+      .from('budget_plans')
+      .select('id, name')
+      .eq('team_id', teamId)
+      .eq('budget_type', budgetType)
+      .eq('is_deleted', false)
+      .in('status', ['approved', 'received', 'closed'])
+      .order('created_at', { ascending: false });
+
+    select.innerHTML = '<option value="">— Select a budget to copy —</option>';
+    (data || []).forEach(b => {
+      select.innerHTML += `<option value="${b.id}">${escapeHtmlAttr(b.name)}</option>`;
+    });
+  } catch (err) {
+    console.warn('Failed to populate copyBudgetSelect:', err);
+  }
+}
+
 export async function initCreateBudgetPage() {
   if (!state.canCreateBudgets) return;
 
@@ -266,6 +293,9 @@ export async function initCreateBudgetPage() {
         showToast('Selected budget has no categories to copy', 'warning');
         return;
       }
+      const type = document.getElementById('newBudgetType')?.value || 'monthly';
+      const lines = await loadCategoryMasterLines();
+      const mandatoryLines = isMonthlyBudgetType(type) ? lines.filter(line => line.is_mandatory) : [];
       const container = document.getElementById('budgetCategoriesContainer');
       if (container) {
         container.innerHTML = '';
@@ -286,6 +316,17 @@ export async function initCreateBudgetPage() {
           });
           container.appendChild(row);
         });
+
+        mandatoryLines.forEach(line => {
+          const alreadyExists = categories.some(cat => 
+            cat.category === line.category && 
+            (cat.subcategory || '') === (line.subcategory || '')
+          );
+          if (!alreadyExists) {
+            container.appendChild(buildCreateCategoryRow(line));
+          }
+        });
+
         recalculateAllBudgetUsdFromLocal('#budgetCategoriesContainer', getCreateBudgetHeaderCurrency);
         showToast(`Copied ${categories.length} categories!`, 'success');
       }
@@ -294,26 +335,6 @@ export async function initCreateBudgetPage() {
       showToast('Failed to copy categories', 'error');
     }
   };
-
-  const teamId = state.currentTeam?.team_id;
-  if (teamId) {
-    supabaseClient
-      .from('budget_plans')
-      .select('id, name')
-      .eq('team_id', teamId)
-      .eq('is_deleted', false)
-      .in('status', ['approved', 'received', 'closed'])
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        const select = document.getElementById('copyBudgetSelect');
-        if (select) {
-          select.innerHTML = '<option value="">— Select a budget to copy —</option>';
-          (data || []).forEach(b => {
-            select.innerHTML += `<option value="${b.id}">${escapeHtmlAttr(b.name)}</option>`;
-          });
-        }
-      });
-  }
 
   budgetFormMode = 'create';
   await onBudgetTypeChange();
@@ -452,6 +473,7 @@ async function onBudgetTypeChange() {
   }
 
   await seedCreateBudgetCategoryRows();
+  await populateCopyBudgetSelect(type);
 }
 
 function populateCreateBudgetCurrencySelect() {
@@ -1231,7 +1253,16 @@ function renderBudgetSummaryTable(container, budgets) {
 function renderWizardDetailsHtml(budget) {
   if (!budget || budget.budget_type !== 'monthly') return '';
 
-  const explanation = budget.open_budgets_explanation?.text || budget.open_budgets_explanation || '';
+  let explanationText = '';
+  const rawExpl = budget.open_budgets_explanation;
+  if (Array.isArray(rawExpl)) {
+    explanationText = rawExpl.map(e => `Budget "${e.name || ''}": ${e.reason || ''} (${e.status || ''}, expected closure: ${e.closure || ''})`).join('<br>');
+  } else if (rawExpl && typeof rawExpl === 'object') {
+    explanationText = rawExpl.text || JSON.stringify(rawExpl);
+  } else {
+    explanationText = String(rawExpl || '');
+  }
+
   const cash = budget.recon_cash_balance != null ? `$${parseFloat(budget.recon_cash_balance).toFixed(2)}` : '—';
   const bank = budget.recon_bank_balance != null ? `$${parseFloat(budget.recon_bank_balance).toFixed(2)}` : '—';
   const remaining = budget.recon_remaining_funds != null ? `$${parseFloat(budget.recon_remaining_funds).toFixed(2)}` : '—';
@@ -1239,15 +1270,116 @@ function renderWizardDetailsHtml(budget) {
   const housing = budget.submission_housing_info || {};
   const housingDetails = `
     Address: ${housing.address || '—'}<br>
-    Rent: ${housing.rentAmount || '—'} | Roommates: ${housing.roommatesCount || '—'}<br>
-    Landlord: ${housing.landlordContact || '—'} | Utilities: ${housing.utilitiesDetails || '—'}
+    Rent: ${housing.rent != null ? `$${parseFloat(housing.rent).toFixed(2)}` : '—'} | Occupants: ${housing.occupants || '—'}<br>
+    Landlord/Owner: ${housing.ownerName ? `${housing.ownerName} (${housing.ownerPhone || '—'})` : '—'} | Utilities: ${(housing.utilities || []).join(', ') || 'None'}
   `;
 
-  const accomplishments = (budget.submission_accomplishments?.data || budget.submission_accomplishments || [])
-    .map(a => `<li><strong>${a.member || 'Member'}:</strong> ${a.accomplishments || '—'}</li>`).join('');
+  let accomplishmentsList = [];
+  const rawAcc = budget.submission_accomplishments?.data || budget.submission_accomplishments;
+  if (Array.isArray(rawAcc)) {
+    accomplishmentsList = rawAcc;
+  } else if (rawAcc && typeof rawAcc === 'object') {
+    const membersList = budget.submission_team_info?.members || [];
+    if (membersList.length > 0) {
+      accomplishmentsList = membersList.map(m => {
+        const memberId = m?.id || m;
+        const memberName = m?.name || m;
+        const accInfo = rawAcc[memberId] || rawAcc[memberName] || {};
+        return {
+          member: memberName,
+          accomplishments: accInfo.accomplishments || '—',
+          goals: accInfo.goals || '—'
+        };
+      });
+    } else {
+      accomplishmentsList = Object.entries(rawAcc).map(([key, val]) => ({
+        member: val?.member || key,
+        accomplishments: val?.accomplishments || '—',
+        goals: val?.goals || '—'
+      }));
+    }
+  }
+
+  const accomplishments = accomplishmentsList
+    .map(a => `<li><strong>${a.member || 'Member'}:</strong> Accomplishments: ${a.accomplishments || '—'} | Goals: ${a.goals || '—'}</li>`).join('');
 
   const members = (budget.submission_team_info?.members || [])
     .map(m => `<li>${m.name || m}</li>`).join('');
+
+  let allocationsHtml = '';
+  const allocations = budget.submission_team_info?.allocations || {};
+  const categoriesList = budget.categories || [];
+  const membersList = budget.submission_team_info?.members || [];
+  if (Object.keys(allocations).length > 0 && membersList.length > 0) {
+    const listItems = categoriesList.map(cat => {
+      const catName = cat.name || cat.category;
+      const allocs = allocations[catName] || {};
+      const splits = membersList.map(m => {
+        const amt = allocs[m.id] || 0;
+        return `${m.name || m}: $${parseFloat(amt).toFixed(2)}`;
+      }).join(', ');
+      return `<li><strong>${catName}:</strong> ${splits}</li>`;
+    }).join('');
+    allocationsHtml = `
+      <details style="background:var(--card-bg); border:1px solid var(--border); border-radius:4px; padding:10px;">
+        <summary style="cursor:pointer; font-weight:600; font-size:0.9rem;">Category Splits & Allocations</summary>
+        <div style="margin-top:8px; font-size:0.85rem; line-height:1.4;">
+          <ul style="margin:4px 0 0 16px; padding:0;">${listItems}</ul>
+        </div>
+      </details>
+    `;
+  }
+
+  let incomeHtml = '';
+  const incomeData = budget.submission_income_report?.data || {};
+  if (Object.keys(incomeData).length > 0 && membersList.length > 0) {
+    const listItems = membersList.map(m => {
+      const data = incomeData[m.id] || {};
+      return `<li><strong>${m.name || m}:</strong> Sevas: $${parseFloat(data.sevas || 0).toFixed(2)} | Business: $${parseFloat(data.business || 0).toFixed(2)} | Donations: $${parseFloat(data.donations || 0).toFixed(2)}</li>`;
+    }).join('');
+    incomeHtml = `
+      <details style="background:var(--card-bg); border:1px solid var(--border); border-radius:4px; padding:10px;">
+        <summary style="cursor:pointer; font-weight:600; font-size:0.9rem;">Income Report</summary>
+        <div style="margin-top:8px; font-size:0.85rem; line-height:1.4;">
+          <ul style="margin:4px 0 0 16px; padding:0;">${listItems}</ul>
+        </div>
+      </details>
+    `;
+  }
+
+  let socialMediaHtml = '';
+  const smData = budget.submission_social_media?.data || {};
+  if (Object.keys(smData).length > 0 && membersList.length > 0) {
+    const listItems = membersList.map(m => {
+      const data = smData[m.id] || {};
+      return `<li><strong>${m.name || m}:</strong> Yoga Videos: ${data.yoga || 0} | Other Posts: ${data.other || 0} | Handles: ${data.handles || '—'}</li>`;
+    }).join('');
+    socialMediaHtml = `
+      <details style="background:var(--card-bg); border:1px solid var(--border); border-radius:4px; padding:10px;">
+        <summary style="cursor:pointer; font-weight:600; font-size:0.9rem;">Social Media Tracking</summary>
+        <div style="margin-top:8px; font-size:0.85rem; line-height:1.4;">
+          <ul style="margin:4px 0 0 16px; padding:0;">${listItems}</ul>
+        </div>
+      </details>
+    `;
+  }
+
+  let causingHtml = '';
+  const causingData = (budget.submission_coursing?.data || budget.submission_causing?.data || {});
+  if (Object.keys(causingData).length > 0 && membersList.length > 0) {
+    const listItems = membersList.map(m => {
+      const data = causingData[m.id] || {};
+      return `<li><strong>${m.name || m}:</strong> Adheenavasis: ${data.adheenavasis || 0} | PSS: ${data.pss || 0} | SJP: ${data.sjp || 0}</li>`;
+    }).join('');
+    causingHtml = `
+      <details style="background:var(--card-bg); border:1px solid var(--border); border-radius:4px; padding:10px;">
+        <summary style="cursor:pointer; font-weight:600; font-size:0.9rem;">Causing Outreach</summary>
+        <div style="margin-top:8px; font-size:0.85rem; line-height:1.4;">
+          <ul style="margin:4px 0 0 16px; padding:0;">${listItems}</ul>
+        </div>
+      </details>
+    `;
+  }
 
   return `
     <div class="wizard-details-section" style="margin-top:20px; border-top:1px dashed var(--border); padding-top:16px;">
@@ -1259,7 +1391,7 @@ function renderWizardDetailsHtml(budget) {
             <div><strong>Cash Balance:</strong> ${cash}</div>
             <div><strong>Bank Balance:</strong> ${bank}</div>
             <div><strong>Remaining Funds:</strong> ${remaining}</div>
-            ${explanation ? `<div style="margin-top:6px;"><strong>Prior Unresolved Budgets Explanation:</strong><br>${explanation}</div>` : ''}
+            ${explanationText ? `<div style="margin-top:6px;"><strong>Prior Unresolved Budgets Explanation:</strong><br>${explanationText}</div>` : ''}
           </div>
         </details>
         <details style="background:var(--card-bg); border:1px solid var(--border); border-radius:4px; padding:10px;">
@@ -1271,6 +1403,7 @@ function renderWizardDetailsHtml(budget) {
             <div style="padding-left:6px; margin-top:4px; line-height:1.4;">${housingDetails}</div>
           </div>
         </details>
+        ${allocationsHtml}
         ${accomplishments ? `
         <details style="background:var(--card-bg); border:1px solid var(--border); border-radius:4px; padding:10px;">
           <summary style="cursor:pointer; font-weight:600; font-size:0.9rem;">Accomplishments & Goals</summary>
@@ -1278,6 +1411,9 @@ function renderWizardDetailsHtml(budget) {
             <ul style="margin:4px 0 0 16px; padding:0;">${accomplishments}</ul>
           </div>
         </details>` : ''}
+        ${incomeHtml}
+        ${socialMediaHtml}
+        ${causingHtml}
       </div>
     </div>
   `;
@@ -1517,29 +1653,59 @@ function getWizardStepsForBudget(budget) {
 
 async function syncWizardDataToDB() {
   if (!wizardBudget) return;
+  const updatedBudget = {
+    ...wizardBudget,
+    open_budgets_explanation: wizardData.openBudgetsExplanation,
+    recon_cash_balance: wizardData.cashBalance,
+    recon_bank_balance: wizardData.bankBalance,
+    recon_remaining_funds: wizardData.remainingFunds,
+    submission_team_info: { 
+      members: wizardMembers, 
+      allocations: wizardData.allocations,
+      expensesClosed: wizardData.expensesClosed,
+      reconciliationConfirmed: wizardData.reconciliationConfirmed
+    },
+    submission_housing_info: wizardData.housingInfo,
+    submission_accomplishments: { data: wizardData.accomplishmentsData },
+    submission_income_report: { data: wizardData.incomeData },
+    submission_social_media: { data: wizardData.socialMediaData },
+    submission_coursing: { data: wizardData.causingData }
+  };
+
+  Object.assign(wizardBudget, updatedBudget);
+
   try {
     await supabaseClient
       .from('budget_plans')
       .update({
-        open_budgets_explanation: wizardData.openBudgetsExplanation,
-        recon_cash_balance: wizardData.cashBalance,
-        recon_bank_balance: wizardData.bankBalance,
-        recon_remaining_funds: wizardData.remainingFunds,
-        submission_team_info: { 
-          members: wizardMembers, 
-          allocations: wizardData.allocations,
-          expensesClosed: wizardData.expensesClosed,
-          reconciliationConfirmed: wizardData.reconciliationConfirmed
-        },
-        submission_housing_info: wizardData.housingInfo,
-        submission_accomplishments: { data: wizardData.accomplishmentsData },
-        submission_income_report: { data: wizardData.incomeData },
-        submission_social_media: { data: wizardData.socialMediaData },
-        submission_coursing: { data: wizardData.causingData }
+        open_budgets_explanation: updatedBudget.open_budgets_explanation,
+        recon_cash_balance: updatedBudget.recon_cash_balance,
+        recon_bank_balance: updatedBudget.recon_bank_balance,
+        recon_remaining_funds: updatedBudget.recon_remaining_funds,
+        submission_team_info: updatedBudget.submission_team_info,
+        submission_housing_info: updatedBudget.submission_housing_info,
+        submission_accomplishments: updatedBudget.submission_accomplishments,
+        submission_income_report: updatedBudget.submission_income_report,
+        submission_social_media: updatedBudget.submission_social_media,
+        submission_coursing: updatedBudget.submission_coursing
       })
       .eq('id', wizardBudget.id);
   } catch (err) {
-    console.warn('Autosave sync failed:', err);
+    console.warn('Autosave sync failed to Supabase:', err);
+  }
+
+  try {
+    if (typeof localPut === 'function') {
+      await localPut('budget_plans', updatedBudget);
+    }
+    if (state.budgetPlans) {
+      const idx = state.budgetPlans.findIndex(b => b.id === wizardBudget.id);
+      if (idx !== -1) {
+        state.budgetPlans[idx] = normalizeBudgetPlan(updatedBudget);
+      }
+    }
+  } catch (err) {
+    console.warn('Autosave local write failed:', err);
   }
 }
 
@@ -3132,6 +3298,7 @@ window.saveEditedBudget = async function() {
     total_amount: totalAmount,
     updated_at: new Date().toISOString()
   };
+  delete updateData.teams;
 
   const btn = document.getElementById('saveEditBudgetBtn') || document.querySelector('#editBudgetModal button[type="submit"]');
   if (btn) {

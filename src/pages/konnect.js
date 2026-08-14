@@ -5,6 +5,7 @@ import { safeAttachmentUrl } from '../utils/urlValidator.js';
 import { renderOkShell } from './ok-shell.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { uploadReceipt, resolveReceiptViewUrl } from '../utils/upload.js';
+import { navigateOk } from '../utils/okAccess.js';
 
 let activeThread = null; // { type: 'user'|'team'|'group', id: string, name: string }
 let conversationsList = [];
@@ -321,6 +322,19 @@ export function initKonnectPage() {
     const badge = document.getElementById('selfDestructActiveBadge');
     if (container) container.style.display = enabled ? 'flex' : 'none';
     if (badge) badge.style.display = enabled ? 'block' : 'none';
+  };
+  window.konnectOpenRequest = (requestId, linkType) => {
+    sessionStorage.setItem('ok_open_page', 'approval-portal');
+    sessionStorage.setItem('ok_open_request_id', requestId);
+    const raw = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
+    const lower = raw.toLowerCase();
+    if (lower === '/finance' || lower.startsWith('/finance/')) {
+      if (typeof window.showPage === 'function') {
+        window.showPage('approval-portal');
+      }
+    } else {
+      navigateOk('/finance');
+    }
   };
 
   activeThread = null;
@@ -1091,8 +1105,13 @@ async function loadMessages() {
           </div>
         `;
       } else {
+        let textBody = escapeHtml(msg.body);
+        if (msg.metadata?.link_type && msg.metadata?.link_id) {
+          textBody = textBody.replace(/(OPT-\d+)/g, `<span onclick="event.stopPropagation(); window.konnectOpenRequest('${msg.metadata.link_id}', '${msg.metadata.link_type}')" style="color:var(--primary); cursor:pointer; text-decoration:underline; font-weight:bold;">$1</span>`);
+          textBody = textBody.replace(/"([^"]+)"/g, `<span onclick="event.stopPropagation(); window.konnectOpenRequest('${msg.metadata.link_id}', '${msg.metadata.link_type}')" style="color:var(--primary); cursor:pointer; text-decoration:underline; font-weight:bold;">"$1"</span>`);
+        }
         contentBody = `
-          <span style="white-space:normal; word-break:break-word; font-size:0.95em;">${escapeHtml(msg.body)}</span>
+          <span style="white-space:normal; word-break:break-word; font-size:0.95em;">${textBody}</span>
           ${attachHtml}
         `;
 

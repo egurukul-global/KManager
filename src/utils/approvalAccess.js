@@ -38,37 +38,39 @@ export async function loadUserRoleAssignments(userId = state.user?.id) {
   return userRoleAssignments;
 }
 
-export async function resolveFlowSteps(requestType, teamId = null, userId = null) {
+export function resolveFlowSteps(requestType, teamId = null, userId = null) {
   const cacheKey = `${requestType}:${teamId}:${userId}`;
   if (flowStepsCache.has(cacheKey)) {
     return flowStepsCache.get(cacheKey);
   }
 
-  const { data: flows, error } = await supabaseClient
-    .from('approval_flow_definitions')
-    .select(`
-      id, request_type, team_id, user_id, priority,
-      approval_flow_steps ( step_order, role_code, is_final )
-    `)
-    .eq('request_type', requestType)
-    .eq('is_active', true)
-    .order('priority', { ascending: false });
+  const promise = (async () => {
+    const { data: flows, error } = await supabaseClient
+      .from('approval_flow_definitions')
+      .select(`
+        id, request_type, team_id, user_id, priority,
+        approval_flow_steps ( step_order, role_code, is_final )
+      `)
+      .eq('request_type', requestType)
+      .eq('is_active', true)
+      .order('priority', { ascending: false });
 
-  if (error) throw error;
+    if (error) throw error;
 
-  const list = flows || [];
-  const match =
-    list.find(f => f.team_id === teamId && f.user_id === userId) ||
-    list.find(f => f.team_id === teamId && !f.user_id) ||
-    list.find(f => !f.team_id && f.user_id === userId) ||
-    list.find(f => !f.team_id && !f.user_id);
+    const list = flows || [];
+    const match =
+      list.find(f => f.team_id === teamId && f.user_id === userId) ||
+      list.find(f => f.team_id === teamId && !f.user_id) ||
+      list.find(f => !f.team_id && f.user_id === userId) ||
+      list.find(f => !f.team_id && !f.user_id);
 
-  const result = match
-    ? (match.approval_flow_steps || []).sort((a, b) => a.step_order - b.step_order)
-    : [];
+    return match
+      ? (match.approval_flow_steps || []).sort((a, b) => a.step_order - b.step_order)
+      : [];
+  })();
 
-  flowStepsCache.set(cacheKey, result);
-  return result;
+  flowStepsCache.set(cacheKey, promise);
+  return promise;
 }
 
 export async function hasPassedCaoApproval(request) {
