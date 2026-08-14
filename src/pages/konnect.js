@@ -323,7 +323,11 @@ export function initKonnectPage() {
     if (container) container.style.display = enabled ? 'flex' : 'none';
     if (badge) badge.style.display = enabled ? 'block' : 'none';
   };
-  window.konnectOpenRequest = (requestId, linkType) => {
+  window.konnectOpenRequest = (requestId, linkType, btn) => {
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin" style="margin-right: 4px;"></i> Opening...`;
+    }
     sessionStorage.setItem('ok_open_page', 'approval-portal');
     sessionStorage.setItem('ok_open_request_id', requestId);
     const raw = (window.location.pathname || '/').replace(/\/+$/, '') || '/';
@@ -1109,7 +1113,7 @@ async function loadMessages() {
         if (msg.metadata?.link_type && msg.metadata?.link_id) {
           linkBadgeHtml = `
             <div style="margin-top: 4px;">
-              <button type="button" onclick="event.stopPropagation(); window.konnectOpenRequest('${msg.metadata.link_id}', '${msg.metadata.link_type}')" class="primary" style="padding: 2px 6px; font-size: 0.75em; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; border: none; cursor: pointer; background: var(--primary); color: white;">
+              <button type="button" onclick="event.stopPropagation(); window.konnectOpenRequest('${msg.metadata.link_id}', '${msg.metadata.link_type}', this)" class="primary" style="padding: 2px 6px; font-size: 0.75em; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; border: none; cursor: pointer; background: var(--primary); color: white;">
                 🔗 Open Request
               </button>
             </div>
