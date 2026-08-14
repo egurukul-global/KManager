@@ -1105,13 +1105,19 @@ async function loadMessages() {
           </div>
         `;
       } else {
-        let textBody = escapeHtml(msg.body);
+        let linkBadgeHtml = '';
         if (msg.metadata?.link_type && msg.metadata?.link_id) {
-          textBody = textBody.replace(/(OPT-\d+)/g, `<span onclick="event.stopPropagation(); window.konnectOpenRequest('${msg.metadata.link_id}', '${msg.metadata.link_type}')" style="color:var(--primary); cursor:pointer; text-decoration:underline; font-weight:bold;">$1</span>`);
-          textBody = textBody.replace(/"([^"]+)"/g, `<span onclick="event.stopPropagation(); window.konnectOpenRequest('${msg.metadata.link_id}', '${msg.metadata.link_type}')" style="color:var(--primary); cursor:pointer; text-decoration:underline; font-weight:bold;">"$1"</span>`);
+          linkBadgeHtml = `
+            <div style="margin-top: 4px;">
+              <button type="button" onclick="event.stopPropagation(); window.konnectOpenRequest('${msg.metadata.link_id}', '${msg.metadata.link_type}')" class="primary" style="padding: 2px 6px; font-size: 0.75em; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; border: none; cursor: pointer; background: var(--primary); color: white;">
+                🔗 Open Request
+              </button>
+            </div>
+          `;
         }
         contentBody = `
-          <span style="white-space:normal; word-break:break-word; font-size:0.95em;">${textBody}</span>
+          <span style="white-space:normal; word-break:break-word; font-size:0.95em;">${escapeHtml(msg.body)}</span>
+          ${linkBadgeHtml}
           ${attachHtml}
         `;
 
