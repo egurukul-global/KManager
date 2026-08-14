@@ -3222,7 +3222,9 @@ body:not(.dark) .modal-content button.primary {
   color: #ffffff !important;
 }
 
-body.dark .modal-content {
+body.dark .modal-content,
+.dark .modal-content,
+.ok-shell-theme.dark .modal-content {
   background: rgba(30, 0, 5, 0.95) !important; /* Monastic Dark Red */
   backdrop-filter: blur(25px) !important;
   -webkit-backdrop-filter: blur(25px) !important;
@@ -3234,22 +3236,46 @@ body.dark .modal-content h1,
 body.dark .modal-content h2,
 body.dark .modal-content h3,
 body.dark .modal-content h4,
-body.dark .modal-content label {
+body.dark .modal-content label,
+.dark .modal-content h1,
+.dark .modal-content h2,
+.dark .modal-content h3,
+.dark .modal-content h4,
+.dark .modal-content label,
+.dark .modal-content p,
+.dark .modal-content span,
+.dark .modal-content div,
+.dark .modal-content td,
+.dark .modal-content th,
+.dark .modal-content summary {
   color: #ffffff !important;
 }
-body.dark .modal-content input,
-body.dark .modal-content select,
-body.dark .modal-content textarea {
-  background: rgba(25, 0, 5, 0.6) !important;
+body.dark select,
+body.dark input,
+body.dark textarea,
+.dark select,
+.dark input,
+.dark textarea,
+.dark .modal-content select,
+.dark .modal-content input,
+.dark .modal-content textarea {
+  background: rgba(25, 0, 5, 0.8) !important;
   border: 1px solid rgba(212, 175, 55, 0.3) !important;
   color: #ffffff !important;
 }
-body.dark .modal-content button.secondary {
+body.dark option,
+.dark option {
+  background: #1a0003 !important;
+  color: #ffffff !important;
+}
+body.dark .modal-content button.secondary,
+.dark .modal-content button.secondary {
   background: rgba(255, 255, 255, 0.08) !important;
   border: 1px solid rgba(212, 175, 55, 0.25) !important;
   color: #ffffff !important;
 }
-body.dark .modal-content button.primary {
+body.dark .modal-content button.primary,
+.dark .modal-content button.primary {
   background: var(--brand-gold, #D4AF37) !important;
   color: #1a0003 !important;
 }

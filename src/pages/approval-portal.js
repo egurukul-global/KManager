@@ -153,7 +153,7 @@ export function getApprovalPortalPage() {
 
             <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
               <label style="font-weight: 600; font-size: 0.85rem; color: var(--text-secondary);">Message Visibility</label>
-              <div class="visibility-checkbox-row" style="display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 10px; background: #f9fafb; border: 1px solid var(--border); border-radius: 4px;">
+              <div class="visibility-checkbox-row" style="display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px;">
                 <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="vis-role" value="OPL" checked> OPL</label>
                 <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="vis-role" value="OPH" checked> OPH</label>
                 <label style="font-weight: normal; font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer;"><input type="checkbox" class="vis-role" value="FIN" checked> FIN</label>
@@ -169,7 +169,7 @@ export function getApprovalPortalPage() {
 
             <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
               <label style="font-weight: 600; font-size: 0.85rem; color: var(--text-secondary);">Attachments (Optional)</label>
-              <div class="attachment-upload-zone" onclick="document.getElementById('approvalActionAttachmentFile').click()" style="border: 1px dashed var(--border); border-radius: 4px; padding: 14px; text-align: center; cursor: pointer; color: var(--text-secondary); background: #fafafa; font-size: 0.85rem;">
+              <div class="attachment-upload-zone" onclick="document.getElementById('approvalActionAttachmentFile').click()" style="border: 1px dashed var(--border); border-radius: 4px; padding: 14px; text-align: center; cursor: pointer; color: var(--text-secondary); background: var(--bg-secondary); font-size: 0.85rem;">
                 <span id="approvalActionAttachmentLabel">📎 Click to upload receipt or screen print</span>
                 <input type="file" id="approvalActionAttachmentFile" onchange="window.onApprovalAttachmentChange(this)" style="display: none;" accept="image/*,application/pdf">
               </div>
