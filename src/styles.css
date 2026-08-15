@@ -3225,7 +3225,7 @@ body:not(.dark) .modal-content button.primary {
 body.dark .modal-content,
 .dark .modal-content,
 .ok-shell-theme.dark .modal-content {
-  background: rgba(30, 0, 5, 0.95) !important; /* Monastic Dark Red */
+  background: #5a000d !important; /* Burgundy */
   backdrop-filter: blur(25px) !important;
   -webkit-backdrop-filter: blur(25px) !important;
   border: 1px solid rgba(212, 175, 55, 0.3) !important;
