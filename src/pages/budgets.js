@@ -306,14 +306,15 @@ export async function initCreateBudgetPage() {
           if (!cat.category) row.dataset.custom = 'true';
           else row.dataset.template = 'true';
           row.innerHTML = buildCategoryRowHtml({
-            displayName,
-            category: cat.category || '',
-            subcategory: cat.subcategory || '',
-            localVal: formatLocalInput(cat.localAmount ?? cat.local_amount ?? ''),
-            usdVal: Number(cat.usdAmount ?? cat.usd_amount ?? 0).toFixed(2),
-            isTemplate: !!cat.category,
-            isCustom: !cat.category
-          });
+              displayName,
+              category: cat.category || '',
+              subcategory: cat.subcategory || '',
+              localVal: formatLocalInput(cat.localAmount ?? cat.local_amount ?? ''),
+              usdVal: Number(cat.usdAmount ?? cat.usd_amount ?? 0).toFixed(2),
+              isTemplate: !!cat.category,
+              isCustom: !cat.category,
+              items: cat.items || []
+            });
           container.appendChild(row);
         });
 
@@ -572,7 +573,88 @@ function getActiveHeaderCurrency() {
     : getCreateBudgetHeaderCurrency();
 }
 
-function buildCategoryRowHtml({ displayName, category, subcategory, localVal = '0', usdVal = '0', isTemplate = false, isCustom = false }) {
+
+window.buildLineItemHtml = function(item = {}) {
+  const name = item.name || '';
+  const measure = item.measure || 'unit';
+  const qty = item.quantity || '';
+  const rate = item.rate || '';
+  const total = item.total || '0.00';
+  const comment = item.comment || '';
+
+  const measures = ['box', 'unit', 'kg', 'grams', 'oz', 'lb', 'bunch', 'pkt', 'ltrs', 'fl oz', 'ml'];
+  const measureOptions = measures.map(m => `<option value="${m}" ${m === measure ? 'selected' : ''}>${m}</option>`).join('');
+
+  return `
+    <div class="line-item-row" style="display: flex; gap: 10px; align-items: center; background: var(--bg-secondary, rgba(0,0,0,0.05)); padding: 8px; border-radius: 4px;">
+      <input type="text" class="li-name" placeholder="Item name" value="${escapeHtmlAttr(name)}" style="flex: 2; padding: 5px; height: 32px;">
+      <select class="li-measure" style="flex: 1; padding: 5px; height: 32px;">
+        ${measureOptions}
+      </select>
+      <input type="number" class="li-qty" placeholder="Qty" value="${escapeHtmlAttr(qty)}" step="0.01" min="0" style="flex: 1; padding: 5px; height: 32px;" oninput="window.onLineItemChange(this)">
+      <input type="number" class="li-rate" placeholder="Rate" value="${escapeHtmlAttr(rate)}" step="0.01" min="0" style="flex: 1; padding: 5px; height: 32px;" oninput="window.onLineItemChange(this)">
+      <input type="number" class="li-total" placeholder="Total" value="${escapeHtmlAttr(total)}" readonly style="flex: 1; padding: 5px; background: var(--bg-secondary, #f3f4f6); color: var(--text-secondary, #4b5563); border: 1px solid var(--border); height: 32px;">
+      <input type="text" class="li-comment" placeholder="Comment" value="${escapeHtmlAttr(comment)}" style="flex: 2; padding: 5px; height: 32px;">
+      ${btnIconDelete('window.removeLineItem(this)', 'Remove')}
+    </div>
+  `;
+};
+
+window.toggleLineItems = function(btn) {
+  const container = btn.closest('.category-row').querySelector('.line-items-container');
+  if (container.style.display === 'none') {
+    container.style.display = 'block';
+    btn.innerHTML = '&#9660;';
+  } else {
+    container.style.display = 'none';
+    btn.innerHTML = '&#9654;';
+  }
+};
+
+window.addLineItem = function(btn) {
+  const list = btn.closest('.line-items-container').querySelector('.line-items-list');
+  const div = document.createElement('div');
+  div.innerHTML = window.buildLineItemHtml().trim();
+  list.appendChild(div.firstChild);
+  
+  const catRow = btn.closest('.category-row');
+  window.recalculateCategoryTotalFromItems(catRow);
+};
+
+window.removeLineItem = function(btn) {
+  const catRow = btn.closest('.category-row');
+  btn.closest('.line-item-row').remove();
+  window.recalculateCategoryTotalFromItems(catRow);
+};
+
+window.onLineItemChange = function(input) {
+  const row = input.closest('.line-item-row');
+  const qty = parseFloat(row.querySelector('.li-qty').value) || 0;
+  const rate = parseFloat(row.querySelector('.li-rate').value) || 0;
+  const totalInput = row.querySelector('.li-total');
+  totalInput.value = (qty * rate).toFixed(2);
+
+  const catRow = input.closest('.category-row');
+  window.recalculateCategoryTotalFromItems(catRow);
+};
+
+window.recalculateCategoryTotalFromItems = function(catRow) {
+  const itemTotals = Array.from(catRow.querySelectorAll('.li-total')).map(el => parseFloat(el.value) || 0);
+  const hasItems = catRow.querySelectorAll('.line-item-row').length > 0;
+  const localInput = catRow.querySelector('.budget-cat-local');
+  
+  if (hasItems) {
+    const sum = itemTotals.reduce((a, b) => a + b, 0);
+    localInput.value = sum.toFixed(2);
+    localInput.readOnly = true;
+  } else {
+    localInput.readOnly = false;
+  }
+  
+  window.onBudgetLocalChange(localInput);
+};
+
+function buildCategoryRowHtml({ displayName, category, subcategory, localVal = '0', usdVal = '0', isTemplate = false, isCustom = false, items = [] }) {
   const remove = isTemplate
     ? '<div class="budget-line-card-actions"></div>'
     : `<div class="budget-line-card-actions">${btnIconDelete('window.removeBudgetCategoryRow(this)', 'Remove')}</div>`;
@@ -584,15 +666,38 @@ function buildCategoryRowHtml({ displayName, category, subcategory, localVal = '
        <input type="hidden" class="budget-cat-name-value" value="${escapeHtmlAttr(displayName)}">
        <div class="budget-line-card-title">${escapeHtmlAttr(displayName)}</div>`;
 
+  let itemsHtml = '';
+  if (items && items.length > 0) {
+    items.forEach(item => {
+      itemsHtml += window.buildLineItemHtml(item);
+    });
+  }
+
+  const hasItems = items && items.length > 0;
+  const localReadonly = hasItems ? 'readonly' : '';
+
   return `
-    ${title}
-    <div class="field-labeled"><span>Local Amount</span>
-      <input type="number" class="budget-cat-local" step="0.01" value="${escapeHtmlAttr(localVal)}" min="0" oninput="window.onBudgetLocalChange(this)">
+    <div class="category-main-row">
+      <div class="category-title-wrap">
+        <button type="button" class="toggle-items-btn" onclick="window.toggleLineItems(this)" style="background: none; border: none; color: inherit; cursor: pointer; font-size: 1.2em; padding: 0 5px;">${hasItems ? '&#9660;' : '&#9654;'}</button>
+        <div style="flex: 1;">
+          ${title}
+        </div>
+      </div>
+      <div class="field-labeled" style="margin-right: 10px;"><span>Local Amount</span>
+        <input type="number" class="budget-cat-local" step="0.01" value="${escapeHtmlAttr(localVal)}" min="0" oninput="window.onBudgetLocalChange(this)" ${localReadonly}>
+      </div>
+      <div class="field-labeled" style="margin-right: 10px;"><span>USD Amount</span>
+        <input type="number" class="budget-cat-usd" step="0.01" value="${escapeHtmlAttr(usdVal)}" min="0" readonly>
+      </div>
+      ${remove}
     </div>
-    <div class="field-labeled"><span>USD Amount</span>
-      <input type="number" class="budget-cat-usd" step="0.01" value="${escapeHtmlAttr(usdVal)}" min="0" readonly>
+    <div class="line-items-container" style="display: ${hasItems ? 'block' : 'none'}; padding-left: 30px; margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(0,0,0,0.1);">
+      <div class="line-items-list" style="display: flex; flex-direction: column; gap: 8px;">
+        ${itemsHtml}
+      </div>
+      <button type="button" class="add-line-item-btn secondary" onclick="window.addLineItem(this)" style="margin-top: 10px; font-size: 0.85em; padding: 5px 10px;">+ Add Line Item</button>
     </div>
-    ${remove}
   `;
 }
 
@@ -833,6 +938,18 @@ window.createBudget = async function(e) {
       ? localRaw
       : (headerCurrency === 'USD' ? usdAmount : usdAmount * rate);
 
+    const items = [];
+    row.querySelectorAll('.line-item-row').forEach(li => {
+      items.push({
+        name: li.querySelector('.li-name')?.value?.trim() || '',
+        measure: li.querySelector('.li-measure')?.value || 'unit',
+        quantity: parseFloat(li.querySelector('.li-qty')?.value) || 0,
+        rate: parseFloat(li.querySelector('.li-rate')?.value) || 0,
+        total: parseFloat(li.querySelector('.li-total')?.value) || 0,
+        comment: li.querySelector('.li-comment')?.value?.trim() || ''
+      });
+    });
+
     if (catCategory) {
       categories.push({
         category: catCategory,
@@ -841,7 +958,8 @@ window.createBudget = async function(e) {
         usdAmount,
         localAmount,
         currency: headerCurrency,
-        rate
+        rate,
+        items
       });
     }
   });
@@ -3143,7 +3261,8 @@ window.addEditCategoryRow = function(categoryData = null, options = {}) {
     localVal: catLocal || '0',
     usdVal: Number(catUsd || 0).toFixed(2),
     isTemplate,
-    isCustom
+    isCustom,
+    items: categoryData ? categoryData.items : []
   });
 
   container.appendChild(row);
@@ -3269,6 +3388,18 @@ window.saveEditedBudget = async function() {
       const localRaw = parseFloat(row.querySelector('.budget-cat-local')?.value);
       const localAmount = Number.isFinite(localRaw) ? localRaw : 0;
 
+      const items = [];
+      row.querySelectorAll('.line-item-row').forEach(li => {
+        items.push({
+          name: li.querySelector('.li-name')?.value?.trim() || '',
+          measure: li.querySelector('.li-measure')?.value || 'unit',
+          quantity: parseFloat(li.querySelector('.li-qty')?.value) || 0,
+          rate: parseFloat(li.querySelector('.li-rate')?.value) || 0,
+          total: parseFloat(li.querySelector('.li-total')?.value) || 0,
+          comment: li.querySelector('.li-comment')?.value?.trim() || ''
+        });
+      });
+
       if (catCategory) {
         categories.push({
           category: catCategory,
@@ -3277,7 +3408,8 @@ window.saveEditedBudget = async function() {
           usdAmount,
           localAmount,
           currency: headerCurrency,
-          rate
+          rate,
+          items
         });
       }
     });

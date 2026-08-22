@@ -238,15 +238,21 @@
   }
 
   .budget-line-cards > .budget-line-card.category-row {
-    display: grid;
-    grid-template-columns: minmax(12rem, 2fr) minmax(7rem, 1fr) minmax(7rem, 1fr) 2.5rem;
-    gap: 10px;
-    align-items: center;
+    display: flex;
+    flex-direction: column;
     border: none;
     border-bottom: 1px solid var(--border);
     border-radius: 0;
     background: #fff;
     padding: 8px 12px;
+  }
+
+  .budget-line-cards > .budget-line-card.category-row > .category-main-row {
+    display: grid !important;
+    grid-template-columns: minmax(12rem, 2fr) minmax(7rem, 1fr) minmax(7rem, 1fr) 2.5rem;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
   }
 
   .budget-line-cards > .budget-line-card .budget-line-card-title,

@@ -28,7 +28,7 @@ export default async function handler(req, res) {
     }
 
     const { url, key } = getSupabaseConfig();
-    const supabase = createClient(url, key);
+    console.log('URL IS:', url, 'KEY IS:', key); const supabase = createClient(url, key);
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -71,3 +71,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
+

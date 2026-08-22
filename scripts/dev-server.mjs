@@ -1,3 +1,5 @@
+import WebSocket from 'ws';
+global.WebSocket = WebSocket;
 import http from 'http';
 import url from 'url';
 
@@ -102,3 +104,4 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`🚀 Local dev API server running at http://localhost:${PORT}`);
 });
+
