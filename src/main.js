@@ -154,12 +154,26 @@ window.addEventListener('auth-expired', () => {
 
 let inactivityTimeout;
 const INACTIVITY_LIMIT = 30 * 60 * 1000; // 30 minutes
+let lastActivityTime = Date.now();
 
 function resetInactivityTimer() {
   if (state.isLocked || !state.session) return;
+
+  if (Date.now() - lastActivityTime > INACTIVITY_LIMIT) {
+    lockSession();
+    return;
+  }
+
+  lastActivityTime = Date.now();
   clearTimeout(inactivityTimeout);
   inactivityTimeout = setTimeout(lockSession, INACTIVITY_LIMIT);
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    resetInactivityTimer();
+  }
+});
 
 function lockSession() {
   if (!state.session) return;
