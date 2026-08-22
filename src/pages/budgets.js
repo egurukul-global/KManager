@@ -586,14 +586,14 @@ window.buildLineItemHtml = function(item = {}) {
   const measureOptions = measures.map(m => `<option value="${m}" ${m === measure ? 'selected' : ''}>${m}</option>`).join('');
 
   return `
-    <div class="line-item-row" style="display: flex; gap: 10px; align-items: center; background: var(--bg-secondary, rgba(0,0,0,0.05)); padding: 8px; border-radius: 4px;">
+    <div class="line-item-row" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--bg-secondary, rgba(0,0,0,0.05)); padding: 8px; border-radius: 4px;">
       <input type="text" class="li-name" placeholder="Item name" value="${escapeHtmlAttr(name)}" style="flex: 2; padding: 5px; height: 32px;">
-      <select class="li-measure" style="flex: 1; padding: 5px; height: 32px;">
+      <select class="li-measure" style="flex: 1; min-width: 80px; padding: 5px; height: 32px;">
         ${measureOptions}
       </select>
-      <input type="number" class="li-qty" placeholder="Qty" value="${escapeHtmlAttr(qty)}" step="0.01" min="0" style="flex: 1; padding: 5px; height: 32px;" oninput="window.onLineItemChange(this)">
-      <input type="number" class="li-rate" placeholder="Rate" value="${escapeHtmlAttr(rate)}" step="0.01" min="0" style="flex: 1; padding: 5px; height: 32px;" oninput="window.onLineItemChange(this)">
-      <input type="number" class="li-total" placeholder="Total" value="${escapeHtmlAttr(total)}" readonly style="flex: 1; padding: 5px; background: var(--bg-secondary, #f3f4f6); color: var(--text-secondary, #4b5563); border: 1px solid var(--border); height: 32px;">
+      <input type="number" class="li-qty" placeholder="Qty" value="${escapeHtmlAttr(qty)}" step="0.01" min="0" style="flex: 1; min-width: 80px; padding: 5px; height: 32px;" oninput="window.onLineItemChange(this)">
+      <input type="number" class="li-rate" placeholder="Rate" value="${escapeHtmlAttr(rate)}" step="0.01" min="0" style="flex: 1; min-width: 80px; padding: 5px; height: 32px;" oninput="window.onLineItemChange(this)">
+      <input type="number" class="li-total" placeholder="Total" value="${escapeHtmlAttr(total)}" readonly style="flex: 1; min-width: 80px; padding: 5px; background: var(--bg-secondary, #f3f4f6); color: var(--text-secondary, #4b5563); border: 1px solid var(--border); height: 32px;">
       <input type="text" class="li-comment" placeholder="Comment" value="${escapeHtmlAttr(comment)}" style="flex: 2; padding: 5px; height: 32px;">
       ${btnIconDelete('window.removeLineItem(this)', 'Remove')}
     </div>
@@ -3532,3 +3532,25 @@ window.addEventListener('click', function(event) {
     window.closeEditBudgetModal();
   }
 });
+window.toggleReviewLineItems = function(btn) {
+  const article = btn.closest('.data-card');
+  if (article) {
+    const container = article.querySelector('.review-line-items');
+    if (container) {
+      const isHidden = container.style.display === 'none';
+      container.style.display = isHidden ? 'block' : 'none';
+      btn.innerHTML = isHidden ? '&#9660;' : '&#9654;';
+    }
+    return;
+  }
+  
+  const tr = btn.closest('tr');
+  if (tr) {
+    const nextTr = tr.nextElementSibling;
+    if (nextTr && nextTr.classList.contains('review-items-row')) {
+      const isHidden = nextTr.style.display === 'none';
+      nextTr.style.display = isHidden ? 'table-row' : 'none';
+      btn.innerHTML = isHidden ? '&#9660;' : '&#9654;';
+    }
+  }
+};

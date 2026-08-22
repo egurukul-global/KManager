@@ -154,17 +154,19 @@ window.addEventListener('auth-expired', () => {
 
 let inactivityTimeout;
 const INACTIVITY_LIMIT = 30 * 60 * 1000; // 30 minutes
-let lastActivityTime = Date.now();
 
 function resetInactivityTimer() {
   if (state.isLocked || !state.session) return;
+
+  const saved = localStorage.getItem('ok-last-activity-time');
+  const lastActivityTime = saved ? parseInt(saved, 10) : Date.now();
 
   if (Date.now() - lastActivityTime > INACTIVITY_LIMIT) {
     lockSession();
     return;
   }
 
-  lastActivityTime = Date.now();
+  localStorage.setItem('ok-last-activity-time', Date.now().toString());
   clearTimeout(inactivityTimeout);
   inactivityTimeout = setTimeout(lockSession, INACTIVITY_LIMIT);
 }
@@ -308,8 +310,16 @@ window.handleLogout = handleLogout;
 async function checkExistingSession() {
   const result = await secureVerify();
   if (result.authenticated && result.user) {
-    state.session = { user: result.user, offline: result.offline };
-    if (sessionStorage.getItem('ok-session-locked') === 'true') {
+      state.session = { user: result.user, offline: result.offline };
+      
+      const savedLastActivity = localStorage.getItem('ok-last-activity-time');
+      const lastActivity = savedLastActivity ? parseInt(savedLastActivity, 10) : Date.now();
+      const INACTIVITY_LIMIT = 30 * 60 * 1000;
+      if (Date.now() - lastActivity > INACTIVITY_LIMIT) {
+        sessionStorage.setItem('ok-session-locked', 'true');
+      }
+
+      if (sessionStorage.getItem('ok-session-locked') === 'true') {
       state.isLocked = true;
       initLockScreenDOM();
       const lockEl = document.getElementById('lockScreen');
@@ -467,12 +477,22 @@ async function routeAfterAuth() {
   await loadUserTeamDefaultsForCurrentTeam();
   await initLocalDB();
 
-  if (navigator.onLine) {
-    await syncAll(state.currentTeam.team_id);
-    await pushPendingChanges();
-  }
+    if (navigator.onLine) {
+      const app = document.getElementById('app');
+      if (app) {
+        app.innerHTML = `<div style="display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column; color:var(--text-primary); font-family:sans-serif;"><div style="width:40px; height:40px; border:4px solid var(--border, #ccc); border-top-color:var(--primary, #3498db); border-radius:50%; animation:spin 1s linear infinite; margin-bottom:15px;"></div><style>@keyframes spin { 100% { transform:rotate(360deg); } }</style><h3>Syncing Finance Data...</h3></div>`;
+      }
+      try {
+        await Promise.race([
+          Promise.all([syncAll(state.currentTeam.team_id), pushPendingChanges()]),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout')), 8000))
+        ]);
+      } catch (err) {
+        console.warn('Sync delayed or failed, proceeding with local data:', err);
+      }
+    }
 
-  renderAppShell();
+    renderAppShell();
 
   const showAdminNav = ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role) || state.canManageTeamRoster;
   if (showAdminNav) {
