@@ -35,6 +35,7 @@ export function showAlert(message, type = 'info', options = {}) {
 
   const modal = document.createElement('div');
   modal.className = 'modal active alert-modal';
+  modal.style.zIndex = '10000';
   modal.innerHTML = `
     <div class="modal-content small alert-modal-content">
       <h3 class="alert-modal-title">${icons[type] || 'ℹ️'} ${titles[type] || 'Notice'}</h3>
@@ -145,6 +146,7 @@ export function showPrompt(message, options = {}) {
 
   const modal = document.createElement('div');
   modal.className = 'modal active alert-modal';
+  modal.style.zIndex = '10000';
   modal.innerHTML = `
     <div class="modal-content small alert-modal-content">
       <h3 class="alert-modal-title">✏️ ${escapeHtml(title)}</h3>

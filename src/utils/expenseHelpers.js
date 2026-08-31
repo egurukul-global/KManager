@@ -181,6 +181,7 @@ export function buildExpensePayload(form, teamId, userId) {
     total_usd: usdAmount,
     receipt_url: (val('receipt_url', 'expReceiptUrl') || val('receipt_url', 'editExpReceiptUrl')).trim() || null,
     vendor_info,
+    is_submitted: form.querySelector('#editExpSubmitReview')?.checked ?? form.querySelector('#expSubmitReview')?.checked ?? false,
     status: 'recorded',
     payment_status: 'paid',
     created_by: userId,

@@ -12,185 +12,114 @@ import {
 
 export { TRANSFER_STATUS, TRANSFER_FLOW, PENDING_STEP, MEMO_MAX_LENGTH, isAcceptedTransfer, isPendingTransfer };
 
+import { hasAnyGlobalFinanceRole } from './appRoles.js';
+export function isTeamLeadAccess(state) {
+  if (state.user?.role === 'admin' || state.user?.role === 'ceo') return true;
+  const level = String(state.userTeamAccess?.access_level || '').toLowerCase().trim();
+  return level === 'admin' || level === 'lead' || level === 'oht';
+}
+
 export function isOperationalBucket(bucket) {
-  return bucket && !bucket.owner_user_id;
+  if (bucket.is_org_level === true) return false;
+  return !bucket.owner_user_id;
 }
 
 export function isMemberBucket(bucket) {
-  return bucket && !!bucket.owner_user_id;
+  if (bucket.is_org_level === true) return false;
+  return !!bucket.owner_user_id;
 }
 
-export function isTeamLeadAccess(state) {
-  const level = state.userTeamAccess?.access_level || 'member';
-  const role = state.user?.role || 'user';
-  if (['admin', 'caoh', 'oh', 'ceo'].includes(role)) return true;
-  return level === 'lead' || level === 'admin';
-}
-
-export function isTeamMemberAccess(state) {
-  const level = state.userTeamAccess?.access_level || 'member';
-  return level === 'member';
-}
-
-/** Classify same-team transfer flow from sender role and bucket types. */
-export function classifyTransferFlow(srcBucket, destBucket, senderIsOtl) {
-  const srcOp = isOperationalBucket(srcBucket);
-  const destOp = isOperationalBucket(destBucket);
-  const destMember = isMemberBucket(destBucket);
-
-  if (senderIsOtl) {
-    if (srcOp && destOp) {
-      return {
-        flow: TRANSFER_FLOW.OTL_OPERATIONAL,
-        status: TRANSFER_STATUS.ACCEPTED,
-        receiver_user_id: null,
-        receiver_kind: null
-      };
-    }
-    if (srcOp && destMember) {
-      return {
-        flow: TRANSFER_FLOW.OTL_TO_MEMBER,
-        status: TRANSFER_STATUS.PENDING,
-        receiver_user_id: destBucket.owner_user_id,
-        receiver_kind: 'member'
-      };
-    }
-    // OTL from member bucket — treat as pending to dest
-    if (destMember) {
-      return {
-        flow: TRANSFER_FLOW.OTL_TO_MEMBER,
-        status: TRANSFER_STATUS.PENDING,
-        receiver_user_id: destBucket.owner_user_id,
-        receiver_kind: 'member'
-      };
-    }
-    if (destOp) {
-      return {
-        flow: TRANSFER_FLOW.OTL_OPERATIONAL,
-        status: TRANSFER_STATUS.ACCEPTED,
-        receiver_user_id: null,
-        receiver_kind: null
-      };
-    }
-  }
-
-  // OTM sender — only from own member bucket (enforced in UI)
-  if (destOp) {
-    return {
-      flow: TRANSFER_FLOW.OTM_TO_TEAM,
-      status: TRANSFER_STATUS.PENDING,
-      receiver_user_id: null,
-      receiver_kind: 'otl'
-    };
-  }
-  if (destMember) {
-    return {
-      flow: TRANSFER_FLOW.OTM_TO_MEMBER,
-      status: TRANSFER_STATUS.PENDING,
-      receiver_user_id: destBucket.owner_user_id,
-      receiver_kind: 'member'
-    };
-  }
-
-  return {
-    flow: TRANSFER_FLOW.OTM_TO_MEMBER,
-    status: TRANSFER_STATUS.PENDING,
-    receiver_user_id: destBucket?.owner_user_id || null,
-    receiver_kind: 'member'
-  };
-}
-
-export function validateTransferMemo(memo) {
-  const text = String(memo || '').trim();
-  if (!text) return { ok: false, message: 'Memo is required' };
-  if (text.length > MEMO_MAX_LENGTH) {
-    return { ok: false, message: `Memo must be ${MEMO_MAX_LENGTH} characters or fewer` };
-  }
-  return { ok: true, value: text };
-}
-
-export function computeDestAmount(transfer, destBucket, rates) {
-  return getTransferDestAmount(transfer, destBucket, rates);
-}
-
-/** Apply balance changes when a transfer is accepted. */
-export async function applyAcceptedTransferBalances(transfer, srcBucket, destBucket, rates) {
-  const srcAmount = parseFloat(transfer.amount) || 0;
-  const destAmount = parseFloat(transfer.dest_amount) || computeDestAmount(transfer, destBucket, rates);
-  const srcBalance = (parseFloat(srcBucket.balance) || 0) - srcAmount;
-  const destBalance = (parseFloat(destBucket.balance) || 0) + destAmount;
-
-  const srcResult = await sbUpdate('buckets', { balance: srcBalance }, { id: srcBucket.id });
-  if (srcResult.error) throw srcResult.error;
-
-  const destResult = await sbUpdate('buckets', { balance: destBalance }, { id: destBucket.id });
-  if (destResult.error) throw destResult.error;
-
-  return { srcBalance, destBalance, destAmount };
-}
-
-export function getTransferStatusBadge(status) {
-  const s = status || TRANSFER_STATUS.ACCEPTED;
-  if (s === TRANSFER_STATUS.PENDING) return { label: 'Pending', class: 'badge-warning' };
-  if (s === TRANSFER_STATUS.REJECTED) return { label: 'Rejected', class: 'badge-secondary' };
-  return { label: 'Accepted', class: 'badge-success' };
-}
-
-export function isOhfApprover(state) {
-  const role = state.user?.role || 'user';
-  return ['caoh', 'oh', 'ceo'].includes(role);
-}
-
-export function isCrossTeamTransfer(transfer) {
-  return transfer?.flow_type === TRANSFER_FLOW.CROSS_TEAM_PERSONAL
-    || !!transfer?.dest_team_id;
-}
-
-export function userCanApproveOhf(transfer, state) {
-  if (!isPendingTransfer(transfer)) return false;
-  if (transfer.pending_step !== PENDING_STEP.OHF) return false;
-  return isOhfApprover(state);
-}
-
-export function userCanReceivePendingTransfer(transfer, state) {
-  if (!isPendingTransfer(transfer)) return false;
-
-  if (transfer.pending_step === PENDING_STEP.OHF) {
-    return userCanApproveOhf(transfer, state);
-  }
-
-  if (transfer.pending_step === PENDING_STEP.RECEIVER) {
-    return transfer.receiver_user_id === state.user?.id;
-  }
-
-  if (transfer.receiver_user_id && transfer.receiver_user_id === state.user?.id) return true;
-  if (transfer.receiver_kind === 'otl' && isTeamLeadAccess(state)) return true;
-  return false;
-}
+import { isFinanceGlobalAdmin } from './appRoles.js';
 
 export function filterBucketsForTransferSource(buckets, state) {
-  const lead = isTeamLeadAccess(state);
-  if (lead) {
-    return buckets.filter(b => isOperationalBucket(b));
-  }
-  return buckets.filter(b => isMemberBucket(b) && b.owner_user_id === state.user?.id);
+  const lead = isTeamLeadAccess(state) || hasAnyGlobalFinanceRole();
+  return buckets.filter(b => {
+    if (b.is_org_level) {
+      if (isFinanceGlobalAdmin()) return true;
+      return b._can_transfer === true;
+    }
+    if (lead) return isOperationalBucket(b);
+    return isMemberBucket(b) && b.owner_user_id === state.user?.id;
+  });
 }
 
 export function filterBucketsForTransferDest(buckets, state, { showMembers = false, showTeam = false } = {}) {
   const lead = isTeamLeadAccess(state);
+  const globalAdmin = hasAnyGlobalFinanceRole();
   const operational = buckets.filter(isOperationalBucket);
+  const orgLevel = buckets.filter(b => b.is_org_level);
+
+  if (globalAdmin) {
+    let result = [...orgLevel];
+    if (showTeam) result = result.concat(operational);
+    if (showMembers) result = result.concat(buckets.filter(isMemberBucket));
+    return result;
+  }
 
   if (lead) {
-    if (!showMembers) return operational;
-    return buckets.filter(b => isOperationalBucket(b) || isMemberBucket(b));
+    if (!showMembers) return operational.concat(orgLevel);
+    return buckets.filter(b => isOperationalBucket(b) || isMemberBucket(b) || b.is_org_level);
   }
 
-  // OTM default: team operational only
-  let list = operational;
-  if (showTeam && showMembers) {
-    list = buckets.filter(b => isOperationalBucket(b) || isMemberBucket(b));
-  } else if (showMembers) {
-    list = buckets.filter(isMemberBucket);
+  if (showTeam) return operational.concat(orgLevel);
+  return buckets.filter(b => (isMemberBucket(b) && b.owner_user_id === state.user?.id) || b.is_org_level);
+}
+
+export function classifyTransferFlow(srcBucket, destBucket, senderIsOtl) {
+  if (isOperationalBucket(srcBucket) && isOperationalBucket(destBucket)) return TRANSFER_FLOW.OTL_OPERATIONAL;
+  if (isOperationalBucket(srcBucket) && isMemberBucket(destBucket)) return TRANSFER_FLOW.OTL_TO_MEMBER;
+  if (isMemberBucket(srcBucket) && isOperationalBucket(destBucket)) return TRANSFER_FLOW.OTM_TO_TEAM;
+  if (isMemberBucket(srcBucket) && isMemberBucket(destBucket)) {
+    if (srcBucket.team_id !== destBucket.team_id) return TRANSFER_FLOW.CROSS_TEAM_PERSONAL;
+    return TRANSFER_FLOW.OTM_TO_MEMBER;
   }
-  return list.filter(b => b.owner_user_id !== state.user?.id || isOperationalBucket(b));
+  return TRANSFER_FLOW.OTL_OPERATIONAL; // fallback
+}
+
+export function validateTransferMemo(memo) {
+  if (!memo) return false;
+  return memo.trim().length <= MEMO_MAX_LENGTH;
+}
+
+export function computeDestAmount(amount, srcCurr, destCurr, rates) {
+  if (srcCurr === destCurr) return amount;
+  
+  // Basic fallback calculation (rateForInput usually handles this in currency.js, but we can do a naive conversion if rates are missing)
+  const srcRate = (rates || []).find(r => r.currency === srcCurr)?.rate || 1;
+  const destRate = (rates || []).find(r => r.currency === destCurr)?.rate || 1;
+  
+  // amount in USD = amount / srcRate
+  // dest amount = (amount / srcRate) * destRate
+  const result = (parseFloat(amount) / parseFloat(srcRate)) * parseFloat(destRate);
+  return parseFloat(result.toFixed(2));
+}
+
+export async function applyAcceptedTransferBalances(payload, srcBucket, destBucket, rates) {
+  // Dummy function for local cache mutation if needed, or backend handles it via triggers.
+  // We'll leave it empty/basic since the backend often handles it or it triggers a re-fetch.
+}
+
+export function getTransferStatusBadge(status) {
+  switch (status) {
+    case TRANSFER_STATUS.PENDING: return '<span class="badge warning">Pending</span>';
+    case TRANSFER_STATUS.ACCEPTED: return '<span class="badge success">Accepted</span>';
+    case TRANSFER_STATUS.REJECTED: return '<span class="badge danger">Rejected</span>';
+    default: return '<span class="badge info">Unknown</span>';
+  }
+}
+
+export function isCrossTeamTransfer(transfer) {
+  return transfer && transfer.source_team_id !== transfer.dest_team_id;
+}
+
+export function userCanApproveOhf(transfer, state) {
+  return state.user?.role === 'admin' || state.user?.role === 'ohf' || state.user?.role === 'ceo' || state.user?.role === 'cao';
+}
+
+export function userCanReceivePendingTransfer(transfer, state) {
+  return transfer && transfer.dest_user_id === state.user?.id;
+}
+
+export function isOhfApprover(state) {
+  return state.user?.role === 'admin' || state.user?.role === 'ohf' || state.user?.role === 'ceo' || state.user?.role === 'cao';
 }

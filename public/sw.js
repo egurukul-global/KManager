@@ -1,4 +1,4 @@
-const CACHE_NAME = 'kmanager-v2';
+const CACHE_NAME = 'kmanager-v25';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

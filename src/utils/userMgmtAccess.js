@@ -1,3 +1,4 @@
+import { isFinanceGlobalAdmin } from './appRoles.js';
 // ==================== USER MANAGEMENT ACCESS (Phase 4C Lite) ====================
 import { state } from '../state.js';
 
@@ -8,7 +9,7 @@ export function isOrgAdminUser() {
 }
 
 export function canManageUsers() {
-  return state.user?.role === 'admin' || isOrgAdminUser();
+  return state.user?.role === 'admin' || isOrgAdminUser() || isFinanceGlobalAdmin();
 }
 
 /** Org roles the current user may assign when creating/editing users. */

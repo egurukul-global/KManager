@@ -25,7 +25,11 @@ import {
 } from './pages/transfer.js';
 import { getBudgetCalendarPage, initBudgetCalendarPage } from './pages/budget-calendar.js';
 import { getCategoryMasterPage, initCategoryMasterPage } from './pages/category-master.js';
+import { getBudgetTypesPage, initBudgetTypesPage } from './pages/budget-types.js';
+import { getBudgetTemplatesPage, initBudgetTemplatesPage } from './pages/budget-templates.js';
 import { getFinancialStatusPage, initFinancialStatusPage } from './pages/financial-status.js';
+import { getManagerFinancePage } from './pages/manager-finance.js';
+import { getManagerExpensesPage, initManagerExpensesPage } from './pages/manager-expenses.js';
 import { getReconcilePage, initReconcilePage } from './pages/reconcile.js';
 import { getReconciliationOverviewPage, initReconciliationOverviewPage } from './pages/reconciliation-overview.js';
 import { getReconciliationApprovalPage, initReconciliationApprovalPage } from './pages/reconciliation-approval.js';
@@ -58,6 +62,9 @@ import {
   navigateOk
 } from './utils/okAccess.js';
 import swamijiImg from './Swamiji.png';
+import { initI18n } from './i18n.js';
+import './test-i18n.js';
+
 
 // ==================== APP CONTAINER ====================
 const app = document.getElementById('app');
@@ -84,6 +91,8 @@ export async function handleLogin(e) {
   errorDiv.classList.remove('active');
 
   try {
+    sessionStorage.removeItem('kmanager_view_mode');
+    state.activeViewContext = null;
     const data = await secureLogin(email, password);
     state.session = { user: data.user, expires_at: data.expires_at };
     if (window.location.pathname !== '/') {
@@ -105,46 +114,52 @@ export async function forceLogout() {
   if (isLoggingOut) return;
   isLoggingOut = true;
   clearTimeout(inactivityTimeout);
+  localStorage.removeItem('ok-last-activity-time');
+  sessionStorage.removeItem('kmanager_view_mode');
+  sessionStorage.removeItem('ok-session-locked');
+  sessionStorage.removeItem('ok_open_page');
+  sessionStorage.removeItem('ok_open_team_id');
+  sessionStorage.removeItem('ok_open_request_id');
+  state.activeViewContext = null;
+
   try {
     await secureLogout();
   } catch (err) {
     console.error('Force logout error:', err);
-  }
-  state.user = null;
-  state.teams = [];
-  state.currentTeam = null;
-  state.session = null;
-  state.userTeamAccess = null;
-  state.isOkAdmin = false;
-  state.okApps = [];
-  state.okMenus = [];
-  state.okPins = [];
+  } finally {
+    state.user = null;
+    state.teams = [];
+    state.currentTeam = null;
+    state.session = null;
+    state.userTeamAccess = null;
+    state.isOkAdmin = false;
+    state.okApps = [];
+    state.okMenus = [];
+    state.okPins = [];
+    state.appRoleAssignments = [];
 
-  const lockEl = document.getElementById('lockScreen');
-  if (lockEl) lockEl.style.display = 'none';
-  state.isLocked = false;
-  sessionStorage.removeItem('ok-session-locked');
+    const lockEl = document.getElementById('lockScreen');
+    if (lockEl) lockEl.style.display = 'none';
 
-  // Clean up all modals to prevent UI freezing
-  document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
-  const dynamicModals = ['reviewModal', 'receiveFundsModal', 'approvalActionModal', 'submissionWizardModal'];
-  dynamicModals.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) {
-      if (id === 'submissionWizardModal') {
-        el.classList.remove('active');
-      } else {
-        el.remove();
+    document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+    const dynamicModals = ['reviewModal', 'receiveFundsModal', 'approvalActionModal', 'submissionWizardModal'];
+    dynamicModals.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) {
+        if (id === 'submissionWizardModal') {
+          el.classList.remove('active');
+        } else {
+          el.remove();
+        }
       }
+    });
+
+    window.__okAuthBound = false;
+    if (window.location.pathname !== '/') {
+      window.history.replaceState({}, '', '/');
     }
-  });
-
-  if (window.location.pathname !== '/') {
-    window.history.replaceState({}, '', '/');
+    window.location.replace('/');
   }
-  renderLoginScreen();
-
-  setTimeout(() => { isLoggingOut = false; }, 500);
 }
 window.forceLogout = forceLogout;
 
@@ -156,19 +171,19 @@ let inactivityTimeout;
 const INACTIVITY_LIMIT = 30 * 60 * 1000; // 30 minutes
 
 function resetInactivityTimer() {
-  if (state.isLocked || !state.session) return;
+  if (!state.session) return;
 
   const saved = localStorage.getItem('ok-last-activity-time');
   const lastActivityTime = saved ? parseInt(saved, 10) : Date.now();
 
   if (Date.now() - lastActivityTime > INACTIVITY_LIMIT) {
-    lockSession();
+    forceLogout();
     return;
   }
 
   localStorage.setItem('ok-last-activity-time', Date.now().toString());
   clearTimeout(inactivityTimeout);
-  inactivityTimeout = setTimeout(lockSession, INACTIVITY_LIMIT);
+  inactivityTimeout = setTimeout(forceLogout, INACTIVITY_LIMIT);
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -177,107 +192,28 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-function lockSession() {
-  if (!state.session) return;
-  state.isLocked = true;
-  sessionStorage.setItem('ok-session-locked', 'true');
-  initLockScreenDOM();
-  const emailEl = document.getElementById('lockUserEmail');
-  if (emailEl) emailEl.innerText = state.session.user?.email || '';
-  const lockEl = document.getElementById('lockScreen');
-  if (lockEl) {
-    lockEl.style.display = 'flex';
-  }
-}
-
-function initLockScreenDOM() {
-  if (document.getElementById('lockScreen')) return;
-  const lock = document.createElement('div');
-  lock.id = 'lockScreen';
-  lock.style.display = 'none';
-  lock.style.position = 'fixed';
-  lock.style.top = '0';
-  lock.style.left = '0';
-  lock.style.width = '100%';
-  lock.style.height = '100%';
-  lock.style.background = 'rgba(0,0,0,0.85)';
-  lock.style.backdropFilter = 'blur(15px)';
-  lock.style.webkitBackdropFilter = 'blur(15px)';
-  lock.style.zIndex = '99999';
-  lock.style.alignItems = 'center';
-  lock.style.justifyContent = 'center';
-  lock.style.color = 'white';
-  lock.innerHTML = `
-    <div style="background:var(--modal-bg, #1e0005); border:1px solid var(--border, rgba(212,175,55,0.3)); border-radius:15px; padding:30px; max-width:400px; width:90%; text-align:center; box-shadow:0 12px 40px rgba(0,0,0,0.5); font-family:var(--font-family);">
-      <div style="font-size:3em; margin-bottom:15px; color:var(--brand-gold, #D4AF37);">🔒</div>
-      <h2 style="margin:0 0 10px; color:white !important; font-family:var(--font-family);">Session Locked</h2>
-      <p style="margin:0 0 20px; color:#ccc; font-size:0.95em;">Enter password to unlock and resume your session.</p>
-      <div style="font-weight:bold; margin-bottom:16px; color:white;" id="lockUserEmail"></div>
-      <form id="lockScreenForm">
-        <div class="form-group" style="margin-bottom:16px; text-align:left;">
-          <input type="password" id="lockPassword" placeholder="Enter password" required style="width:100%; height:38px; border-radius:6px; border:1px solid var(--border, rgba(212,175,55,0.3)); padding:8px 12px; background:rgba(25, 0, 5, 0.6); color:white; font-size:1em;">
-        </div>
-        <div id="lockError" style="color:#ff4d4d; font-size:0.9em; margin-bottom:12px; display:none;"></div>
-        <button type="submit" id="unlockBtn" style="width:100%; height:38px; background:var(--brand-gold, #D4AF37); color:#1a0003; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:1em; margin-bottom:10px;">Unlock</button>
-        <button type="button" id="lockLogoutBtn" style="width:100%; height:38px; background:transparent; border:1px solid rgba(255,255,255,0.2); color:white; border-radius:6px; cursor:pointer; font-size:0.95em;">Log Out</button>
-      </form>
-    </div>
-  `;
-  document.body.appendChild(lock);
-  
-  document.getElementById('lockScreenForm').onsubmit = handleUnlockSession;
-  document.getElementById('lockLogoutBtn').onclick = handleForceLogoutFromLock;
-}
-
-async function handleUnlockSession(e) {
-  e.preventDefault();
-  const pwd = document.getElementById('lockPassword').value;
-  const btn = document.getElementById('unlockBtn');
-  const errDiv = document.getElementById('lockError');
-  if (!state.session?.user?.email) return;
-
-  btn.disabled = true;
-  btn.innerText = 'Unlocking...';
-  errDiv.style.display = 'none';
-
-  try {
-    const data = await secureLogin(state.session.user.email, pwd);
-    state.session = { user: data.user, expires_at: data.expires_at };
-    
-    state.isLocked = false;
-    sessionStorage.removeItem('ok-session-locked');
-    const lock = document.getElementById('lockScreen');
-    if (lock) lock.style.display = 'none';
-    document.getElementById('lockPassword').value = '';
-    resetInactivityTimer();
-    showToast('Session unlocked', 'success');
-  } catch (err) {
-    errDiv.textContent = err.message || 'Unlock failed';
-    errDiv.style.display = 'block';
-    btn.disabled = false;
-    btn.innerText = 'Unlock';
-  }
-}
-
-async function handleForceLogoutFromLock() {
-  const lock = document.getElementById('lockScreen');
-  if (lock) lock.style.display = 'none';
-  state.isLocked = false;
-  await forceLogout();
-}
 
 ['mousemove', 'mousedown', 'keydown', 'scroll', 'click', 'touchstart'].forEach(event => {
   window.addEventListener(event, resetInactivityTimer, { passive: true });
 });
 
 export async function handleLogout() {
-  if (isLoggingOut) return; // Prevent double execution
+  if (isLoggingOut) return;
+  isLoggingOut = true;
 
   const ok = await showConfirm('Sign out of One Kailasa?');
-  if (!ok) return;
+  if (!ok) {
+    isLoggingOut = false;
+    return;
+  }
 
-  isLoggingOut = true;
   clearTimeout(inactivityTimeout);
+  localStorage.removeItem('ok-last-activity-time');
+  sessionStorage.removeItem('kmanager_view_mode');
+  sessionStorage.removeItem('ok-session-locked');
+  sessionStorage.removeItem('ok_open_page');
+  sessionStorage.removeItem('ok_open_team_id');
+  sessionStorage.removeItem('ok_open_request_id');
 
   try {
     await secureLogout();
@@ -296,36 +232,25 @@ export async function handleLogout() {
   state.okApps = [];
   state.okMenus = [];
   state.okPins = [];
+  state.appRoleAssignments = [];
+  window.__okAuthBound = false;
 
-  if (window.location.pathname !== '/') {
-    window.history.replaceState({}, '', '/');
-  }
-  renderLoginScreen();
-
-  // Reset flag after a delay
-  setTimeout(() => { isLoggingOut = false; }, 500);
+  window.location.replace('/');
 }
 window.handleLogout = handleLogout;
 
 async function checkExistingSession() {
   const result = await secureVerify();
   if (result.authenticated && result.user) {
-      state.session = { user: result.user, offline: result.offline };
-      
-      const savedLastActivity = localStorage.getItem('ok-last-activity-time');
-      const lastActivity = savedLastActivity ? parseInt(savedLastActivity, 10) : Date.now();
-      const INACTIVITY_LIMIT = 30 * 60 * 1000;
-      if (Date.now() - lastActivity > INACTIVITY_LIMIT) {
-        sessionStorage.setItem('ok-session-locked', 'true');
-      }
+    state.session = { user: result.user, offline: result.offline };
 
-      if (sessionStorage.getItem('ok-session-locked') === 'true') {
-      state.isLocked = true;
-      initLockScreenDOM();
-      const lockEl = document.getElementById('lockScreen');
-      if (lockEl) lockEl.style.display = 'flex';
-      const emailEl = document.getElementById('lockUserEmail');
-      if (emailEl) emailEl.innerText = state.session.user?.email || '';
+    const saved = localStorage.getItem('ok-last-activity-time');
+    if (saved) {
+      const lastActivity = parseInt(saved, 10);
+      if (Date.now() - lastActivity > INACTIVITY_LIMIT) {
+        await forceLogout();
+        return;
+      }
     }
     await initializeApp();
   } else {
@@ -340,7 +265,7 @@ async function initializeApp() {
     // 1. Get user profile
     const { data: userData, error: userError } = await supabaseClient
       .from('users')
-      .select('id, email, name, role, team_id, gender, request_alias, request_counter, on_hold, notification_mode')
+      .select('id, email, name, role, team_id, gender, request_alias, request_counter, on_hold, notification_mode, default_login_view, allowed_views')
       .eq('id', state.session.user.id)
       .single();
 
@@ -348,7 +273,7 @@ async function initializeApp() {
       // Older schema without notification_mode
       const fallback = await supabaseClient
         .from('users')
-        .select('id, email, name, role, team_id, gender, request_alias, request_counter, on_hold')
+        .select('id, email, name, role, team_id, gender, request_alias, request_counter, on_hold, default_login_view, allowed_views')
         .eq('id', state.session.user.id)
         .single();
       if (fallback.error) {
@@ -387,6 +312,13 @@ async function initializeApp() {
 
     // 2. One Kailasa access (apps / menus / admin)
     await loadOkAccess(state.user.id);
+    
+    // 3b. Load generic app roles
+    const { data: roleAssignments } = await supabaseClient
+      .from('app_role_assignments')
+      .select('*')
+      .eq('user_id', state.user.id);
+    state.appRoleAssignments = roleAssignments || [];
 
     // 3. Teams (needed for Finance; optional for home)
     await loadAccessibleTeams(state.user.id);
@@ -494,11 +426,6 @@ async function routeAfterAuth() {
 
     renderAppShell();
 
-  const showAdminNav = ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role) || state.canManageTeamRoster;
-  if (showAdminNav) {
-    const adminNav = document.getElementById('adminNav');
-    if (adminNav) adminNav.style.display = 'block';
-  }
 
   populateTeamSwitcher();
   updateAccessBadge();
@@ -720,17 +647,22 @@ function renderAppShell() {
           <span id="userAccessLevel" class="sidebar-access-badge"></span>
         </div>
 
-        <div class="sidebar-top-row">
-          <button type="button" class="sidebar-top-btn" onclick="window.goOkHome()">One<br>Kailasa</button>
-          <button type="button" class="sidebar-top-btn" onclick="window.handleLogout()">Sign<br>Out</button>
-          <div class="sidebar-top-btn sync-status online show-desktop" id="syncIndicatorSidebar" aria-live="polite">
-            <span class="sync-status-icon" style="margin-right:2px;">🟢</span>
-            <span class="sync-status-label">On<br>line</span>
-          </div>
-        </div>
+        <div class="sidebar-top-row" style="padding: 10px 16px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">
+  <div id="viewSelectorContainer" class="team-switcher" style="display:none; flex: 1; align-items: center; gap: 6px; padding:0; border:none;">
+    <span style="font-size:0.7em; text-transform:uppercase; opacity:0.7; font-weight:bold; letter-spacing:0.5px;">View</span>
+    <select id="viewModeSelect" onchange="window.switchViewMode(this.value)" style="flex:1; padding:2px 6px; font-size:0.8em; height:24px; border:1px solid rgba(255,255,255,0.2); border-radius:4px; background:rgba(0,0,0,0.2); color:white; cursor:pointer;">
+      <option value="team">Team</option>
+    </select>
+  </div>
+  <div style="display: flex; gap: 4px; margin-left: auto;">
+    <button type="button" class="sq-btn" style="background:#ea580c; color:white; border:none; border-radius:3px; width:24px; height:24px; font-size:0.8em; font-weight:bold; cursor:pointer; padding:0;" onclick="window.goOkHome()" title="One Kailasa">1K</button>
+    <button type="button" class="sq-btn" style="background:#16a34a; color:white; border:none; border-radius:3px; width:24px; height:24px; font-size:0.8em; font-weight:bold; cursor:pointer; padding:0;" id="syncIndicatorSidebar" title="Online">✔</button>
+    <button type="button" class="sq-btn" style="background:#dc2626; color:white; border:none; border-radius:3px; width:24px; height:24px; font-size:0.8em; font-weight:bold; cursor:pointer; padding:0;" onclick="window.handleLogout()" title="Sign Out">✖</button>
+  </div>
+</div>
 
         <div class="team-switcher" style="display:flex; align-items:center; gap:8px; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0;">
-          <label style="margin:0; white-space:nowrap; font-size:0.7em; text-transform:uppercase; letter-spacing:0.5px; opacity:0.7;">Team</label>
+          <label for="teamSelect" style="margin:0; white-space:nowrap; font-size:0.7em; text-transform:uppercase; letter-spacing:0.5px; opacity:0.7;">Team</label>
           <select id="teamSelect" onchange="window.switchTeam(this.value)" style="flex:1; padding:6px 8px; font-size:0.85em; height:32px; border:1px solid rgba(255,255,255,0.2); border-radius:6px; background:rgba(0,0,0,0.2); color:white; cursor:pointer;">
             <option value="">Loading teams...</option>
           </select>
@@ -768,9 +700,21 @@ function renderAppShell() {
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
-              <div class="nav-subitem" data-page="buckets" onclick="window.showPage('buckets')">Money Buckets</div>
-              <div class="nav-subitem" data-page="categories" onclick="window.showPage('categories')">Categories</div>
               <div class="nav-subitem" data-page="rates" onclick="window.showPage('rates')">Exchange Rates</div>
+            </div>
+          </div>
+
+          <div class="nav-item" data-section="finance-setup">
+            <div class="nav-item-header" onclick="window.toggleNavItem(this)">
+              <span class="icon">⚙️</span>
+              <span>Finance Setup</span>
+              <span class="arrow">▶</span>
+            </div>
+            <div class="nav-subitems">
+              <div class="nav-subitem" data-page="categories" onclick="window.showPage('categories')">Categories</div>
+              <div class="nav-subitem" data-page="budget-types" onclick="window.showPage('budget-types')">Budget Types</div>
+              <div class="nav-subitem" data-page="budget-templates" onclick="window.showPage('budget-templates')">Budget Templates</div>
+              <div class="nav-subitem" data-page="budget-calendar" onclick="window.showPage('budget-calendar')">Budget Calendar</div>
             </div>
           </div>
 
@@ -815,13 +759,15 @@ function renderAppShell() {
 
           <div class="nav-item" data-section="financials">
             <div class="nav-item-header" onclick="window.toggleNavItem(this)">
-              <span class="icon">💹</span>
+              <span class="icon">💳</span>
               <span>Financials</span>
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
               <div class="nav-subitem" data-page="financial-status" onclick="window.showPage('financial-status')">Treasury</div>
-              <div class="nav-subitem-label">Reconciliation</div>
+              <div class="nav-subitem" data-page="manager-finance" onclick="window.showPage('manager-finance')">Receivables</div>
+              <div class="nav-subitem" data-page="manager-expenses" onclick="window.showPage('manager-expenses')">Expenses</div>
+              <div class="nav-subitem-label" data-page="reconcile-label">Reconciliation</div>
               <div class="nav-subitem" data-page="reconcile" onclick="window.showPage('reconcile')">Reconcile</div>
               <div class="nav-subitem" data-page="reconciliation-overview" onclick="window.showPage('reconciliation-overview')">Overview</div>
               <div class="nav-subitem" data-page="reconciliation-approval" onclick="window.showPage('reconciliation-approval')">Approval</div>
@@ -842,14 +788,13 @@ function renderAppShell() {
 
           <div class="nav-item" data-section="admin" id="adminNav" style="display: none;">
             <div class="nav-item-header" onclick="window.toggleNavItem(this)">
-              <span class="icon">⚙️</span>
+              <span class="icon">🔐</span>
               <span>Admin</span>
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
-              <div class="nav-subitem" data-page="role-assignments" onclick="window.showPage('role-assignments')">Role Assignments</div>
-              <div class="nav-subitem" data-page="budget-calendar" onclick="window.showPage('budget-calendar')">Budget Calendar</div>
-              <div class="nav-subitem" data-page="category-master" onclick="window.showPage('category-master')">Category Master</div>
+              <div class="nav-subitem" data-page="role-assignments" onclick="window.showPage('role-assignments')">Users</div>
+              <div class="nav-subitem" data-page="buckets" onclick="window.showPage('buckets')">Money Buckets</div>
             </div>
           </div>
         </nav>
@@ -903,6 +848,12 @@ function renderAppShell() {
   window.toggleNavItem = toggleNavItem;
   window.showPage = showPage;
   window.switchTeam = switchTeam;
+window.switchViewMode = function(viewMode) {
+  state.activeViewContext = viewMode;
+  sessionStorage.setItem('kmanager_view_mode', viewMode);
+  import('./utils/navPermissions.js').then(m => m.applyNavPermissions());
+  window.showPage(viewMode === 'admin' ? 'role-assignments' : viewMode === 'manager' ? 'manager-finance' : 'dashboard');
+};
   window.handleLogout = handleLogout;
   window.navToTab = navToTab;
   window.goOkHome = () => navigateOk('/');
@@ -951,6 +902,7 @@ const PAGE_TO_TAB = {
   'create-budget': 'budgets',
   'add-expense': 'expenses',
   'expense-manager': 'expenses',
+  'manager-expenses': 'Manager Expenses',
   'generate-receipt': 'expenses',
   'expense-reports': 'reports',
   'my-finances': 'reports',
@@ -1001,6 +953,7 @@ const PAGE_TITLES = {
   'expense-manager': 'Expense Manager',
   'generate-receipt': 'Generate Receipt',
   'financial-status': 'Treasury',
+  'manager-finance': 'Receivables',
   reconcile: 'Reconcile',
   'reconciliation-overview': 'Reconciliation Overview',
   'reconciliation-approval': 'Reconciliation Approval',
@@ -1060,11 +1013,13 @@ export function showPage(pageName) {
     'transfer': { html: getTransferFundsPage, init: initTransferFundsPage },
     'add-expense': { html: getAddExpensePage, init: initAddExpensePage },
     'expense-manager': { html: getExpenseManagerPage, init: initExpenseManagerPage },
+    'manager-expenses': { html: getManagerExpensesPage, init: initManagerExpensesPage },
     'generate-receipt': { html: getGenerateReceiptPage, init: initGenerateReceiptPage },
     'expense-reports': { html: getExpenseReportsPage, init: initExpenseReportsPage },
     'my-finances': { html: getMyFinancesPage, init: initMyFinancesPage },
     'my-income': { html: getMyIncomePage, init: initMyIncomePage },
     'financial-status': { html: getFinancialStatusPage, init: initFinancialStatusPage },
+      'manager-finance': { html: getManagerFinancePage, init: () => {} },
     'reconcile': { html: getReconcilePage, init: initReconcilePage },
     'reconciliation-overview': { html: getReconciliationOverviewPage, init: initReconciliationOverviewPage },
     'reconciliation-approval': { html: getReconciliationApprovalPage, init: initReconciliationApprovalPage },
@@ -1072,7 +1027,10 @@ export function showPage(pageName) {
     'approval-portal': { html: getApprovalPortalPage, init: initApprovalPortalPage },
     'role-assignments': { html: getRoleAssignmentsPage, init: initRoleAssignmentsPage },
     'budget-calendar': { html: getBudgetCalendarPage, init: initBudgetCalendarPage },
+    'categories': { html: getCategoryMasterPage, init: initCategoryMasterPage },
     'category-master': { html: getCategoryMasterPage, init: initCategoryMasterPage },
+    'budget-types': { html: getBudgetTypesPage, init: initBudgetTypesPage },
+    'budget-templates': { html: getBudgetTemplatesPage, init: initBudgetTemplatesPage },
     'user-mgmt': { html: getUserMgmtPage, init: initUserMgmtPage },
     'team-mgmt': {
       html: () => {
@@ -1103,7 +1061,7 @@ function placeholderPage(title, session) {
   return `
     <h1 class="page-title">${title}</h1>
     <div class="card">
-      <h2>⏳ Coming Soon</h2>
+      <h2>â³ Coming Soon</h2>
       <p style="color: #666;">This feature will be implemented in ${session}.</p>
       <p style="margin-top: 15px; color: #999; font-size: 0.9em;">
         Current focus: Session 3 — Migration + Categories + Rates
@@ -1114,6 +1072,8 @@ function placeholderPage(title, session) {
 
 // ===================== BOOT ====================
 document.addEventListener('DOMContentLoaded', async () => {
+  await initI18n();
+
   registerServiceWorker();
   
   try {

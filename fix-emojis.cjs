@@ -1,0 +1,14 @@
+﻿const fs = require('fs');
+let text = fs.readFileSync('src/main.js', 'utf8');
+text = text.replace(/ðŸ“Š/g, '📊');
+text = text.replace(/ðŸ“‹/g, '📋');
+text = text.replace(/ðŸ”§/g, '🔧');
+text = text.replace(/ðŸ’°/g, '💰');
+text = text.replace(/ðŸ’¸/g, '💸');
+text = text.replace(/ðŸ’¹/g, '💳');
+text = text.replace(/ðŸ“ˆ/g, '📈');
+text = text.replace(/âš™ï¸ /g, '⚙️');
+text = text.replace(/â–¶/g, '▶');
+text = text.replace(/â–¼/g, '▼');
+fs.writeFileSync('src/main.js', text, 'utf8');
+console.log('Fixed emojis in main.js');

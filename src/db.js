@@ -43,7 +43,7 @@ export { SUPABASE_URL, SUPABASE_ANON_KEY };
 
 // ==================== INDEXEDDB SETUP ====================
 let db = null;
-const LOCAL_DB_VERSION = 7;
+const LOCAL_DB_VERSION = 8;
 
 function ensureAllObjectStores(idb) {
   const required = [

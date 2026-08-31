@@ -115,6 +115,13 @@ export function getRecordIncomePage() {
 
   return `
     <h1 class="page-title">Add Income</h1>
+    <div class="card" style="border-left: 4px solid var(--warning); background-color: #fffbeb; padding: 15px; margin-bottom: 20px;">
+      <h3 style="color: #b45309; margin-top: 0; margin-bottom: 8px;">⚠️ For External Funds Only</h3>
+      <p style="color: #92400e; font-size: 0.9em; margin: 0;">
+        This form is strictly for recording <strong>new, external money</strong> entering the organization (e.g., direct donor deposits, external cash). <br/><br/>
+        <strong>Do not use this form</strong> for money received from Finance, KMOF, or other internal teams. All internal money movements must be accepted via the <a href="#" onclick="window.showPage('transfer')" style="color: #b45309; font-weight: bold; text-decoration: underline;">Transfers Module</a>.
+      </p>
+    </div>
     <div class="card">
       <h2>💵 Register New Funds Entry</h2>
       <form id="recordIncomeForm" onsubmit="window.createIncomeRecord(event)">
@@ -127,49 +134,15 @@ export function getRecordIncomePage() {
           <div class="form-grid-row form-grid-row--income-record-secondary">
             <div class="form-group"><label>Date</label><input type="date" id="incDate" required></div>
             <div class="form-group"><label>Currency</label><input type="text" id="incCurrencyDisplay" readonly value="USD" style="background:#f3f4f6;"></div>
-            <div class="form-group"><label class="required" id="incExchangeRateLabel">Exchange Rate (1 USD = ?)</label><input type="number" class="input-rate" id="incExchangeRate" step="any" min="0.000001" placeholder="95.4" required oninput="window.onIncomeMathFieldsChange()"></div>
+            <div class="form-group"><label class="required" id="incExchangeRateLabel">Exchange Rate (1 USD = ?)</label><input type="number" class="input-rate" id="incExchangeRate" step="any" min="0.000001" placeholder="95.4" required readonly oninput="window.onIncomeMathFieldsChange()"></div>
             <div class="form-group"><label id="incUsdEquivalentLabel">USD Equivalent</label><input type="number" class="input-amount" id="incLocalAmount" step="0.01" readonly style="background:#f3f4f6;"></div>
           </div>
           <div class="form-group"><label>Description / Notes</label><textarea id="incDescription" rows="2" placeholder="Optional notes…"></textarea></div>
         </div>
 
-        <div class="alloc-section-card card">
-          <h3>Budget Allocations (USD)</h3>
-          <p class="alloc-section-note">Allocate parts or all of this income directly to active budget plans.</p>
-          <div id="incomeAllocationsContainer" class="alloc-entry-cards"></div>
-          <p id="allocEmptyHint" class="alloc-empty-hint">No allocations yet. Tap below to add one.</p>
-          <div class="budget-grand-total-card alloc-totals-card">
-            ${cardRow('Total Income', '$<span id="lblTotalIncomeDisplay">0.00</span>')}
-            ${cardRow('Allocated', '$<span id="lblTotalAllocatedDisplay">0.00</span>')}
-            ${cardRow('Unallocated', '$<span id="lblUnallocatedDisplay">0.00</span>', 'alloc-unallocated-value')}
-          </div>
-          <div id="allocationFormError" class="alloc-form-error" style="display: none;"></div>
-          <button type="button" class="secondary alloc-add-btn" onclick="window.openAllocationEntryModal(false)">+ Add Budget Allocation</button>
-        </div>
-
-        <div id="allocationEntryModal" class="modal">
-          <div class="modal-content small entry-form-card">
-            <button type="button" class="close-modal" onclick="window.closeAllocationEntryModal()">&times;</button>
-            <h2>Add Budget Allocation</h2>
-            <div class="modal-field-card">
-              <div class="modal-field-row modal-field-row--stacked">
-                <label for="allocModalBudget">Budget Plan</label>
-                <select id="allocModalBudget"><option value="">Select Budget Plan</option></select>
-              </div>
-              <div class="modal-field-row">
-                <label for="allocModalAmount">Amount (USD)</label>
-                <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00">
-              </div>
-            </div>
-            <div class="btn-group">
-              <button type="button" onclick="window.confirmAllocationEntry()">Add</button>
-              <button type="button" class="secondary" onclick="window.closeAllocationEntryModal()">Cancel</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="btn-group">
-          <button type="submit">Save Income Record</button>
+        
+        <div class="btn-group" style="margin-top: 20px;">
+          <button type="submit" class="success">Save Income</button>
         </div>
       </form>
     </div>
@@ -187,12 +160,19 @@ export async function initRecordIncomePage() {
   await loadTeamBuckets();
 
   const bucketSelect = document.getElementById('incBucketId');
-  if (bucketSelect) {
-    bucketSelect.innerHTML = '<option value="">Select Bucket</option>';
-    teamBucketsCache.forEach(b => {
-      bucketSelect.innerHTML += `<option value="${b.id}" data-currency="${b.currency}">${b.name} (${b.currency})</option>`;
-    });
-  }
+      if (bucketSelect) {
+      bucketSelect.innerHTML = '<option value="">Select Bucket</option>';
+      const unallocated = teamBucketsCache.find(b => b.name === 'General Funds (Unallocated)' || b.is_system_bucket);
+      if (unallocated) {
+        bucketSelect.innerHTML += '<option value="' + unallocated.id + '" data-currency="' + unallocated.currency + '">' + unallocated.name + ' (' + unallocated.currency + ')</option>';
+        bucketSelect.value = unallocated.id;
+        setTimeout(() => window.onIncomeBucketChange(bucketSelect), 50);
+      } else {
+        teamBucketsCache.forEach(b => {
+          bucketSelect.innerHTML += '<option value="' + b.id + '" data-currency="' + b.currency + '">' + b.name + ' (' + b.currency + ')</option>';
+        });
+      }
+    }
 
   // Load exchange rates for rate auto-population
   await loadExchangeRates();
@@ -254,11 +234,12 @@ window.onIncomeBucketChange = function(selectEl) {
 
   // Only auto-populate rate if field is empty — respect user's manual edits
   if (currency === 'USD') {
-    if (rateInput && !rateInput.value) rateInput.value = '1';
+    if (rateInput) rateInput.value = '1';
   } else {
     const rate = getLatestUsdRate(exchangeRatesCache, currency);
-    if (rateInput && !rateInput.value && rate !== null) {
+    if (rateInput && rate !== null) {
       rateInput.value = rateForInput(rate);
+      window.onIncomeMathFieldsChange();
     }
   }
 
@@ -623,21 +604,10 @@ export function getIncomeManagerPage() {
             <div class="form-grid-row form-grid-row--income-edit-meta">
               <div class="form-group"><label>Date</label><input type="date" id="editIncDate" required></div>
               <div class="form-group"><label>Currency</label><input type="text" id="editIncCurrencyDisplay" readonly style="background:#f3f4f6;"></div>
-              <div class="form-group"><label class="required" id="editIncExchangeRateLabel">Rate (1 USD = ?)</label><input type="number" class="input-rate" id="editIncExchangeRate" step="any" min="0.000001" required oninput="window.onEditIncomeMathChange()"></div>
+              <div class="form-group"><label class="required" id="editIncExchangeRateLabel">Rate (1 USD = ?)</label><input type="number" class="input-rate" id="editIncExchangeRate" step="any" min="0.000001" required readonly oninput="window.onEditIncomeMathChange()"></div>
               <div class="form-group"><label id="editIncUsdEquivalentLabel">USD Equivalent</label><input type="number" class="input-amount" id="editIncLocalAmount" step="0.01" readonly style="background:#f3f4f6;"></div>
             </div>
             <div class="form-group"><label>Description</label><textarea id="editIncDescription" rows="2"></textarea></div>
-          </div>
-
-          <div class="alloc-section-card card" style="margin-top: 20px;">
-            <h3>Split Allocations</h3>
-            <div id="editIncomeAllocationsContainer" class="alloc-entry-cards"></div>
-            <div class="budget-grand-total-card alloc-totals-card">
-              ${cardRow('Total Income', '$<span id="lblEditTotalIncome">0.00</span>')}
-              ${cardRow('Allocated', '$<span id="lblEditAllocated">0.00</span>')}
-              ${cardRow('Unallocated', '$<span id="lblEditUnallocated">0.00</span>', 'alloc-unallocated-value')}
-            </div>
-            <button type="button" class="secondary alloc-add-btn" onclick="window.openAllocationEntryModal(true)">+ Add Split</button>
           </div>
 
           <div class="btn-group">
@@ -648,27 +618,7 @@ export function getIncomeManagerPage() {
       </div>
     </div>
 
-    <div id="allocationEntryModal" class="modal">
-      <div class="modal-content small entry-form-card">
-        <button type="button" class="close-modal" onclick="window.closeAllocationEntryModal()">&times;</button>
-        <h2>Add Budget Allocation</h2>
-        <div class="modal-field-card">
-          <div class="modal-field-row modal-field-row--stacked">
-            <label for="allocModalBudget">Budget Plan</label>
-            <select id="allocModalBudget"><option value="">Select Budget Plan</option></select>
-          </div>
-          <div class="modal-field-row">
-            <label for="allocModalAmount">Amount (USD)</label>
-            <input type="number" id="allocModalAmount" class="input-amount" step="0.01" placeholder="0.00">
-          </div>
-        </div>
-        <div class="btn-group">
-          <button type="button" onclick="window.confirmAllocationEntry()">Add</button>
-          <button type="button" class="secondary" onclick="window.closeAllocationEntryModal()">Cancel</button>
-        </div>
-      </div>
-    </div>
-  `;
+    `;
 }
 
 export async function initIncomeManagerPage() {
@@ -813,12 +763,18 @@ window.openEditIncomeRecord = async function(id) {
     document.getElementById('editIncDate').value = rec.date;
     document.getElementById('editIncPaymentFrom').value = rec.payment_from || '';
 
-    const bucketSelect = document.getElementById('editIncBucketId');
+        const bucketSelect = document.getElementById('editIncBucketId');
     bucketSelect.innerHTML = '<option value="">Select Bucket</option>';
-    teamBucketsCache.forEach(b => {
-      bucketSelect.innerHTML += `<option value="${b.id}" data-currency="${b.currency}">${b.name} (${b.currency})</option>`;
-    });
-    bucketSelect.value = rec.bucket_id || '';
+    const unallocated = teamBucketsCache.find(b => b.name === 'General Funds (Unallocated)' || b.is_system_bucket);
+    if (unallocated) {
+      bucketSelect.innerHTML += '<option value="' + unallocated.id + '" data-currency="' + unallocated.currency + '">' + unallocated.name + ' (' + unallocated.currency + ')</option>';
+      bucketSelect.value = unallocated.id;
+    } else {
+      teamBucketsCache.forEach(b => {
+        bucketSelect.innerHTML += '<option value="' + b.id + '" data-currency="' + b.currency + '">' + b.name + ' (' + b.currency + ')</option>';
+      });
+      bucketSelect.value = rec.bucket_id || '';
+    }
 
     document.getElementById('editIncAmount').value = bucketAmountForEdit(rec);
     document.getElementById('editIncExchangeRate').value = rateForInput(rec.exchange_rate || 1);
@@ -828,14 +784,14 @@ window.openEditIncomeRecord = async function(id) {
 
     window.onEditIncomeMathChange();
 
-    const container = document.getElementById('editIncomeAllocationsContainer');
+/*     const container = document.getElementById('editIncomeAllocationsContainer');
     container.innerHTML = '';
     const plans = await getBudgetPlansForTeam();
     const allocs = rec.budget_allocations || [];
     allocs.forEach(a => {
       const plan = plans.find(p => p.id === a.budget_id);
       appendAllocationSummaryRow(container, a.budget_id, a.amount_usd, plan ? plan.name : 'Unknown Plan', true);
-    });
+    }); */
 
     document.getElementById('editIncomeModal').classList.add('active');
   } catch (err) {
@@ -921,7 +877,7 @@ window.onEditIncomeMathChange = function() {
     allocated += parseFloat(row.dataset.amountUsd) || parseFloat(row.querySelector('.edit-alloc-usd-input')?.value) || 0;
   });
 
-  document.getElementById('lblEditTotalIncome').textContent = formatUsdDisplay(incomeUsd);
+  /* document.getElementById('lblEditTotalIncome').textContent = formatUsdDisplay(incomeUsd);
   document.getElementById('lblEditAllocated').textContent = allocated.toFixed(2);
 
   const unallocated = incomeUsd - allocated;
@@ -931,7 +887,7 @@ window.onEditIncomeMathChange = function() {
   if (unallocRow) {
     unallocRow.classList.toggle('negative', unallocated < 0);
     unallocRow.classList.toggle('positive', unallocated >= 0);
-  }
+   */
 };
 
 window.saveEditedIncomeRecord = async function(e) {

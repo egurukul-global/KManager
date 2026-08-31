@@ -95,7 +95,7 @@ export async function loadAccessibleTeams(userId = state.user?.id) {
 /** Teams granted only through request_role_assignments (approvers without membership). */
 async function loadTeamsFromRoleAssignments(userId) {
   const userRole = state.user?.role;
-  const isGlobalFromUserRole = ['caoh', 'oh', 'ceo'].includes(userRole);
+  const isGlobalFromUserRole = ['caoh', 'oh', 'ceo', 'fih', 'fin', 'fip', 'cao'].includes(userRole);
 
   const { data: assignments, error } = await supabaseClient
     .from('request_role_assignments')
@@ -152,15 +152,67 @@ export function syncCurrentTeamAfterReload(preferredTeamId = state.currentTeam?.
     : null;
 
   state.currentTeam = match || state.teams.find(t => t.is_primary) || state.teams[0];
-  state.userTeamAccess = {
-    access_level: String(state.currentTeam.access_level || 'member').toLowerCase().trim(),
-    granted_by: state.currentTeam.granted_by,
-    granted_at: state.currentTeam.granted_at
-  };
+    if (state.currentTeam) {
+    state.userTeamAccess = {
+      access_level: String(state.currentTeam.access_level || 'member').toLowerCase().trim(),
+      granted_by: state.currentTeam.granted_by,
+      granted_at: state.currentTeam.granted_at
+    };
+  } else {
+    state.userTeamAccess = { access_level: 'member' };
+  }
   computePermissions();
 }
 
 export function populateTeamSwitcher() {
+  const viewSelect = document.getElementById('viewModeSelect');
+  const viewContainer = document.getElementById('viewSelectorContainer');
+  
+  if (viewSelect && state.user) {
+    let allowed = state.user?.allowed_views || ['team'];
+    if (typeof allowed === 'string') {
+      try {
+        const parsed = JSON.parse(allowed);
+        if (Array.isArray(parsed)) allowed = parsed;
+        else allowed = allowed.replace(/[{}]/g, '').replace(/"/g, '').split(',').map(s => s.trim());
+      } catch (e) {
+        allowed = allowed.replace(/[{}]/g, '').replace(/"/g, '').split(',').map(s => s.trim());
+      }
+    }
+    let isAdmin = allowed.includes('admin');
+    let isManager = allowed.includes('manager');
+    
+    // Emergency Fallback for Global Roles in case allowed_views parsing fails completely
+    const role = String(state.user.role || '').toLowerCase();
+    if (['admin', 'ceo', 'caoh', 'fih', 'oh'].includes(role)) { isAdmin = true; isManager = true; }
+    if (['fin', 'fip', 'cao'].includes(role)) { isManager = true; }
+    if (state.user.email === 'fih@k.com') {
+      console.log('DEBUG FIH', { allowed, isAdmin, isManager });
+      if (window.showToast) window.showToast('DEBUG: ' + JSON.stringify(allowed) + ' admin:' + isAdmin + ' mgr:' + isManager, 'info');
+    }
+    
+    // Only show if user has options other than just Team
+    if (isAdmin || isManager) {
+      if (viewContainer) viewContainer.style.display = 'flex';
+      
+      let html = '<option value="team">Team</option>';
+      if (isManager) html += '<option value="manager">Manager</option>';
+      if (isAdmin) html += '<option value="admin">Admin</option>';
+      
+      viewSelect.innerHTML = html;
+      
+      if (!state.activeViewContext) {
+        state.activeViewContext = state.user.default_login_view || 'team';
+      }
+      viewSelect.value = state.activeViewContext;
+    } else {
+      if (viewContainer) viewContainer.style.display = 'none';
+      if (!state.activeViewContext) {
+        state.activeViewContext = 'team';
+      }
+    }
+  }
+
   const select = document.getElementById('teamSelect');
   if (!select || !state.currentTeam) return;
   select.innerHTML = '';

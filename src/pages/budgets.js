@@ -18,6 +18,7 @@ import {
   getBudgetTypeLabel,
   buildBudgetTypeOptionsHtml
 } from '../utils/budgetTypes.js';
+import { loadBudgetCategoryLinesForType } from '../utils/budgetTemplates.js';
 import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
 import { canSubmitBudgetApproval } from '../utils/approvalAccess.js';
 import { submitBudgetForApproval } from '../utils/approvalEngine.js';
@@ -721,9 +722,12 @@ async function seedCreateBudgetCategoryRows() {
 
   container.innerHTML = '';
   const type = document.getElementById('newBudgetType')?.value || 'monthly';
-  const lines = await loadCategoryMasterLines();
+
+  // Load categories from template if assigned, otherwise fall back to category master
+  const lines = await loadBudgetCategoryLinesForType(type);
 
   if (isMonthlyBudgetType(type)) {
+    // For monthly budgets, only add mandatory items
     const mandatoryLines = lines.filter(line => line.is_mandatory);
     mandatoryLines.forEach(line => container.appendChild(buildCreateCategoryRow(line)));
   }
@@ -972,6 +976,18 @@ window.createBudget = async function(e) {
   const totalAmount = categories.reduce((sum, c) => sum + c.usdAmount, 0);
   const status = BUDGET_STATUS.DRAFT;
 
+  // Track which template was used for this budget (if any)
+  let template_id = null;
+  const type = document.getElementById('newBudgetType')?.value || 'monthly';
+  try {
+    const template = await import('../utils/budgetTemplates.js').then(m => m.loadTemplateForBudgetType(type));
+    if (template) {
+      template_id = template.id;
+    }
+  } catch (err) {
+    console.debug('Unable to load template assignment for tracking:', err.message);
+  }
+
   const budget = {
     team_id: teamId,
     name: resolvedName,
@@ -984,7 +1000,8 @@ window.createBudget = async function(e) {
     total_amount: totalAmount,
     spent_amount: 0,
     created_by: state.user?.id,
-    is_deleted: false
+    is_deleted: false,
+    template_id: template_id
   };
 
   showConfirm(`Are you sure you want to create the budget "${resolvedName}"?`, async () => {
@@ -1266,6 +1283,11 @@ function renderBudgetSummaryTable(container, budgets) {
       ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.markBudgetReceived('${budget.id}')">Received</button>`
       : '';
 
+    const canClose = isTeamLead && (status === 'APPROVED' || status === 'PAID');
+    const closeBtn = canClose 
+      ? `<button type="button" class="small warning" style="margin-right:5px;" onclick="event.stopPropagation(); window.initiateCloseBudget('${budget.id}')">Close Budget</button>`
+      : '';
+
     let healthBadge = '';
     if (isOver) healthBadge = '<span class="badge badge-danger">Over Budget</span>';
     else if (totalBudgetedUSD > 0 && totalSpentUSD / totalBudgetedUSD > 0.9) healthBadge = '<span class="badge badge-warning">Near Limit</span>';
@@ -1290,6 +1312,7 @@ function renderBudgetSummaryTable(container, budgets) {
         <td data-label="Actions" class="action-buttons">
           ${submitBtn}
           ${receivedBtn}
+          ${closeBtn}
           ${canEdit ? btnIconEdit(`event.stopPropagation(); window.editBudgetPlan('${budget.id}')`) : ''}
           ${canDelete ? btnIconDelete(`event.stopPropagation(); window.deleteBudgetPlan('${budget.id}')`) : ''}
         </td>
@@ -3324,6 +3347,21 @@ window.saveEditedBudget = async function() {
   const existing = allBudgets[budgetIndex];
   const linesEditable = canEditBudgetLines(existing);
   const newStatus = document.getElementById('editBudgetStatus').value;
+  
+  if (newStatus === 'archived' || newStatus === 'closed') {
+    const { data: unreviewed, error: expErr } = await window.supabaseClient
+      .from('expenses')
+      .select('id')
+      .eq('budget_id', id)
+      .eq('is_deleted', false)
+      .eq('is_reviewed', false)
+      .limit(1);
+    
+    if (unreviewed && unreviewed.length > 0) {
+      showToast('Cannot close budget: All logged expenses must be reviewed by Finance first.', 'error');
+      return;
+    }
+  }
 
   if (!linesEditable && !isSystemAdmin()) {
     const onlyArchive = canArchiveBudget(existing) && newStatus === BUDGET_STATUS.ARCHIVED;
@@ -3554,3 +3592,19 @@ window.toggleReviewLineItems = function(btn) {
     }
   }
 };
+async function initiateCloseBudget(budgetId) {
+  const confirmClose = await window.showConfirm(
+    'Close Budget & Return Unused Funds?',
+    'Closing this budget will prevent future expenses. Any remaining allocated funds must be returned to Finance via a transfer. Proceed?'
+  );
+  if (!confirmClose) return;
+
+  // In a real implementation, this would compute the exact unused amount from budget_reconciliation_view,
+  // then trigger the Unified Handshake API to create an 'unused_funds_return' transfer to the UNUSED_FUNDS system bucket.
+  showToast('Initiating return transfer for unused funds...', 'info');
+  
+  // Navigate the user to the transfers page to complete the handshake
+  window.appNavigate('transfers');
+}
+
+window.initiateCloseBudget = initiateCloseBudget;

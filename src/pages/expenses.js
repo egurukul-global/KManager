@@ -50,11 +50,14 @@ function canViewAllExpenses() {
 }
 
 function canEditExpense(expense) {
+  if (expense && expense.is_reviewed) return false;
   if (state.isReadOnlyTeamAccess) return false;
-  if (!state.canManageExpenses) return false;
   if (expense.is_frozen) return false;
-
-  if (canViewAllExpenses()) return true;
+  
+  // Team Leads and Admins can edit anything that isn't locked
+  if (state.canManageExpenses && state.canViewAllExpenses) return true;
+  
+  // Members can edit their own expenses
   return expense.created_by === state.user?.id;
 }
 
@@ -1075,7 +1078,7 @@ function receiptCellHtml(exp) {
   return `<span class="receipt-cell" data-receipt-stored="${String(allKeys.join(',')).replace(/"/g, '&quot;')}" id="${id}">…</span>`;
 }
 
-async function hydrateReceiptCells() {
+window.hydrateReceiptCells = async function() {
   const cells = document.querySelectorAll('.receipt-cell[data-receipt-stored]');
   await Promise.all([...cells].map(async (el) => {
     const storedStr = el.getAttribute('data-receipt-stored') || '';
@@ -1266,9 +1269,25 @@ export function getExpenseManagerPage() {
             <div class="form-group"><label>Category</label><select id="expFilterCategory" onchange="window.refreshExpenseList()"><option value="">All</option></select></div>
             <div class="form-group"><label>Bucket</label><select id="expFilterBucket" onchange="window.refreshExpenseList()"><option value="">All</option></select></div>
           </div>
-          <div class="form-grid-row form-grid-row--filter-dates">
+          <div class="form-grid-row form-grid-row--filter-dates" style="grid-template-columns: repeat(4, 1fr); width: 100%;">
             <div class="form-group"><label>From</label><input type="date" id="expFilterStart" onchange="window.refreshExpenseList()"></div>
             <div class="form-group"><label>To</label><input type="date" id="expFilterEnd" onchange="window.refreshExpenseList()"></div>
+            <div class="form-group">
+              <label>Receipt</label>
+              <select id="expFilterReceipt" onchange="window.refreshExpenseList()">
+                <option value="">All</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Status</label>
+              <select id="expFilterStatus" onchange="window.refreshExpenseList()">
+                <option value="">All</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
           </div>
         </div>
         <button type="button" class="secondary" style="margin-top:12px;" onclick="window.resetExpenseFilters()">Reset filters</button>
@@ -1288,7 +1307,7 @@ export function getExpenseManagerPage() {
             <tr>
               <th class="checkbox-col"><input type="checkbox" onchange="window.toggleSelectAllExpenses(this)"></th>
               <th>Date</th><th>Item</th><th>Budget</th><th>Category</th><th>Bucket</th>
-              <th>Local</th><th>USD</th><th>Receipt</th><th>Actions</th>
+              <th>Local</th><th>USD</th><th>Receipt</th><th>Status</th><th>Actions</th>
             </tr>
           </thead>
           <tbody id="expenseTableBody"></tbody>
@@ -1330,6 +1349,16 @@ export function getExpenseManagerPage() {
               </div>
               <p class="form-hint" id="editExpReceiptHint" style="margin-top:6px;"></p>
               <div id="editExpReceiptPreview" style="margin-top:8px;"></div>
+            </div>
+            <div id="editExpCorrectionAlert" style="display:none; padding:10px; background:var(--error-light, #ffebee); color:var(--error); border-left:4px solid var(--error); border-radius:4px; margin-bottom:15px;">
+              <strong>Finance Notes:</strong> <span id="editExpCorrectionNotes"></span>
+            </div>
+            <div class="form-group form-span-full" style="background:var(--bg-secondary); padding:15px; border-radius:6px; border:1px solid var(--border);">
+              <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer;">
+                <input type="checkbox" id="editExpSubmitReview" name="is_submitted" style="width:18px; height:18px; cursor:pointer;" checked>
+                <strong style="color:var(--primary);">Submit for Finance Review</strong>
+              </label>
+              <p class="form-hint" id="editExpSubmitHint" style="margin-top:6px; margin-bottom:0; font-size:0.85em; color:var(--error);">A receipt must be attached to submit for review.</p>
             </div>
             <div class="form-group form-span-full"><label>Notes</label><textarea id="editExpDescription" name="description" rows="2"></textarea></div>
           </div>
@@ -1490,6 +1519,16 @@ function getFilteredExpenses() {
     if (bucketId && e.bucket_id !== bucketId) return false;
     if (start && e.date < start) return false;
     if (end && e.date > end) return false;
+    
+    const receipt = document.getElementById('expFilterReceipt')?.value || '';
+    const status = document.getElementById('expFilterStatus')?.value || '';
+    
+    if (receipt === 'yes' && !e.receipt_url) return false;
+    if (receipt === 'no' && e.receipt_url) return false;
+    
+    if (status === 'reviewed' && !e.is_reviewed) return false;
+    if (status === 'pending' && e.is_reviewed) return false;
+
     return true;
   }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
@@ -1521,6 +1560,14 @@ function refreshExpenseList() {
     const catLabel = getExpenseCategoryLabel(exp, teamCategoriesCache);
     const canEdit = canEditExpense(exp);
     const receipt = receiptCellHtml(exp);
+    let statusBadge = '<span class="status-pill warning" style="font-size:0.7em;">Draft</span>';
+    if (exp.is_reviewed) {
+      statusBadge = '<span class="status-pill success" style="font-size:0.7em;">Reviewed</span>';
+    } else if (exp.is_frozen) {
+      statusBadge = '<span class="status-pill info" style="font-size:0.7em; background:#64748b; color:white;">Frozen (Budget Locked)</span>';
+    } else if (exp.is_submitted) {
+      statusBadge = '<span class="status-pill info" style="font-size:0.7em;">Pending Review</span>';
+    }
     const selected = selectedExpenseIds.has(exp.id);
 
     tableHtml += `
@@ -1534,6 +1581,7 @@ function refreshExpenseList() {
         <td>${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
         <td>$${(exp.usd_amount || 0).toFixed(2)}</td>
         <td>${receipt}</td>
+        <td>${statusBadge}</td>
         <td class="action-buttons">
           ${canEdit ? `${btnIconEdit(`window.editExpense('${exp.id}')`)}${btnIconDelete(`window.deleteExpense('${exp.id}')`)}` : '<span style="color:#999;font-size:0.8em;">View only</span>'}
         </td>
@@ -1554,6 +1602,7 @@ function refreshExpenseList() {
         ${cardRow('Local', `${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}`)}
         ${cardRow('USD', `$${(exp.usd_amount || 0).toFixed(2)}`, 'data-card-row-value')}
         ${cardRow('Receipt', receipt)}
+        ${cardRow('Status', statusBadge)}
       </article>`;
   });
 
@@ -1600,9 +1649,33 @@ function resetExpenseFilters() {
   document.getElementById('expFilterBucket').value = '';
   document.getElementById('expFilterStart').value = '';
   document.getElementById('expFilterEnd').value = '';
+  const r = document.getElementById('expFilterReceipt'); if (r) r.value = '';
+  const s = document.getElementById('expFilterStatus'); if (s) s.value = '';
   populateExpenseCategoryFilter();
   refreshExpenseList();
 }
+
+
+window.checkReceiptForReview = function(prefix, autoCheck = true) {
+  const url = document.getElementById(prefix === 'add' ? 'expReceiptUrl' : 'editExpReceiptUrl')?.value;
+  const cb = document.getElementById(prefix === 'add' ? 'expSubmitReview' : 'editExpSubmitReview');
+  const hint = document.getElementById(prefix === 'add' ? 'expSubmitHint' : 'editExpSubmitHint');
+  
+  if (!cb) return;
+  
+  const hasUrl = url && url.trim().length > 0;
+  const hasStaged = typeof stagedAttachments !== 'undefined' && stagedAttachments.length > 0;
+  
+  if (hasUrl || hasStaged) {
+    cb.disabled = false;
+    if (autoCheck) cb.checked = true;
+    if (hint) hint.style.display = 'none';
+  } else {
+    cb.disabled = true;
+    cb.checked = false;
+    if (hint) hint.style.display = 'block';
+  }
+};
 
 function editExpense(id) {
   const exp = teamExpensesCache.find(e => e.id === id);
@@ -1617,6 +1690,31 @@ function editExpense(id) {
   document.getElementById('editExpLocalAmount').value = exp.local_amount;
   document.getElementById('editExpDescription').value = exp.description || '';
   document.getElementById('editExpReceiptUrl').value = exp.receipt_url || '';
+  
+  const cbSubmit = document.getElementById('editExpSubmitReview');
+  const alertBox = document.getElementById('editExpCorrectionAlert');
+  const alertNotes = document.getElementById('editExpCorrectionNotes');
+  
+  if (cbSubmit) {
+    cbSubmit.checked = exp.is_submitted !== false;
+    window.checkReceiptForReview('edit', false);
+    if (exp.is_submitted === false) {
+      cbSubmit.checked = false; 
+    }
+  }
+
+  if (alertBox && alertNotes) {
+    if (exp.is_submitted === false && exp.review_notes) {
+      alertBox.style.display = 'block';
+      alertNotes.textContent = exp.review_notes;
+    } else {
+      alertBox.style.display = 'none';
+      alertNotes.textContent = '';
+    }
+  }
+
+  document.getElementById('editExpReceiptUrl').setAttribute('oninput', "window.checkReceiptForReview('edit', true)");
+
   
   const keys = [exp.receipt_url].filter(Boolean);
   const childAttachments = (teamAttachmentsCache || []).filter(a => a.expense_id === id && !a.is_deleted).map(a => a.file_url);

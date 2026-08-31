@@ -1,12 +1,14 @@
 // ==================== EXPENSE REPORTS ====================
 import { state } from '../state.js';
-import { sbSelect, sbInsert, sbUpdate } from '../db.js';
-import { showToast } from '../components/toasts.js';
+import { sbSelect, sbInsert, sbUpdate, supabaseClient } from '../db.js';
+import { showToast, showConfirm } from '../components/toasts.js';
 import { getBudgetStatus } from '../utils/budgetStatus.js';
 import { getExpenseCategoryLabel } from '../utils/expenseHelpers.js';
 import { formatUsdDisplay } from '../utils/currency.js';
 import { exportExpenseReportToPdf, buildReportPdfDefinition } from '../utils/reportPdf.js';
+import { downloadCSV, convertArrayOfObjectsToCSV } from '../utils/exportCsv.js';
 import { resolveReceiptViewUrl, isExternalReceiptUrl, uploadReportPdf } from '../utils/upload.js';
+import { convertPdfToImages } from '../utils/pdfConverter.js';
 import {
   DEFAULT_REPORT_SECTIONS,
   truncReportItem,
@@ -57,8 +59,11 @@ function reportPageTitle() {
 }
 
 function reportHeader(showPdf = true) {
-  const pdfBtn = showPdf
-    ? `<button type="button" class="pdf-export-btn" onclick="window.exportExpenseReportToPDF()">📄 Export to PDF</button>`
+  const buttons = showPdf
+    ? `<div style="display:flex; gap:10px;">
+         <button type="button" class="pdf-export-btn" id="reportCsvBtn" onclick="window.exportExpenseReportToCSV()">Export to CSV</button>
+         <button type="button" class="pdf-export-btn" id="reportPdfBtn" onclick="window.exportExpenseReportToPDF()">Export to PDF</button>
+       </div>`
     : '';
   return `
     <div class="report-results-header">
@@ -66,7 +71,7 @@ function reportHeader(showPdf = true) {
         <h3 class="report-main-title">${reportPageTitle()}</h3>
         <p id="reportFilterLine" class="report-filter-line"></p>
       </div>
-      ${pdfBtn}
+      ${buttons}
     </div>
   `;
 }
@@ -75,7 +80,7 @@ function setFilterLine(filters, budget) {
   const parts = buildReportFilterDescription(filters, budget, getBucketName);
   const el = document.getElementById('reportFilterLine');
   if (el) {
-    el.textContent = parts.length ? parts.join(' · ') : '';
+    el.textContent = parts.length ? parts.join(' Â· ') : '';
     el.style.display = parts.length ? '' : 'none';
   }
 }
@@ -135,13 +140,12 @@ export function getExpenseReportsPage() {
               <tr>
                 <th>Date Generated</th>
                 <th>Budget</th>
-                <th>Filter Criteria</th>
                 <th>Status</th>
                 <th>Action</th>
               </tr>
             </thead>
             <tbody id="reportLogsTableBody">
-              <tr><td colspan="5" class="empty-state">Loading logs...</td></tr>
+              <tr><td colspan="4" class="empty-state">Loading logs...</td></tr>
             </tbody>
           </table>
         </div>
@@ -150,11 +154,49 @@ export function getExpenseReportsPage() {
   `;
 }
 
+function switchReportsTab(tabName) {
+  const btnGen = document.getElementById('btnTabGenerate');
+  const btnLogs = document.getElementById('btnTabLogs');
+  const tabGen = document.getElementById('tabContentGenerate');
+  const tabLogs = document.getElementById('tabContentLogs');
+
+  if (!btnGen || !btnLogs || !tabGen || !tabLogs) return;
+
+  if (tabName === 'generate') {
+    btnGen.classList.add('active');
+    btnGen.style.fontWeight = 'bold';
+    btnGen.style.borderBottom = '3px solid var(--primary)';
+    btnGen.style.color = 'var(--text)';
+
+    btnLogs.classList.remove('active');
+    btnLogs.style.fontWeight = 'normal';
+    btnLogs.style.borderBottom = 'none';
+    btnLogs.style.color = 'var(--text-secondary)';
+
+    tabGen.style.display = 'block';
+    tabLogs.style.display = 'none';
+  } else {
+    btnLogs.classList.add('active');
+    btnLogs.style.fontWeight = 'bold';
+    btnLogs.style.borderBottom = '3px solid var(--primary)';
+    btnLogs.style.color = 'var(--text)';
+
+    btnGen.classList.remove('active');
+    btnGen.style.fontWeight = 'normal';
+    btnGen.style.borderBottom = 'none';
+    btnGen.style.color = 'var(--text-secondary)';
+
+    tabLogs.style.display = 'block';
+    tabGen.style.display = 'none';
+  }
+}
+
 export async function initExpenseReportsPage() {
   window.promptAndGenerateExpenseReport = promptAndGenerateExpenseReport;
   window.resetExpenseReportFilters = resetExpenseReportFilters;
   window.onReportBudgetChange = onReportBudgetChange;
   window.exportExpenseReportToPDF = exportReportToPDF;
+  window.exportExpenseReportToCSV = exportReportToCSV;
   window.switchReportsTab = switchReportsTab;
   window.downloadReportPdf = downloadReportPdf;
   window.cancelReportLog = cancelReportLog;
@@ -382,6 +424,7 @@ async function promptAndGenerateExpenseReport() {
 
     // Switch tab to Logs
     switchReportsTab('logs');
+    refreshReportLogs();
 
     // Run in background without blocking
     processReportGenerationInBg(logId, filters, sections);
@@ -439,708 +482,41 @@ async function exportReportToPDF() {
   }
 }
 
-function generateExpenseReport(sections = { ...DEFAULT_REPORT_SECTIONS }) {
-  const start = document.getElementById('reportStart')?.value || '';
-  const end = document.getElementById('reportEnd')?.value || '';
-  const budgetId = document.getElementById('reportBudget')?.value || '';
-  const category = document.getElementById('reportCategory')?.value || '';
-  const sourceId = document.getElementById('reportSource')?.value || '';
-  const currency = document.getElementById('reportCurrency')?.value || '';
-
-  const filters = { start, end, budgetId, category, sourceId, currency };
-  const filtered = filterExpenses(filters);
-  const incomeByDate = filterIncomeByDates(filters);
-  const incomeScope = scopeIncomeForReport(incomeByDate, budgetId || null);
-  const container = document.getElementById('expenseReportResults');
-  if (!container) return;
-
-  const budget = budgetId ? teamBudgets.find(b => b.id === budgetId) : null;
-
-  lastReportSnapshot = {
-    filteredExpenses: filtered,
-    incomeScope,
-    filters,
-    budget,
-    teamCategories,
-    teamBuckets,
-    teamBudgets,
-    sections,
-    teamName: getTeamName()
-  };
-
-  container.innerHTML = renderReport({
-    filtered,
-    incomeScope,
-    filters,
-    budget,
-    sections
-  });
-
-  setFilterLine(filters, budget);
-  hydrateReportReceiptCells();
-}
-
-async function hydrateReportReceiptCells() {
-  const cells = document.querySelectorAll('.receipt-cell[data-receipt-stored]');
-  await Promise.all([...cells].map(async (el) => {
-    const storedStr = el.getAttribute('data-receipt-stored') || '';
-    const storedKeys = storedStr.split(',').filter(Boolean);
-    if (!storedKeys.length) {
-      el.textContent = '—';
-      return;
-    }
-    try {
-      const linksHtmls = await Promise.all(storedKeys.map(async (key, idx) => {
-        try {
-          if (isExternalReceiptUrl(key)) {
-            return `<a href="${key}" target="_blank" rel="noopener" style="text-decoration: none; font-weight: bold; color: var(--primary);">📎${idx + 1}</a>`;
-          }
-          const viewUrl = await resolveReceiptViewUrl(key);
-          return `<a href="${viewUrl}" target="_blank" rel="noopener" style="text-decoration: none; font-weight: bold; color: var(--primary);">📎${idx + 1}</a>`;
-        } catch {
-          return '<span title="Could not load">📎</span>';
-        }
-      }));
-      el.innerHTML = `<div style="display:flex;gap:6px;align-items:center;">${linksHtmls.join('')}</div>`;
-    } catch {
-      el.innerHTML = '—';
-    }
-  }));
-}
-
-function renderReport({ filtered, incomeScope, filters, budget, sections }) {
-  let html = reportHeader(true);
-
-  if (budget) {
-    const totalBudgeted = budgetedUsd(budget);
-    const totalActual = filtered.reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
-    const balance = totalBudgeted - totalActual;
-    html += `
-      <div class="stats-grid" style="margin-bottom:20px;">
-        <div class="stat-card"><h3>${filtered.length}</h3><p>Transactions</p></div>
-        <div class="stat-card"><h3>$${totalBudgeted.toFixed(2)}</h3><p>Budgeted (USD)</p></div>
-        <div class="stat-card"><h3>$${totalActual.toFixed(2)}</h3><p>Actual (USD)</p></div>
-        <div class="stat-card ${balance < 0 ? 'stat-card--danger' : 'stat-card--success'}">
-          <h3>$${balance.toFixed(2)}</h3><p>${balance < 0 ? 'Over Budget' : 'Remaining'}</p>
-        </div>
-      </div>
-    `;
-  } else if (sections.expenseDetail) {
-    const totalUSD = filtered.reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
-    html += `
-      <div class="stats-grid" style="margin-bottom:20px;">
-        <div class="stat-card"><h3>${filtered.length}</h3><p>Transactions</p></div>
-        <div class="stat-card"><h3>$${formatUsdDisplay(totalUSD)}</h3><p>Total Spent (USD)</p></div>
-      </div>
-    `;
+async function exportReportToCSV() {
+  if (!lastReportSnapshot) {
+    showToast('Generate a report first, then export to CSV.', 'warning');
+    return;
   }
-
-  if (sections.expenseDetail) {
-    html += renderExpenseDetails(filtered, !!budget);
-  }
-
-  if (sections.categorySummary) {
-    if (budget) {
-      html += renderCategoryPerformance(filtered, budget);
-    } else {
-      html += renderBudgetVsActual(filtered, filters);
-      html += renderSpendingByCategory(filtered);
-    }
-  }
-
-  if (sections.incomeSummary) {
-    html += renderIncomeSummary(incomeScope, budget);
-  }
-
-  if (sections.incomeDetail) {
-    html += renderIncomeDetails(incomeScope, budget);
-  }
-
-  if (sections.budgetAllocations) {
-    html += renderBudgetAllocations(incomeScope);
-  }
-
-  if (sections.financialSummary) {
-    html += renderFinancialSummary();
-  }
-
-  return html;
-}
-
-function renderExpenseDetails(filtered, singleBudget) {
-  let html = '<h3>Expense Details</h3>';
-
-  if (!filtered.length) {
-    return html + '<div class="empty-state"><p>No expenses match the selected filters.</p></div>';
-  }
-
-  html += `
-    <div class="table-container report-expense-table">
-      <table class="table-stack-mobile">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th class="col-item">Item</th>
-            ${singleBudget ? '' : '<th>Budget</th>'}
-            <th>Category</th>
-            <th>Source</th>
-            <th class="col-amount">Local</th>
-            <th class="col-rate">Rate</th>
-            <th class="col-usd">USD</th>
-            <th>Receipt</th>
-          </tr>
-        </thead>
-        <tbody>
-  `;
-
-  [...filtered].sort((a, b) => b.date.localeCompare(a.date)).forEach(exp => {
-    const keys = [exp.receipt_url].filter(Boolean);
-    const childAttachments = (teamAttachments || []).filter(a => a.expense_id === exp.id && !a.is_deleted).map(a => a.file_url);
-    const allKeys = [...new Set([...keys, ...childAttachments])];
-    const receiptLink = allKeys.length
-      ? `<span class="receipt-cell" data-receipt-stored="${String(allKeys.join(',')).replace(/"/g, '&quot;')}">…</span>`
-      : '—';
-    html += `
-      <tr>
-        <td data-label="Date">${exp.date}</td>
-        <td data-label="Item" class="col-item" title="${(exp.item || '').replace(/"/g, '&quot;')}">${truncReportItem(exp.item)}</td>
-        ${singleBudget ? '' : `<td data-label="Budget">${getBudgetName(exp.budget_id)}</td>`}
-        <td data-label="Category">${getExpenseCategoryLabel(exp, teamCategories)}</td>
-        <td data-label="Source">${getBucketName(exp.bucket_id)}</td>
-        <td data-label="Local" class="col-amount">${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
-        <td data-label="Rate" class="col-rate">${exp.rate ?? '—'}</td>
-        <td data-label="USD" class="col-usd">$${(exp.usd_amount || 0).toFixed(2)}</td>
-        <td data-label="Receipt">${receiptLink}</td>
-      </tr>
-    `;
-  });
-
-  html += '</tbody></table></div>';
-  return html;
-}
-
-function renderCategoryPerformance(filtered, budget) {
-  let html = '<h3 style="margin-top:30px;">Category Performance</h3>';
-  html += `
-    <div class="table-container">
-      <table class="table-stack-mobile">
-        <thead>
-          <tr><th>Category</th><th>Budgeted (USD)</th><th>Actual (USD)</th><th>Balance</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-  `;
-
-  let catGrandBudgeted = 0;
-  let catGrandActual = 0;
-
-  (budget.categories || []).forEach(cat => {
-    const catName = cat.category || cat.name;
-    const catBudgeted = parseFloat(cat.usdAmount ?? cat.usd_amount) || 0;
-    catGrandBudgeted += catBudgeted;
-    const catActual = filtered
-      .filter(e => getExpenseCategoryLabel(e, teamCategories) === catName)
-      .reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
-    catGrandActual += catActual;
-    const catBalance = catBudgeted - catActual;
-    html += `
-      <tr>
-        <td data-label="Category"><strong>${catName}</strong>${cat.subcategory ? ` / ${cat.subcategory}` : ''}</td>
-        <td data-label="Budgeted">$${catBudgeted.toFixed(2)}</td>
-        <td data-label="Actual">$${catActual.toFixed(2)}</td>
-        <td data-label="Balance" class="${catBalance < 0 ? 'negative' : 'positive'}" style="font-weight:bold;">$${catBalance.toFixed(2)}</td>
-        <td data-label="Status">${categoryStatusBadge(catBudgeted, catActual)}</td>
-      </tr>
-    `;
-  });
-
-  const catGrandBalance = catGrandBudgeted - catGrandActual;
-  const catGrandOver = catGrandBalance < 0;
-  html += `
-      <tr class="status-total">
-        <td data-label="Total"><strong>TOTAL</strong></td>
-        <td data-label="Budgeted"><strong>$${catGrandBudgeted.toFixed(2)}</strong></td>
-        <td data-label="Actual"><strong>$${catGrandActual.toFixed(2)}</strong></td>
-        <td data-label="Balance" class="${catGrandOver ? 'negative' : 'positive'}"><strong>$${catGrandBalance.toFixed(2)}</strong></td>
-        <td data-label="Status"><span class="badge badge-${catGrandOver ? 'danger' : 'success'}">${catGrandOver ? 'Over Budget' : 'On Track'}</span></td>
-      </tr>
-    </tbody></table></div>
-  `;
-  return html;
-}
-
-function renderBudgetVsActual(filtered, filters) {
-  let relevantBudgets = [...teamBudgets];
-  if (filters.category || filters.sourceId || filters.currency) {
-    const ids = new Set(filtered.map(e => e.budget_id));
-    relevantBudgets = teamBudgets.filter(b => ids.has(b.id));
-  }
-
-  let html = '<h3 style="margin-top:30px;">Budget vs Actual</h3>';
-  html += `
-    <div class="table-container">
-      <table class="table-stack-mobile">
-        <thead>
-          <tr><th>Budget</th><th>Budgeted (USD)</th><th>Actual (USD)</th><th>Balance (USD)</th><th>Status</th></tr>
-        </thead>
-        <tbody>
-  `;
-
-  let grandBudgeted = 0;
-  let grandActual = 0;
-  let grandBalance = 0;
-
-  relevantBudgets.forEach(b => {
-    const budgeted = budgetedUsd(b);
-    const actual = filtered.filter(e => e.budget_id === b.id)
-      .reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
-    const balance = budgeted - actual;
-    grandBudgeted += budgeted;
-    grandActual += actual;
-    grandBalance += balance;
-    const over = balance < 0;
-    html += `
-      <tr>
-        <td data-label="Budget"><strong>${b.name}</strong></td>
-        <td data-label="Budgeted">$${budgeted.toFixed(2)}</td>
-        <td data-label="Actual">$${actual.toFixed(2)}</td>
-        <td data-label="Balance" class="${over ? 'negative' : 'positive'}" style="font-weight:bold;">$${balance.toFixed(2)}</td>
-        <td data-label="Status">${categoryStatusBadge(budgeted, actual)}</td>
-      </tr>
-    `;
-  });
-
-  const grandOver = grandBalance < 0;
-  html += `
-      <tr class="status-total">
-        <td data-label="Total"><strong>GRAND TOTAL</strong></td>
-        <td data-label="Budgeted"><strong>$${grandBudgeted.toFixed(2)}</strong></td>
-        <td data-label="Actual"><strong>$${grandActual.toFixed(2)}</strong></td>
-        <td data-label="Balance" class="${grandOver ? 'negative' : 'positive'}"><strong>$${grandBalance.toFixed(2)}</strong></td>
-        <td data-label="Status"><span class="badge badge-${grandOver ? 'danger' : 'success'}">${grandOver ? 'Over Budget' : 'On Track'}</span></td>
-      </tr>
-    </tbody></table></div>
-  `;
-  return html;
-}
-
-function renderSpendingByCategory(filtered) {
-  const byCat = aggregateSpendByCategory(filtered, teamCategories);
-  if (!byCat.length) return '';
-
-  let html = '<h3 style="margin-top:24px;">Spending by Category</h3>';
-  html += `
-    <div class="table-container">
-      <table class="table-stack-mobile">
-        <thead><tr><th>Category</th><th>Transactions</th><th>Actual (USD)</th></tr></thead>
-        <tbody>
-  `;
-  let total = 0;
-  byCat.forEach(row => {
-    total += row.actual;
-    html += `
-      <tr>
-        <td data-label="Category">${row.category}</td>
-        <td data-label="Transactions">${row.count}</td>
-        <td data-label="Actual">$${row.actual.toFixed(2)}</td>
-      </tr>
-    `;
-  });
-  html += `
-      <tr class="status-total">
-        <td data-label="Total"><strong>TOTAL</strong></td>
-        <td data-label="Transactions"><strong>${filtered.length}</strong></td>
-        <td data-label="Actual"><strong>$${total.toFixed(2)}</strong></td>
-      </tr>
-    </tbody></table></div>
-  `;
-  return html;
-}
-
-function renderIncomeSummary(incomeScope, budget) {
-  const { summary, records } = incomeScope;
-  if (!summary || !records.length) {
-    return '<h3 class="report-section-divider">Income Summary</h3><div class="empty-state"><p>No income for the selected criteria.</p></div>';
-  }
-
-  const title = budget ? `Income Summary — ${budget.name}` : 'Income Summary';
-  let html = `<h3 class="report-section-divider">${title}</h3>`;
-  html += '<div class="stats-grid" style="margin-bottom:20px;">';
-
-  if (summary.budgetScoped) {
-    html += `
-      <div class="stat-card stat-card--income"><h3>${summary.recordCount}</h3><p>Allocation Records</p></div>
-      <div class="stat-card stat-card--alloc"><h3>$${summary.allocated.toFixed(2)}</h3><p>Allocated to Budget</p></div>
-    `;
-  } else {
-    html += `
-      <div class="stat-card stat-card--income"><h3>${summary.recordCount}</h3><p>Records</p></div>
-      <div class="stat-card stat-card--income"><h3>$${summary.totalReceived.toFixed(2)}</h3><p>Total Received</p></div>
-      <div class="stat-card stat-card--alloc"><h3>$${summary.allocated.toFixed(2)}</h3><p>Allocated</p></div>
-      <div class="stat-card stat-card--unalloc"><h3>$${summary.unallocated.toFixed(2)}</h3><p>Unallocated</p></div>
-    `;
-  }
-
-  html += '</div>';
-  return html;
-}
-
-function renderIncomeDetails(incomeScope, budget) {
-  const { records } = incomeScope;
-  if (!records.length) return '';
-
-  const title = budget ? `Income Details — ${budget.name}` : 'Income Details';
-  let html = `<h4>${title}</h4>`;
-  html += `
-    <div class="table-container">
-      <table class="table-stack-mobile">
-        <thead>
-          <tr>
-            <th>Date</th><th>From</th><th>Bucket</th><th>Amount (Local)</th>
-            <th>Amount (USD)</th><th>Description</th><th>Allocation</th>
-          </tr>
-        </thead>
-        <tbody>
-  `;
-
-  [...records].sort((a, b) => b.date.localeCompare(a.date)).forEach(fund => {
-    const fundUsd = parseFloat(fund.amount_usd) || 0;
-    const allocs = fund.budget_allocations || [];
-
-    if (!allocs.length) {
-      const localDisplay = fund.exchange_rate
-        ? `${(fund.local_amount || 0).toLocaleString()} ${fund.currency || ''} @ ${fund.exchange_rate}`
-        : `${(fund.local_amount || 0).toLocaleString()} ${fund.currency || ''}`;
-      html += `
-        <tr>
-          <td data-label="Date">${fund.date}</td>
-          <td data-label="From">${fund.payment_from || '—'}</td>
-          <td data-label="Bucket">${getBucketName(fund.bucket_id)}</td>
-          <td data-label="Local" class="positive">${localDisplay}</td>
-          <td data-label="USD"><strong>$${fundUsd.toFixed(2)}</strong></td>
-          <td data-label="Description">${fund.description || '—'}</td>
-          <td data-label="Allocation"><span style="color:#999;">Unallocated</span></td>
-        </tr>
-      `;
-      return;
-    }
-
-    allocs.forEach(alloc => {
-      const allocUsd = parseFloat(alloc.amount_usd) || 0;
-      const allocLocal = fundUsd > 0 ? (allocUsd / fundUsd) * (fund.local_amount || 0) : 0;
-      html += `
-        <tr>
-          <td data-label="Date">${fund.date}</td>
-          <td data-label="From">${fund.payment_from || '—'}</td>
-          <td data-label="Bucket">${getBucketName(fund.bucket_id)}</td>
-          <td data-label="Local" class="positive">${allocLocal.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${fund.currency || ''}</td>
-          <td data-label="USD"><strong>$${allocUsd.toFixed(2)}</strong></td>
-          <td data-label="Description">${fund.description || '—'}</td>
-          <td data-label="Allocation">${getBudgetName(alloc.budget_id)}</td>
-        </tr>
-      `;
-    });
-  });
-
-  html += '</tbody></table></div>';
-  return html;
-}
-
-function renderBudgetAllocations(incomeScope) {
-  const { records } = incomeScope;
-  let html = '<h4 style="margin-top:24px;">Budget Allocations</h4>';
-  html += `
-    <div class="table-container">
-      <table class="table-stack-mobile">
-        <thead>
-          <tr><th>Date</th><th>From</th><th>Budget</th><th>Amount (USD)</th><th>Source Income</th></tr>
-        </thead>
-        <tbody>
-  `;
-
-  let hasRows = false;
-  records.forEach(fund => {
-    (fund.budget_allocations || []).forEach(alloc => {
-      hasRows = true;
-      html += `
-        <tr>
-          <td data-label="Date">${fund.date}</td>
-          <td data-label="From">${fund.payment_from || '—'}</td>
-          <td data-label="Budget">${getBudgetName(alloc.budget_id)}</td>
-          <td data-label="USD" class="positive">$${(parseFloat(alloc.amount_usd) || 0).toFixed(2)}</td>
-          <td data-label="Source">${fund.description || '—'}</td>
-        </tr>
-      `;
-    });
-  });
-
-  if (!hasRows) {
-    html += '<tr><td colspan="5" class="empty-state">No allocations for the selected criteria.</td></tr>';
-  }
-
-  html += '</tbody></table></div>';
-  return html;
-}
-
-function renderFinancialSummary() {
-  let html = '<h3 class="report-section-divider">Financial Summary — Bucket Balances</h3>';
-  if (!teamBuckets.length) {
-    return html + '<div class="empty-state"><p>No buckets configured.</p></div>';
-  }
-
-  html += `
-    <div class="table-container">
-      <table class="table-stack-mobile">
-        <thead><tr><th>Bucket</th><th>Currency</th><th>Balance</th></tr></thead>
-        <tbody>
-  `;
-
-  teamBuckets.forEach(b => {
-    html += `
-      <tr>
-        <td data-label="Bucket"><strong>${b.name}</strong></td>
-        <td data-label="Currency">${b.currency || '—'}</td>
-        <td data-label="Balance">${(parseFloat(b.balance) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-      </tr>
-    `;
-  });
-
-  html += '</tbody></table></div>';
-  return html;
-}
-
-export function switchReportsTab(tabName) {
-  const tabGenerate = document.getElementById('tabContentGenerate');
-  const tabLogs = document.getElementById('tabContentLogs');
-  const btnGenerate = document.getElementById('btnTabGenerate');
-  const btnLogs = document.getElementById('btnTabLogs');
-  
-  if (tabName === 'generate') {
-    if (tabGenerate) tabGenerate.style.display = 'block';
-    if (tabLogs) tabLogs.style.display = 'none';
-    if (btnGenerate) {
-      btnGenerate.classList.add('active');
-      btnGenerate.style.borderBottom = '3px solid var(--primary)';
-    }
-    if (btnLogs) {
-      btnLogs.classList.remove('active');
-      btnLogs.style.borderBottom = 'none';
-    }
-  } else {
-    if (tabGenerate) tabGenerate.style.display = 'none';
-    if (tabLogs) tabLogs.style.display = 'block';
-    if (btnGenerate) {
-      btnGenerate.classList.remove('active');
-      btnGenerate.style.borderBottom = 'none';
-    }
-    if (btnLogs) {
-      btnLogs.classList.add('active');
-      btnLogs.style.borderBottom = '3px solid var(--primary)';
-    }
-    refreshReportLogs();
-  }
-}
-
-async function refreshReportLogs() {
-  const tbody = document.getElementById('reportLogsTableBody');
-  if (!tbody) return;
-
-  const teamId = state.currentTeam?.team_id;
-  if (!teamId) return;
 
   try {
-    const res = await sbSelect('report_logs', { teamId, orderBy: 'created_at', ascending: false });
-    const logs = (res.data || []).filter(l => !l.is_deleted);
-
-    if (!logs.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No reports generated yet.</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = logs.map(l => {
-      let statusHtml = '';
-      let actionHtml = '';
-
-      if (l.status === 'in_progress') {
-        statusHtml = '<span class="status-badge" style="background:#fff3cd;color:#856404;font-size:0.75rem;padding:4px 8px;border-radius:4px;"><span class="spinner-inline" style="margin-right:4px;"></span>In Progress</span>';
-        actionHtml = `<div style="display:flex;gap:8px;align-items:center;"><span style="color:var(--text-secondary);font-size:0.85rem;">Processing…</span><button type="button" class="btn btn-danger btn-xs" style="padding:2px 6px;font-size:0.7rem;border:none;border-radius:4px;color:white;cursor:pointer;" onclick="window.cancelReportLog('${l.id}')">❌ Cancel</button></div>`;
-      } else if (l.status === 'failed') {
-        statusHtml = `<span class="status-badge" style="background:#f8d7da;color:#721c24;font-size:0.75rem;padding:4px 8px;border-radius:4px;" title="${(l.error_message || '').replace(/"/g, '&quot;')}">⚠️ Failed</span>`;
-        actionHtml = `<span class="form-hint" style="color:var(--danger);font-size:0.75rem;">${l.error_message || 'Unknown error'}</span>`;
-      } else {
-        statusHtml = '<span class="status-badge" style="background:#d4edda;color:#155724;font-size:0.75rem;padding:4px 8px;border-radius:4px;">✅ Completed</span>';
-        actionHtml = `<button type="button" class="btn btn-secondary btn-xs" onclick="window.downloadReportPdf('${l.id}')">⬇️ Download PDF</button>`;
+    const expenses = lastReportSnapshot.filteredExpenses || [];
+    const csvData = expenses.map(exp => {
+      const budget = teamBudgets.find(b => b.id === exp.budget_id);
+      let catLabel = 'Unknown';
+      if (budget) {
+        const catObj = (budget.categories || []).find(c => c.id === exp.budget_category_id);
+        if (catObj) catLabel = catObj.category || catObj.name;
       }
-
-      const dateStr = new Date(l.created_at).toLocaleString();
-      
-      let filterDesc = 'All expenses';
-      if (l.filters) {
-        const parts = [];
-        if (l.filters.start) parts.push(`From ${l.filters.start}`);
-        if (l.filters.end) parts.push(`To ${l.filters.end}`);
-        if (l.filters.category) parts.push(l.filters.category);
-        if (l.filters.currency) parts.push(l.filters.currency);
-        if (parts.length) filterDesc = parts.join(' · ');
-      }
-
-      let budgetName = 'All Budgets';
-      if (l.budget_id) {
-        budgetName = teamBudgets.find(b => b.id === l.budget_id)?.name || 'Unknown Budget';
-      }
-
-      return `
-        <tr>
-          <td data-label="Date Generated">${dateStr}</td>
-          <td data-label="Budget">${budgetName}</td>
-          <td data-label="Filter Criteria" style="font-size:0.8rem;color:var(--text-secondary);">${filterDesc}</td>
-          <td data-label="Status">${statusHtml}</td>
-          <td data-label="Action">${actionHtml}</td>
-        </tr>
-      `;
-    }).join('');
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-state" style="color:var(--danger);">Failed to load logs: ${err.message}</td></tr>`;
-  }
-}
-
-async function downloadReportPdf(logId) {
-  try {
-    const teamId = state.currentTeam?.team_id;
-    const logRes = await sbSelect('report_logs', { teamId });
-    const log = (logRes.data || []).find(l => l.id === logId);
-    if (!log || !log.file_url) throw new Error('Report file not found');
-
-    showToast('Resolving download link…', 'info');
-    const viewUrl = await resolveReceiptViewUrl(log.file_url);
-    
-    // Open in a new tab to download
-    window.open(viewUrl, '_blank');
-  } catch (err) {
-    showToast(err.message || 'Download failed', 'error');
-  }
-}
-
-async function fetchBase64Image(key) {
-  try {
-    if (isExternalReceiptUrl(key)) return [key];
-    const viewUrl = await resolveReceiptViewUrl(key);
-    const res = await fetch(viewUrl);
-    if (!res.ok) throw new Error(`Fetch R2 asset failed with status ${res.status}`);
-    const blob = await res.blob();
-    
-    const isPdf = /\.pdf($|\?)/i.test(key) || blob.type === 'application/pdf';
-    if (isPdf) {
-      const { convertPdfToImages } = await import('../utils/pdfConverter.js');
-      const arrayBuffer = await blob.arrayBuffer();
-      return await convertPdfToImages(arrayBuffer);
-    }
-    
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve([reader.result]);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (err) {
-    console.error('Failed to load base64 for receipt:', key, err);
-    return null;
-  }
-}
-
-async function processReportGenerationInBg(logId, filters, sections) {
-  const teamId = state.currentTeam?.team_id;
-  const now = new Date().toISOString();
-
-  try {
-    // 1. Filter expenses
-    const filtered = filterExpenses(filters);
-    const incomeByDate = filterIncomeByDates(filters);
-    const incomeScope = scopeIncomeForReport(incomeByDate, filters.budgetId || null);
-    const budget = filters.budgetId ? teamBudgets.find(b => b.id === filters.budgetId) : null;
-
-    // 2. Resolve all attachments to base64 images (concurrently)
-    const resolvedExpenses = await Promise.all(
-      filtered.map(async (exp) => {
-        const keys = [exp.receipt_url].filter(Boolean);
-        const childAttachments = (teamAttachments || []).filter(a => a.expense_id === exp.id && !a.is_deleted).map(a => a.file_url);
-        const allKeys = [...new Set([...keys, ...childAttachments])];
-        if (!allKeys.length) return exp;
-
-        const images = [];
-        for (const key of allKeys) {
-          const imgs = await fetchBase64Image(key);
-          if (imgs) {
-            images.push(...imgs);
-          }
-        }
-        return { ...exp, receipt_images: images };
-      })
-    );
-
-    // 3. Compile PDF docDefinition
-    const docDefinition = buildReportPdfDefinition({
-      filteredExpenses: resolvedExpenses,
-      incomeScope,
-      filters,
-      budget,
-      teamCategories,
-      teamBuckets,
-      sections,
-      teamName: getReportTeamName(state),
-      getBucketName,
-      getBudgetName,
-      teamBudgets
+      return {
+        Date: exp.date,
+        Item: exp.item,
+        Category: catLabel,
+        Budget: budget ? budget.name : 'Unknown',
+        Source: getBucketName(exp.bucket_id),
+        Amount_Local: exp.local_amount,
+        Amount_USD: exp.usd_amount,
+        Currency: exp.currency,
+        Vendor: exp.vendor || '',
+        Submitted_By: exp.submitted_by_name || ''
+      };
     });
 
-    const pdfMake = window.pdfMake;
-    if (!pdfMake) throw new Error('PDF compiler library (pdfMake) is not loaded.');
-
-    // 4. Generate Blob
-    const pdfDoc = pdfMake.createPdf(docDefinition);
-    const pdfBlob = await new Promise(resolve => pdfDoc.getBlob(resolve));
-
-    // 5. Upload to Cloudflare R2
-    const dateStr = new Date().toISOString().split('T')[0];
-    const filename = `reports/report-${filters.budgetId || 'global'}-${Date.now()}.pdf`;
-    const objectKey = await uploadReportPdf(pdfBlob, filename);
-
-    // 6. Update database status
-    await sbUpdate('report_logs', {
-      status: 'completed',
-      file_url: objectKey,
-      updated_at: now
-    }, { id: logId });
-
+    const csvStr = convertArrayOfObjectsToCSV(csvData);
+    downloadCSV('Expense_Report.csv', csvStr);
   } catch (err) {
-    console.error('Background report compilation error:', err);
-    await sbUpdate('report_logs', {
-      status: 'failed',
-      error_message: err.message || 'Verification or compilation failed',
-      updated_at: now
-    }, { id: logId });
-  } finally {
-    // Notify the UI to refresh logs list
-    refreshReportLogs();
+    showToast('Failed to generate CSV', 'error');
   }
 }
 
-async function cancelReportLog(logId) {
-  try {
-    const teamId = state.currentTeam?.team_id;
-    if (!teamId) return;
-
-    showToast('Cancelling report...', 'info');
-
-    await sbUpdate('report_logs', {
-      status: 'failed',
-      error_message: 'Cancelled by user',
-      updated_at: new Date().toISOString()
-    }, { id: logId });
-
-    showToast('Report cancelled successfully', 'success');
-    refreshReportLogs();
-  } catch (err) {
-    console.error('Cancel report log error:', err);
-    showToast(err.message || 'Failed to cancel report', 'error');
-  }
-}
+window.exportExpenseReportToCSV = exportReportToCSV;
+window.exportExpenseReportToPDF = exportReportToPDF;

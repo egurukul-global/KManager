@@ -1,3 +1,4 @@
+import { hasAnyGlobalFinanceRole } from './appRoles.js';
 // ==================== ONE KAILASA ACCESS (Phase 4D) ====================
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
@@ -76,7 +77,7 @@ export function isOkAdmin() {
 
 export function hasAppAccess(appCode) {
   if (appCode === 'tasks' || appCode === 'konnect') return true;
-  const globalRoles = ['admin', 'fin', 'fip', 'oh', 'caoh', 'cao', 'ceo'];
+  const globalRoles = ['admin', 'fin', 'fip', 'oh', 'caoh', 'cao', 'ceo', 'fih'];
   if (appCode === 'finance' && globalRoles.includes(String(state.user?.role || '').toLowerCase().trim())) {
     return true;
   }
@@ -86,11 +87,13 @@ export function hasAppAccess(appCode) {
 
 export function hasMenuAccess(appCode, menuKey) {
   if (!hasAppAccess(appCode)) return false;
-  const globalRoles = ['admin', 'fin', 'fip', 'oh', 'caoh', 'cao', 'ceo'];
-  if (appCode === 'finance' && globalRoles.includes(String(state.user?.role || '').toLowerCase().trim())) {
+  
+  if (state.isOkAdmin || state.user?.role === 'admin' || (state.okAppAdmins && state.okAppAdmins.includes(appCode))) return true;
+
+  if (appCode === 'finance' && hasAnyGlobalFinanceRole()) {
     return true;
   }
-  if (state.isOkAdmin || state.user?.role === 'admin' || (state.okAppAdmins && state.okAppAdmins.includes(appCode))) return true;
+
   const menus = state.okMenus || [];
   if (!menus.length) return true;
   return menus.some(m => m.app_code === appCode && m.menu_key === menuKey && m.enabled !== false);

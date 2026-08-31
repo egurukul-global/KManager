@@ -1,0 +1,76 @@
+Created At: 2026-08-29T17:20:43-04:00
+Completed At: 2026-08-29T17:20:45-04:00
+
+The command exited with code 0.
+Output:
+18:   filterBucketsForTransferSource,
+19:   filterBucketsForTransferDest,
+20:   isOperationalBucket,
+21:   isMemberBucket
+32: let teamBucketsCache = [];
+39: async function loadTeamBuckets() {
+42:     teamBucketsCache = [];
+46:   teamBucketsCache = (result.data || []).filter(b => !b.is_deleted);
+47:   return teamBucketsCache;
+50: function getBucketById(bucketId) {
+51:   return teamBucketsCache.find(b => b.id === bucketId);
+93:   const select = document.getElementById('trSourceBucketId');
+96:   const sources = filterBucketsForTransferSource(teamBucketsCache, state);
+99:     const tag = isMemberBucket(b) ? ' · Personal' : '';
+106:   const select = document.getElementById('trDestBucketId');
+109:   const dests = filterBucketsForTransferDest(teamBucketsCache, state, destFilterState);
+110:   const srcId = document.getElementById('trSourceBucketId')?.value;
+113:     const tag = isMemberBucket(b) ? ' · Member' : ' · Team';
+188:   const destGroup = document.getElementById('trDestBucketId')?.closest('.form-group');
+195:   const destSelect = document.getElementById('trDestBucketId');
+242:             <div class="form-group"><label>Source Bucket</label><select id="trSourceBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trSourceCurrency">Currency: —</span></div>
+243:             <div class="form-group"><label>Destination Bucket</label><select id="trDestBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trDestCurrency">Currency: —</span></div>
+304:   await loadTeamBuckets();
+318:     sourceSelect: document.getElementById('trSourceBucketId'),
+319:     destSelect: document.getElementById('trDestBucketId')
+322:   window.onTransferBucketChange = onTransferBucketChange;
+330:   onTransferBucketChange();
+343:   onTransferBucketChange();
+364:       const src = getBucketById(t.from_bucket_id);
+365:       const dest = getBucketById(t.to_bucket_id);
+420:       await loadTeamBuckets();
+428: function onTransferBucketChange() {
+429:   const srcId = document.getElementById('trSourceBucketId')?.value;
+430:   const destId = document.getElementById('trDestBucketId')?.value;
+431:   const srcBucket = getBucketById(srcId);
+432:   const destBucket = getBucketById(destId);
+443:   if (srcBucket) {
+444:     srcCurrencyEl.textContent = `Currency: ${srcBucket.currency}`;
+445:     if (amountLabel) amountLabel.textContent = `(${srcBucket.currency})`;
+451:   if (destBucket) {
+452:     destCurrencyEl.textContent = `Currency: ${destBucket.currency}`;
+453:     if (convertedCurrencyLabel) convertedCurrencyLabel.textContent = `(${destBucket.currency})`;
+459:   if (srcBucket && destBucket) {
+460:     const srcCurr = srcBucket.currency || 'USD';
+461:     const destCurr = destBucket.currency || 'USD';
+512:   const srcBucket = getBucketById(document.getElementById('trSourceBucketId')?.value);
+513:   const destBucket = getBucketById(document.getElementById('trDestBucketId')?.value);
+515:   if (!srcBucket || !destBucket || amount <= 0) {
+520:   const srcCurr = srcBucket.currency || 'USD';
+521:   const destCurr = destBucket.currency || 'USD';
+553:   const srcId = document.getElementById('trSourceBucketId').value;
+554:   let destId = document.getElementById('trDestBucketId').value;
+582:   const srcBucket = getBucketById(srcId);
+583:   if (!srcBucket) {
+589:   let destBucket = null;
+602:     if (!isOperationalBucket(srcBucket)) {
+623:     destBucket = crossWallet.bucket;
+624:     destId = destBucket.id;
+636:     destBucket = getBucketById(destId);
+637:     if (!destBucket) {
+641:     flow = classifyTransferFlow(srcBucket, destBucket, senderIsOtl);
+644:   if (!senderIsOtl && isOperationalBucket(srcBucket)) {
+648:   if (!senderIsOtl && isMemberBucket(srcBucket) && srcBucket.owner_user_id !== state.user?.id) {
+653:   const srcCurr = srcBucket.currency || 'USD';
+654:   const destCurr = destBucket.currency || 'USD';
+661:     if ((parseFloat(srcBucket.balance) || 0) < amount) {
+673:     destBucket,
+711:       await applyAcceptedTransferBalances(transferPayload, srcBucket, destBucket, exchangeRatesCache);
+734:     await loadTeamBuckets();
+737:     onTransferBucketChange();
+

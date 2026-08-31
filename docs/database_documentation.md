@@ -216,3 +216,31 @@ Fires `BEFORE UPDATE` on `public.approval_requests` to validate state-machine tr
 
 
 
+
+---
+
+## Finance Management & Payment Engine (Added in Migrations 071-072)
+
+### Table Updates: \public.transfers\
+The transfers table serves as the Unified Handshake Engine for all internal money movements.
+* \linked_budget_id\ (\UUID\): References \udget_plans(id)\. Associates a transfer directly with an approved budget.
+* \low_type\ (\TEXT\): Added new directions: \org_to_team\, \	eam_to_org\, \org_to_oph\, \oph_to_team\, \unused_funds_return\.
+* \exchange_rate_approval\ (\NUMERIC(15,6)\): The USD exchange rate locked at the time of budget approval.
+* \exchange_rate_disbursement\ (\NUMERIC(15,6)\): The USD exchange rate locked at the time the transfer is accepted.
+* \payment_notes\ (\TEXT\): General ledger justification field.
+
+### Table Updates: \public.team_money_buckets\
+* \is_org_level\ (\BOOLEAN\): Denotes if the bucket belongs to global Finance (e.g. ORG-BANK) vs a local team.
+* \is_system_bucket\ (\BOOLEAN\): Identifies special accountability buckets like \UNUSED_FUNDS\.
+
+### Dynamic Views: \public.budget_reconciliation_view\
+Calculates real-time financial integrity for every budget.
+* \pproved_amount\: Total CAO approved budget.
+* \llocated_amount\: Sum of accepted incoming transfers tagged to the budget.
+* \expenses_amount\: Sum of all logged expenses against the budget.
+* \unused_funds_returned\: Sum of accepted transfers back to finance categorized as \unused_funds_return\.
+* \emaining_held_balance\: Derived formula \llocated_amount - expenses_amount - unused_funds_returned\.
+
+### Context-Based Views
+- **users.allowed_views**: (TEXT[]) Array of allowed view contexts (team, manager, admin).
+- **users.default_login_view**: (TEXT) The default UI context for the user ('team', 'manager', 'admin'). Defaults to 'team'.

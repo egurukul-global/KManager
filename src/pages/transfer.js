@@ -116,13 +116,16 @@ function populateDestSelect() {
   if (dests.some(b => b.id === current && b.id !== srcId)) select.value = current;
 }
 
+import { hasAnyGlobalFinanceRole } from '../utils/appRoles.js';
+
 function updateDestFilterVisibility() {
   const lead = isTeamLeadAccess(state);
+  const globalAdmin = hasAnyGlobalFinanceRole();
   const memberFilters = document.getElementById('trMemberFilters');
   const otmFilters = document.getElementById('trOtmFilters');
   const crossSection = document.getElementById('trCrossTeamSection');
-  if (memberFilters) memberFilters.style.display = lead ? '' : 'none';
-  if (otmFilters) otmFilters.style.display = lead ? 'none' : '';
+  if (memberFilters) memberFilters.style.display = (lead && !globalAdmin) ? '' : 'none';
+  if (otmFilters) otmFilters.style.display = (!lead || globalAdmin) ? '' : 'none';
   if (crossSection) crossSection.style.display = lead ? '' : 'none';
 }
 
@@ -207,10 +210,10 @@ export function getTransferFundsPage() {
     `;
   }
 
-  const lead = isTeamLeadAccess(state);
+  const lead = isTeamLeadAccess(state) || hasAnyGlobalFinanceRole();
 
-  return `
-    <h1 class="page-title">Transfer Funds</h1>
+    return `
+      <h1 class="page-title">Transfer Funds</h1>
     <p class="page-intro">Send money within your team. Sent transfers appear below; confirm received money on the Dashboard.</p>
 
     <div class="card">
@@ -331,7 +334,8 @@ export async function initTransferFundsPage() {
 
 function onTransferDestFilterChange() {
   const lead = isTeamLeadAccess(state);
-  if (lead) {
+  const globalAdmin = hasAnyGlobalFinanceRole();
+  if (lead && !globalAdmin) {
     destFilterState.showMembers = !!document.getElementById('trShowMembers')?.checked;
   } else {
     destFilterState.showTeam = !!document.getElementById('trShowTeamPeers')?.checked;

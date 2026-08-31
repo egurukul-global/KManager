@@ -1,4 +1,4 @@
-// ==================== CATEGORY MASTER (ADMIN) ====================
+// ==================== CATEGORY MASTER ====================
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
@@ -7,14 +7,24 @@ import { btnIconDelete } from '../utils/uiHelpers.js';
 let masterData = [];
 
 function isOrgAdmin() {
-  return ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role);
+  const role = String(state.user?.role || '').toLowerCase();
+  return ['admin', 'caoh', 'oh', 'ceo', 'fih'].includes(role);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 export function getCategoryMasterPage() {
   if (!isOrgAdmin()) {
     return `
       <h1 class="page-title">Category Master</h1>
-      <div class="card"><h2>⛔ Access Denied</h2><p>Only org admins can edit the category template.</p></div>
+      <div class="card"><h2>⛔ Access Denied</h2><p>Only org admins can edit the category template and global budget templates.</p></div>
     `;
   }
 
@@ -45,7 +55,7 @@ export function getCategoryMasterPage() {
     </div>
 
     <div class="card">
-      <h2>📂 Org Template</h2>
+      <h2>📂 Master Category List</h2>
       <div id="categoryMasterList">
         <p class="empty-state">Loading…</p>
       </div>
@@ -94,37 +104,37 @@ async function loadMaster() {
 
     if (masterData.length === 0) {
       container.innerHTML = '<p class="empty-state">No categories yet. Run the SQL seed or add categories above.</p>';
-      return;
+    } else {
+      container.innerHTML = masterData.map(cat => `
+        <div class="master-category-block" style="margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--border);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <strong>${cat.name}</strong>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <label style="font-size:0.85em; display:flex; align-items:center; gap:4px;">
+                <input type="checkbox" ${cat.is_mandatory ? 'checked' : ''} onchange="window.toggleCategoryMandatory('${cat.id}', this.checked)">
+                Mandatory
+              </label>
+              ${btnIconDelete(`window.deleteCategoryMaster('${cat.id}')`)}
+            </div>
+          </div>
+          <ul style="margin:10px 0 0 20px; color:var(--text-secondary);">
+            ${cat.subcategories.length
+              ? cat.subcategories.map(s => `
+                <li style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <span>${s.name}${s.is_mandatory ? ' <em>(required)</em>' : ''}</span>
+                  ${btnIconDelete(`window.deleteSubcategoryMaster('${s.id}')`, 'Remove')}
+                </li>
+              `).join('')
+              : '<li><em>No subcategories</em></li>'}
+          </ul>
+          <form style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;" onsubmit="window.addSubcategoryMaster(event, '${cat.id}')">
+            <input type="text" name="subName" placeholder="Add subcategory" required style="flex:1; min-width:160px; padding:8px 10px; border:2px solid var(--border); border-radius:var(--radius-sm); font-size:15px; height:38px; box-sizing:border-box;">
+            <button type="submit" class="secondary" style="height:38px; padding:0 16px; display:inline-flex; align-items:center; box-sizing:border-box;">+ Sub</button>
+          </form>
+        </div>
+      `).join('');
     }
 
-    container.innerHTML = masterData.map(cat => `
-      <div class="master-category-block" style="margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--border);">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-          <strong>${cat.name}</strong>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <label style="font-size:0.85em; display:flex; align-items:center; gap:4px;">
-              <input type="checkbox" ${cat.is_mandatory ? 'checked' : ''} onchange="window.toggleCategoryMandatory('${cat.id}', this.checked)">
-              Mandatory
-            </label>
-            ${btnIconDelete(`window.deleteCategoryMaster('${cat.id}')`)}
-          </div>
-        </div>
-        <ul style="margin:10px 0 0 20px; color:var(--text-secondary);">
-          ${cat.subcategories.length
-            ? cat.subcategories.map(s => `
-              <li style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <span>${s.name}${s.is_mandatory ? ' <em>(required)</em>' : ''}</span>
-                ${btnIconDelete(`window.deleteSubcategoryMaster('${s.id}')`, 'Remove')}
-              </li>
-            `).join('')
-            : '<li><em>No subcategories</em></li>'}
-        </ul>
-        <form style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;" onsubmit="window.addSubcategoryMaster(event, '${cat.id}')">
-          <input type="text" name="subName" placeholder="Add subcategory" required style="flex:1; min-width:160px; padding:8px 10px; border:2px solid var(--border); border-radius:var(--radius-sm); font-size:15px; height:38px; box-sizing:border-box;">
-          <button type="submit" class="secondary" style="height:38px; padding:0 16px; display:inline-flex; align-items:center; box-sizing:border-box;">+ Sub</button>
-        </form>
-      </div>
-    `).join('');
   } catch (err) {
     console.error('Load category master error:', err);
     container.innerHTML = `<p class="empty-state" style="color:#dc3545;">${err.message}. Run the SQL migration first.</p>`;
@@ -214,3 +224,5 @@ async function deleteSubcategoryMaster(id) {
     }
   });
 }
+
+

@@ -63,6 +63,7 @@ export default async function handler(req, res) {
     delete headers['content-length'];
     delete headers['cookie'];
     delete headers['authorization'];
+    delete headers['accept-encoding'];
     
     headers['authorization'] = `Bearer ${accessToken}`;
     
@@ -140,8 +141,14 @@ export default async function handler(req, res) {
     }
 
     res.status(response.status);
+    if (response.status >= 400) {
+      console.error('Supabase returned ' + response.status + ' for ' + path + '\nUrl: ' + targetUrl);
+      const txt = responseData;
+      console.error('Body: ', txt);
+    }
 
     for (const [key, value] of response.headers.entries()) {
+      if (key.toLowerCase() === 'content-length' || key.toLowerCase() === 'transfer-encoding') continue;
       if (key.toLowerCase() === 'content-encoding') continue;
       res.setHeader(key, value);
     }
@@ -149,7 +156,7 @@ export default async function handler(req, res) {
     return res.send(responseData);
 
   } catch (error) {
-    console.error('Proxy error:', error.message);
+    console.error('Proxy error:', error.message, error.cause);
     return res.status(500).json({
       error: 'Internal server error',
       message: error.message

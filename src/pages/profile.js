@@ -1,4 +1,4 @@
-// ==================== USER PROFILE (Phase 4A — request alias) ====================
+// ==================== USER PROFILE ====================
 import { state } from '../state.js';
 import { showToast } from '../components/toasts.js';
 import { validateRequestAlias, formatRequestNumber, saveUserRequestAlias } from '../utils/requestNumbers.js';
@@ -34,28 +34,52 @@ export function getProfilePage() {
     </div>
 
     <div class="card">
-      <h2>Default team</h2>
-      <p class="page-intro">Select the team that opens by default when you access the app.</p>
-      <form id="profileDefaultTeamForm" onsubmit="window.saveProfileDefaultTeam(event)">
+      <h2>Dashboard Settings</h2>
+      <p class="page-intro">Configure how your dashboard totals are calculated based on your custom Budget Calendar.</p>
+      <div class="form-stack">
         <div class="form-group">
-          <label for="profileDefaultTeam">Default team</label>
-          <select id="profileDefaultTeam">
-            ${state.teams.map(t => `
-              <option value="${t.team_id}" ${t.is_primary ? 'selected' : ''}>
-                ${escapeHtml(t.team_name)}
-              </option>
-            `).join('')}
+          <label>Expenses Timeline</label>
+          <select id="profileDashTimeline" onchange="window.toggleDashTimelineDate()">
+            <option value="all">All Time</option>
+            <option value="current_period">Current Budget Period</option>
+            <option value="specific_period">Specific Budget Period...</option>
           </select>
         </div>
-        <div class="btn-group">
-          <button type="submit">Save default team</button>
+        <div class="form-group" id="profileDashPeriodGroup" style="display:none;">
+          <label>Select Period</label>
+          <select id="profileDashSpecificPeriod">
+            <option value="">Loading periods...</option>
+          </select>
         </div>
+        <button type="button" class="btn" onclick="window.saveDashboardSettings()">Save Dashboard Settings</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>View Settings</h2>
+      <p class="page-intro">Configure your default view and context.</p>
+      <form id="profileViewSettingsForm" onsubmit="window.saveProfileViewSettings(event)">
+        <div class="form-stack">
+          <div class="form-group" id="profileViewModeContainer">
+            <label for="profileDefaultView">Default Login View</label>
+            <select id="profileDefaultView">
+              <!-- Rendered via initProfilePage based on role -->
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="profileDefaultTeam">Default Team</label>
+            <select id="profileDefaultTeam">
+              ${state.teams.map(t => `<option value="${t.team_id}" ${t.is_primary ? 'selected' : ''}>${escapeHtml(t.team_name)}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <button type="submit" class="btn-block">Save Settings</button>
       </form>
     </div>
 
     <div class="card">
       <h2>Request alias</h2>
-      <p class="page-intro">3–5 characters, unique. Used for approval request numbers like <strong>TTM-42</strong>.</p>
+      <p class="page-intro">3-5 characters, unique. Used for approval request numbers like <strong>TTM-42</strong>.</p>
       <form id="profileAliasForm" onsubmit="window.saveProfileAlias(event)">
         <div class="form-group">
           <label for="profileAlias">Alias</label>
@@ -73,7 +97,25 @@ export function getProfilePage() {
 
 export function initProfilePage() {
   window.saveProfileAlias = saveProfileAlias;
-  window.saveProfileDefaultTeam = saveProfileDefaultTeam;
+  window.saveProfileViewSettings = saveProfileViewSettings;
+
+  // Populate Default Login View
+  const viewSelect = document.getElementById('profileDefaultView');
+  if (viewSelect) {
+    const allowed = state.user?.allowed_views || ['team'];
+    const isAdmin = allowed.includes('admin');
+    const isManager = allowed.includes('manager');
+    
+    viewSelect.innerHTML = '<option value="team">Team View</option>';
+    if (isManager) {
+      viewSelect.innerHTML += '<option value="manager">Manager View (Finance)</option>';
+    }
+    if (isAdmin) {
+      viewSelect.innerHTML += '<option value="admin">Admin View (Configuration)</option>';
+    }
+    
+    viewSelect.value = state.user?.default_login_view || 'team';
+  }
 
   const input = document.getElementById('profileAlias');
   const preview = document.getElementById('profileNextNumber');
@@ -105,29 +147,36 @@ async function saveProfileAlias(e) {
   }
 }
 
-async function saveProfileDefaultTeam(e) {
+async function saveProfileViewSettings(e) {
   e.preventDefault();
-  const select = document.getElementById('profileDefaultTeam');
-  const teamId = select?.value;
-  if (!teamId || !state.user?.id) return;
-
+  const defaultTeam = document.getElementById('profileDefaultTeam')?.value;
+  const defaultView = document.getElementById('profileDefaultView')?.value || 'team';
+  
   try {
-    await supabaseClient
-      .from('user_teams')
-      .update({ is_primary: false })
-      .eq('user_id', state.user.id);
-
-    const { error } = await supabaseClient
-      .from('user_teams')
-      .update({ is_primary: true })
-      .eq('user_id', state.user.id)
-      .eq('team_id', teamId);
-
-    if (error) throw error;
-
-    showToast('Default team updated', 'success');
-    await refreshAccessibleTeams();
+    // 1. Save default team
+    if (defaultTeam) {
+      for (const t of state.teams) {
+        if (t.is_primary && t.team_id !== defaultTeam) {
+          await supabaseClient.from('user_teams').update({ is_primary: false }).eq('user_id', state.user.id).eq('team_id', t.team_id);
+          t.is_primary = false;
+        }
+      }
+      const newPrim = state.teams.find(t => t.team_id === defaultTeam);
+      if (newPrim && !newPrim.is_primary) {
+        await supabaseClient.from('user_teams').update({ is_primary: true }).eq('user_id', state.user.id).eq('team_id', defaultTeam);
+        newPrim.is_primary = true;
+      }
+    }
+    
+    // 2. Save default view
+    if (state.user) {
+      await supabaseClient.from('users').update({ default_login_view: defaultView }).eq('id', state.user.id);
+      state.user.default_login_view = defaultView;
+    }
+    
+    showToast('View settings saved!', 'success');
   } catch (err) {
-    showToast(err.message || 'Failed to save default team', 'error');
+    console.error(err);
+    showToast('Failed to save settings', 'error');
   }
 }

@@ -1,6 +1,7 @@
 // ==================== ROLE-BASED NAV VISIBILITY (Phase 3 + 4A + 4D menu access) ====================
 import { state } from '../state.js';
 import { hasMenuAccess } from './okAccess.js';
+import { isFinanceGlobalAdmin } from './appRoles.js';
 
 /** Only system admin bypasses team-level role restrictions. */
 export function isSystemAdmin() {
@@ -8,25 +9,35 @@ export function isSystemAdmin() {
 }
 
 function isOrgAdmin() {
-  return ['admin', 'caoh', 'oh', 'ceo'].includes(state.user?.role);
+  const role = String(state.user?.role || '').toLowerCase();
+  return ['admin', 'caoh', 'oh', 'ceo', 'fih'].includes(role) || isFinanceGlobalAdmin();
 }
 
 const ORG_ADMIN_ONLY_PAGES = new Set([
   'user-mgmt',
+  'role-assignments',
+  'buckets'
+]);
+
+const FINANCE_SETUP_PAGES = new Set([
   'budget-calendar',
-  'category-master',
-  'role-assignments'
+  'categories',
+  'budget-types',
+  'budget-templates',
+  'category-master'
 ]);
 
 const FINANCE_PAGES = new Set([
   'buckets', 'categories', 'rates', 'create-budget', 'view-budgets',
   'add-funds', 'income-manager', 'transfer', 'my-income',
   'add-expense', 'expense-manager', 'generate-receipt',
-  'financial-status', 'reconcile', 'reconciliation-overview', 'reconciliation-approval',
-  'expense-reports', 'my-finances', 'category-master', 'budget-calendar'
+  'financial-status', 'reconcile-label', 'reconcile', 'reconciliation-overview', 'reconciliation-approval',
+  'expense-reports', 'my-finances', 'manager-finance', 'manager-expenses', 'category-master', 'budget-calendar',
+  'budget-types', 'budget-templates'
 ]);
 
-const NON_FINANCE_PAGES = new Set(['tasks', 'gurukul-lms', 'courses', 'learners']);
+const NON_FINANCE_PAGES = new Set([
+  'reconcile-label','tasks', 'gurukul-lms', 'courses', 'learners']);
 
 /** Pages an OTM (team member / OPS) may open. Team income/budgets/setup are hidden. */
 const OTM_ALLOWED_PAGES = new Set([
@@ -74,6 +85,7 @@ const VIEW_ALLOWED_PAGES = new Set([
 
 /** Sub-items hidden for OTM inside sections that stay partially visible. */
 const OTM_HIDDEN_PAGES = new Set([
+  'buckets',
   'categories',
   'rates',
   'create-budget',
@@ -86,6 +98,7 @@ const OTM_HIDDEN_PAGES = new Set([
 
 /** Write actions OHT cannot use (read-only team ops). */
 const OHT_HIDDEN_PAGES = new Set([
+  'buckets',
   'create-budget',
   'add-funds',
   'transfer',
@@ -122,71 +135,101 @@ function canAccessTeamsPage() {
 export function canAccessPage(pageName) {
   if (pageName === 'design-preview') return true;
   if (pageName === 'team-roster') pageName = 'team-mgmt';
-
   if (isSystemAdmin()) return true;
 
-
-
-  // One Kailasa Finance menu matrix
-  if (state.okMenus?.length && !NON_FINANCE_PAGES.has(pageName) && !hasMenuAccess('finance', pageName)) {
+  const viewMode = state.activeViewContext || 'team';
+  const allowedPages = new Set(VIEW_MENUS[viewMode]?.pages || []);
+  const showAdmin = isSystemAdmin() || isOrgAdmin() || state.canManageTeamRoster;
+  if (showAdmin) {
+    VIEW_MENUS.admin.pages.forEach(p => allowedPages.add(p));
+  }
+  
+  if (!allowedPages.has(pageName) && !['tasks', 'courses', 'konnect'].includes(pageName)) {
     return false;
   }
 
-  if (pageName === 'team-mgmt') {
-    return canAccessTeamsPage();
-  }
-
-  if (pageName === 'role-assignments') {
-    const role = String(state.user?.role || 'user').toLowerCase();
-    return ['admin', 'oh', 'caoh'].includes(role);
-  }
-
-  if (ORG_ADMIN_ONLY_PAGES.has(pageName)) {
-    return isOrgAdmin();
-  }
-
-  const level = teamAccessLevel();
-
-  if (level === 'view') {
-    return VIEW_ALLOWED_PAGES.has(pageName);
-  }
-
-  if (level === 'oht') {
-    if (OHT_HIDDEN_PAGES.has(pageName)) return false;
-    return true;
-  }
-
-  if (level === 'member') {
-    return OTM_ALLOWED_PAGES.has(pageName);
+  // Still run the fundamental core Finance restriction 
+  if (state.okMenus?.length && !NON_FINANCE_PAGES.has(pageName) && !hasMenuAccess('finance', pageName)) {
+    return false;
   }
 
   return true;
 }
 
 /** Hide nav sections / items based on current team role. */
+const VIEW_MENUS = {
+  team: {
+    sections: ['dashboard', 'setup', 'finance-setup', 'budgets', 'income', 'expense', 'financials', 'reports'],
+    pages: ['dashboard', 'profile', 'approval-portal', 'rates', 'view-budgets', 'create-budget', 'add-funds', 'transfer', 'income-manager', 'my-income', 'add-expense', 'expense-manager', 'generate-receipt', 'financial-status', 'reconcile', 'reconciliation-overview', 'reconciliation-approval', 'expense-reports', 'my-finances', 'categories', 'budget-types', 'budget-templates', 'budget-calendar']
+  },
+  manager: {
+    sections: ['dashboard', 'income', 'financials', 'reports'],
+    pages: ['profile', 'approval-portal', 'transfer', 'manager-finance', 'manager-expenses', 'aggregate-reports']
+  },
+  admin: {
+    sections: ['admin', 'setup', 'finance-setup'],
+    pages: ['team-mgmt', 'role-assignments', 'user-mgmt', 'budget-calendar', 'category-master', 'categories', 'buckets', 'budget-types', 'budget-templates']
+  }
+};
+
 export function applyNavPermissions() {
+  const viewMode = state.activeViewContext || 'team';
+  const allowedViewPages = new Set(VIEW_MENUS[viewMode]?.pages || []);
+  const allowedViewSections = new Set(VIEW_MENUS[viewMode]?.sections || []);
+  
+  document.querySelectorAll('.nav-item').forEach(el => {
+    const section = el.dataset.section;
+    if (section && !allowedViewSections.has(section)) el.style.display = 'none';
+    else el.style.display = '';
+  });
+  
+  // Hide the Team dropdown when not in Team view, but DO NOT hide the View dropdown!
+  const teamDropdown = document.getElementById('teamSelect');
+  if (teamDropdown) {
+    const tsContainer = teamDropdown.closest('.team-switcher');
+    if (tsContainer) {
+      tsContainer.style.display = viewMode === 'team' ? 'flex' : 'none';
+    }
+  }
+  
   const otm = isOtmOnly();
   const oht = isOhtReadOnly();
   const viewOnly = isViewOnly();
 
-  document.querySelectorAll('.nav-subitem[data-page]').forEach(el => {
+  document.querySelectorAll('.nav-subitem[data-page], .nav-subitem-label[data-page]').forEach(el => {
     const page = el.dataset.page;
     let hide = false;
+      const isAdminPage = VIEW_MENUS.admin.pages.includes(page);
+    
+    if (!allowedViewPages.has(page)) hide = true;
 
-    if (otm && OTM_HIDDEN_PAGES.has(page)) hide = true;
-    if (otm && !OTM_ALLOWED_PAGES.has(page)) hide = true;
-    if (viewOnly && !VIEW_ALLOWED_PAGES.has(page)) hide = true;
-    if (oht && OHT_HIDDEN_PAGES.has(page)) hide = true;
+    if (!isAdminPage && otm && OTM_HIDDEN_PAGES.has(page)) hide = true;
+    if (!isAdminPage && otm && !OTM_ALLOWED_PAGES.has(page)) {
+      const r = String(state.user?.role || '').toLowerCase();
+      const isFin = ['admin', 'caoh', 'oh', 'ceo', 'fin', 'fip', 'fih'].includes(r);
+      if ((page === 'manager-finance' || page === 'transfer' || page === 'manager-expenses') && isFin) { /* let it show */ } else { hide = true; }
+    }
+    if (!isAdminPage && viewOnly && !VIEW_ALLOWED_PAGES.has(page)) {
+      const r = String(state.user?.role || '').toLowerCase();
+      const isFin = ['admin', 'caoh', 'oh', 'ceo', 'fin', 'fip', 'fih'].includes(r);
+      if ((page === 'manager-finance' || page === 'transfer' || page === 'manager-expenses') && isFin) { /* let it show */ } else { hide = true; }
+    }
+    if (!isAdminPage && oht && OHT_HIDDEN_PAGES.has(page)) hide = true;
     if (page === 'team-mgmt' && !canAccessTeamsPage()) hide = true;
     if (ORG_ADMIN_ONLY_PAGES.has(page) && !isOrgAdmin() && !isSystemAdmin()) hide = true;
+    if (FINANCE_SETUP_PAGES.has(page)) {
+      const hasFinanceSetupRole = state.appRoleAssignments?.some(ar => ar.app_code === 'finance_setup');
+      // Allow: org admins, system admins, or users with finance_setup app role
+      if (!isOrgAdmin() && !isSystemAdmin() && !hasFinanceSetupRole) hide = true;
+    }
     if (page === 'role-assignments') {
       const role = String(state.user?.role || 'user').toLowerCase();
-      if (!['admin', 'oh', 'caoh'].includes(role)) hide = true;
+      if (!['admin', 'oh', 'caoh', 'fih'].includes(role) && !isFinanceGlobalAdmin()) hide = true;
     }
     if (state.okMenus?.length && !NON_FINANCE_PAGES.has(page) && !hasMenuAccess('finance', page)) hide = true;
 
     // Check selected team capabilities
-    if (FINANCE_PAGES.has(page) && state.currentTeam?.has_budget_access === false) hide = true;
+    if (FINANCE_PAGES.has(page) && state.currentTeam?.has_budget_access === false && page !== 'manager-finance' && page !== 'manager-expenses') hide = true;
     if (page === 'tasks' && state.currentTeam?.has_tasks_access === false) hide = true;
     if (['gurukul-lms', 'learners', 'courses'].includes(page) && state.currentTeam?.has_lms_access === false) hide = true;
 
@@ -194,15 +237,16 @@ export function applyNavPermissions() {
   });
 
   const sectionPages = {
-    setup: ['buckets', 'categories', 'rates'],
+    setup: ['rates'],
+    'finance-setup': ['categories', 'budget-types', 'budget-templates', 'budget-calendar'],
     budgets: ['create-budget', 'view-budgets'],
     income: ['add-funds', 'income-manager', 'transfer', 'my-income'],
     expense: ['add-expense', 'expense-manager', 'generate-receipt'],
-    financials: ['financial-status', 'reconcile', 'reconciliation-overview', 'reconciliation-approval'],
+    financials: ['financial-status', 'manager-finance', 'manager-expenses', 'reconcile', 'reconciliation-overview', 'reconciliation-approval'],
     reports: ['expense-reports', 'my-finances'],
     tasks: ['tasks'],
     gurukul: ['gurukul-lms', 'courses'],
-    admin: ['team-mgmt', 'role-assignments', 'user-mgmt', 'budget-calendar', 'category-master'],
+    admin: ['team-mgmt', 'role-assignments', 'user-mgmt', 'buckets'],
     dashboard: ['dashboard', 'profile', 'approval-portal']
   };
 
@@ -219,7 +263,7 @@ export function applyNavPermissions() {
   const adminNav = document.getElementById('adminNav');
   if (adminNav) {
     const showAdmin = isSystemAdmin() || isOrgAdmin() || state.canManageTeamRoster;
-    adminNav.style.display = showAdmin ? '' : 'none';
+    adminNav.style.display = (showAdmin && allowedViewSections.has('admin')) ? '' : 'none';
   }
 
   updateBottomNavForRole();
@@ -246,6 +290,10 @@ function updateBottomNavForRole() {
 }
 
 export function defaultPageForRole() {
+  const viewMode = state.activeViewContext || 'team';
+  if (viewMode === 'admin') return 'role-assignments';
+  if (viewMode === 'manager') return 'manager-finance';
+
   // Approvers (FIN/FIH/CAO via assignment or org role) land on their queue
   const org = String(state.user?.role || '').toLowerCase();
   if (['oh', 'caoh', 'ceo'].includes(org)) return 'approval-portal';

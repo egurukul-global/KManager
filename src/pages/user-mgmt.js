@@ -2,6 +2,8 @@
 import { state } from '../state.js';
 import { supabaseClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
+import { renderAppRoleManager } from '../components/AppRoleManager.js';
+import { isFinanceGlobalAdmin } from '../utils/appRoles.js';
 import { createModal, openModal, closeModal, removeModal } from '../components/modals.js';
 import { cardRow, setButtonLoading } from '../utils/uiHelpers.js';
 import {
@@ -94,7 +96,9 @@ export function getUserMgmtPage() {
     <h1 class="page-title">Users</h1>
     <p class="page-intro">Finance department: set org roles, hold within Finance, and review team membership. New logins and app access are managed in <strong>One Kailasa Admin</strong>.</p>
 
-    <div class="card">
+    <div id="financeAppRoleManagerContainer"></div>
+    <div class="card" style="margin-top: 30px;">
+      <h2 style="margin-top:0; margin-bottom:15px;">Ops Team Membership (Legacy)</h2>
       <div class="form-grid-row form-grid-row--user-filters">
         <div class="form-group">
           <label>Search</label>
@@ -148,6 +152,9 @@ export function getUserMgmtPage() {
 }
 
 export async function initUserMgmtPage() {
+  if (isFinanceGlobalAdmin()) {
+    renderAppRoleManager('financeAppRoleManagerContainer', 'finance');
+  }
   if (!canManageUsers()) return;
 
   window.loadUserMgmtList = loadUserMgmtList;
@@ -303,7 +310,7 @@ async function loadUserMgmtList() {
   try {
     const { data: users, error } = await supabaseClient
       .from('users')
-      .select('id, email, name, role, on_hold, request_alias, gender')
+      .select('id, email, name, role, on_hold, request_alias, gender, allowed_views')
       .order('name');
 
     if (error) throw error;
@@ -498,6 +505,14 @@ async function openUserSelect(userId) {
               <div class="form-group">
                 <label>Org role</label>
                 <select id="editUserRole">${roleOptions(user.role || 'user')}</select>
+              </div>
+              <div class="form-group">
+                <label>Allowed Views</label>
+                <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:8px;">
+                  <label><input type="checkbox" id="editViewTeam" checked disabled> Team (Required)</label>
+                  <label><input type="checkbox" id="editViewManager" ${(user.allowed_views || []).includes('manager') ? 'checked' : ''}> Manager</label>
+                  <label><input type="checkbox" id="editViewAdmin" ${(user.allowed_views || []).includes('admin') ? 'checked' : ''}> Admin</label>
+                </div>
               </div>
               <div class="form-group">
                 <label>Sign-in status</label>
@@ -1068,14 +1083,14 @@ async function saveUserProfile(e) {
   try {
     const { error } = await supabaseClient
       .from('users')
-      .update({ name, role, on_hold })
+      .update({ name, role, on_hold, allowed_views: allowedViews })
       .eq('id', userId);
 
     if (error) throw error;
 
     const idx = allUsersData.findIndex(u => u.id === userId);
     if (idx >= 0) {
-      allUsersData[idx] = { ...allUsersData[idx], name, role, on_hold };
+      allUsersData[idx] = { ...allUsersData[idx], name, role, on_hold, allowed_views: allowedViews };
     }
 
     // Active filter hides on-hold users — switch to All so the new status is visible

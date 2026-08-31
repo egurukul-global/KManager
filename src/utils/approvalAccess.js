@@ -1,5 +1,6 @@
 // ==================== APPROVAL ACCESS / ROLE RESOLUTION (Phase 4B) ====================
 import { state } from '../state.js';
+import { isFinanceGlobalAdmin } from './appRoles.js';
 import { supabaseClient } from '../db.js';
 
 export const REQUEST_TYPES = {
@@ -289,7 +290,7 @@ export async function userCanActOnRequest(request, userId = state.user?.id, appr
 
 export function canManageRoleAssignments() {
   const role = String(state.user?.role || 'user').toLowerCase();
-  return ['admin', 'oh', 'caoh'].includes(role);
+  return ['admin', 'oh', 'caoh', 'fih'].includes(role) || isFinanceGlobalAdmin();
 }
 
 export function canCancelRequest(request, userId = state.user?.id) {

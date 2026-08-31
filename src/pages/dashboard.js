@@ -55,6 +55,34 @@ export function getDashboardPage() {
         </div>
       </div>
 
+      <!-- Expenses Blob -->
+      <div class="card card-hover glass" style="padding: 20px; border-radius: var(--radius); display: flex; flex-direction: column; gap: 15px; border: 1px solid var(--border); box-shadow: var(--shadow); position: relative; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">Logged Expenses</span>
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); color: var(--error); display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
+            <i class="fa-solid fa-receipt"></i>
+          </div>
+        </div>
+        <div>
+          <h3 id="dashExpenses" style="font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text);">—</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 4px 0 0 0;"><span id="dashExpPeriod">All time</span></p>
+        </div>
+      </div>
+
+      <!-- Outstanding Amount -->
+      <div class="card card-hover glass" style="padding: 20px; border-radius: var(--radius); display: flex; flex-direction: column; gap: 15px; border: 1px solid var(--border); box-shadow: var(--shadow); position: relative; overflow: hidden;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary);">Outstanding Amount</span>
+          <div style="width: 32px; height: 32px; border-radius: 8px; background: rgba(245, 158, 11, 0.1); color: #f59e0b; display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
+            <i class="fa-solid fa-scale-unbalanced"></i>
+          </div>
+        </div>
+        <div>
+          <h3 id="dashOutstanding" style="font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text);">—</h3>
+          <p style="font-size: 0.75rem; color: var(--text-muted); margin: 4px 0 0 0;">Allocated Income minus Expenses</p>
+        </div>
+      </div>
+
       <!-- Allocated Income -->
       <div class="card card-hover glass" style="padding: 20px; border-radius: var(--radius); display: flex; flex-direction: column; gap: 15px; border: 1px solid var(--border); box-shadow: var(--shadow); position: relative; overflow: hidden;">
         <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -78,7 +106,7 @@ export function getDashboardPage() {
           </div>
         </div>
         <div>
-          <h3 id="dashExpenses" style="font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text);">—</h3>
+          <h3 id="dashBooked" style="font-size: 1.8rem; font-weight: 700; margin: 0; color: var(--text);">—</h3>
           <p style="font-size: 0.75rem; color: var(--text-muted); margin: 4px 0 0 0;">Outflows logged against budgets</p>
         </div>
       </div>
@@ -204,11 +232,19 @@ export async function initDashboardPage() {
     const incomeEl = document.getElementById('dashIncome');
     if (incomeEl) incomeEl.textContent = formatUsd(allocatedIncome);
 
-    const totalExpenses = expenses
+        const allTimeExpenses = expenses.reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
+    const expensesEl = document.getElementById('dashExpenses');
+    if (expensesEl) expensesEl.textContent = formatUsd(allTimeExpenses);
+
+    const bookedExpenses = expenses
       .filter(e => currentBudgetIds.has(e.budget_id))
       .reduce((sum, e) => sum + (parseFloat(e.usd_amount) || 0), 0);
-    const expensesEl = document.getElementById('dashExpenses');
-    if (expensesEl) expensesEl.textContent = formatUsd(totalExpenses);
+    const bookedEl = document.getElementById('dashBooked');
+    if (bookedEl) bookedEl.textContent = formatUsd(bookedExpenses);
+
+    const outstanding = allocatedIncome - bookedExpenses;
+    const outEl = document.getElementById('dashOutstanding');
+    if (outEl) outEl.textContent = formatUsd(outstanding);
 
     const currentEntry = findNextCalendarEntry(calendarEntries, today);
     const hasMonthlyForCurrent = monthlyBudgetExistsForEntry(budgets, currentEntry);
@@ -333,7 +369,7 @@ export async function initDashboardPage() {
     }
 
     const totalReceived = income.reduce((sum, r) => sum + (parseFloat(r.amount_usd) || 0), 0);
-    const remaining = totalReceived - totalExpenses;
+    const remaining = totalReceived - allTimeExpenses;
     if (totalReceived > 0 && remaining / totalReceived < 0.25) {
       const pct = Math.round((remaining / totalReceived) * 100);
       alerts.push({

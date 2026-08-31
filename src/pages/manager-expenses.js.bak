@@ -1,0 +1,193 @@
+﻿import { state } from '../state.js';
+import { supabaseClient } from '../db.js';
+import { showToast } from '../components/toasts.js';
+import { formatUsdDisplay } from '../utils/currency.js';
+import { escapeHtmlAttr, escapeHtml } from '../utils/uiHelpers.js';
+
+let pendingReviewsCache = [];
+
+export function getManagerExpensesPage() {
+  return `
+    <h1 class="page-title">Global Expense Approvals</h1>
+    <p class="page-intro">Review and approve expenses submitted by teams.</p>
+    
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 20px;">
+        <h2>Pending Reviews</h2>
+        <div class="bulk-actions" style="display:flex; gap:10px;">
+          <button class="primary" onclick="window.approveSelectedExpenses()">Approve Selected</button>
+        </div>
+      </div>
+      
+      <div class="table-responsive">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th class="checkbox-col"><input type="checkbox" onchange="window.toggleAllMgrExpenses(this)"></th>
+              <th>Date</th>
+              <th>Team</th>
+              <th>Item</th>
+              <th>USD Amount</th>
+              <th>Receipt</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="mgrExpensesTableBody">
+            <tr><td colspan="7" style="text-align:center;">Loading pending expenses...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Rejection Modal -->
+    <div id="rejectExpenseModal" class="modal">
+      <div class="modal-content" style="max-width: 400px;">
+        <span class="close" onclick="document.getElementById('rejectExpenseModal').style.display='none'">&times;</span>
+        <h2>Send Back Expense</h2>
+        <p>Please provide a reason for rejecting this expense. It will be sent back to the team as a Draft.</p>
+        <form onsubmit="window.submitExpenseRejection(event)">
+          <input type="hidden" id="rejectExpId">
+          <div class="form-group">
+            <label>Reason / Notes</label>
+            <textarea id="rejectExpNotes" rows="3" required placeholder="e.g., Receipt is blurry, wrong category..."></textarea>
+          </div>
+          <button type="submit" class="danger" style="width:100%;">Reject & Send Back</button>
+        </form>
+      </div>
+    </div>
+  `;
+}
+
+export async function initManagerExpensesPage() {
+  await loadPendingExpenses();
+}
+
+async function loadPendingExpenses() {
+  const tbody = document.getElementById('mgrExpensesTableBody');
+  if (!tbody) return;
+  
+  // Determine scope
+  const isGlobal = ['admin', 'cao', 'caoh', 'ceo', 'oh'].includes(String(state.user?.role || '').toLowerCase());
+  
+  let query = supabaseClient
+    .from('expenses')
+    .select('id, date, item, usd_amount, receipt_url, team_id, teams(name)')
+    .eq('is_deleted', false)
+    .eq('is_submitted', true)
+    .eq('is_reviewed', false)
+    .order('date', { ascending: false });
+    
+  if (!isGlobal) {
+    const userTeams = state.teams || [];
+    const teamIds = userTeams.map(t => t.team_id);
+    if (teamIds.length > 0) {
+      query = query.in('team_id', teamIds);
+    } else {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No teams assigned to you.</td></tr>';
+      return;
+    }
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:red;">Error loading expenses.</td></tr>';
+    return;
+  }
+  
+  pendingReviewsCache = data || [];
+  renderManagerExpenses();
+}
+
+function renderManagerExpenses() {
+  const tbody = document.getElementById('mgrExpensesTableBody');
+  if (!tbody) return;
+  
+  if (pendingReviewsCache.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No pending reviews.</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = pendingReviewsCache.map(exp => {
+    const receiptLink = exp.receipt_url 
+      ? `<a href="${escapeHtmlAttr(exp.receipt_url)}" target="_blank" style="color:var(--primary);text-decoration:underline;">View Receipt</a>`
+      : '<span style="color:#999;">No receipt</span>';
+      
+    return `
+      <tr>
+        <td><input type="checkbox" class="mgr-exp-cb" value="${exp.id}"></td>
+        <td>${escapeHtml(exp.date)}</td>
+        <td>${escapeHtml(exp.teams?.name || 'Unknown')}</td>
+        <td>${escapeHtml(exp.item)}</td>
+        <td style="font-weight:bold;">${formatUsdDisplay(exp.usd_amount)}</td>
+        <td>${receiptLink}</td>
+        <td class="action-buttons" style="display:flex; gap:4px;">
+          <button class="primary small" onclick="window.approveSingleExpense('${exp.id}')">Approve</button>
+          <button class="danger small" onclick="window.promptRejectExpense('${exp.id}')">Send Back</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+window.toggleAllMgrExpenses = function(cb) {
+  const boxes = document.querySelectorAll('.mgr-exp-cb');
+  boxes.forEach(b => b.checked = cb.checked);
+};
+
+window.approveSingleExpense = async function(id) {
+  if (!confirm('Approve this expense? It will be locked from further edits.')) return;
+  await processApproval([id]);
+};
+
+window.approveSelectedExpenses = async function() {
+  const checked = Array.from(document.querySelectorAll('.mgr-exp-cb:checked')).map(b => b.value);
+  if (checked.length === 0) {
+    showToast('Select at least one expense to approve', 'error');
+    return;
+  }
+  if (!confirm(`Approve ${checked.length} expenses?`)) return;
+  await processApproval(checked);
+};
+
+async function processApproval(ids) {
+  const payload = {
+    is_reviewed: true,
+    reviewed_by: state.user.id,
+    reviewed_at: new Date().toISOString()
+  };
+  
+  const { error } = await supabaseClient.from('expenses').update(payload).in('id', ids);
+  if (error) {
+    showToast('Failed to approve expenses', 'error');
+    console.error(error);
+  } else {
+    showToast(`Approved ${ids.length} expenses`, 'success');
+    await loadPendingExpenses();
+  }
+}
+
+window.promptRejectExpense = function(id) {
+  document.getElementById('rejectExpId').value = id;
+  document.getElementById('rejectExpNotes').value = '';
+  document.getElementById('rejectExpenseModal').style.display = 'block';
+};
+
+window.submitExpenseRejection = async function(e) {
+  e.preventDefault();
+  const id = document.getElementById('rejectExpId').value;
+  const notes = document.getElementById('rejectExpNotes').value;
+  
+  const payload = {
+    is_submitted: false,
+    review_notes: notes
+  };
+  
+  const { error } = await supabaseClient.from('expenses').update(payload).eq('id', id);
+  if (error) {
+    showToast('Failed to reject expense', 'error');
+  } else {
+    showToast('Expense sent back to team', 'success');
+    document.getElementById('rejectExpenseModal').style.display = 'none';
+    await loadPendingExpenses();
+  }
+};

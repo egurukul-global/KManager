@@ -1,8 +1,10 @@
+import { hasAnyGlobalFinanceRole, isFinanceGlobalAdmin } from './utils/appRoles.js';
 // ==================== GLOBAL STATE ====================
 export const state = {
   user: null,
   teams: [],
   currentTeam: null,
+  activeViewContext: sessionStorage.getItem('kmanager_view_mode') || null,
   session: null,
   userTeamAccess: null,
   canCreateBuckets: false,
@@ -50,10 +52,15 @@ export function computePermissions() {
   state.isReadOnlyTeamAccess = level === 'oht' || level === 'view';
 
   // System admin can do everything on any team
-  if (role === 'admin') {
+  
+  if (hasAnyGlobalFinanceRole()) {
+    state.canTransferFunds = true;
+    state.canManageIncome = true;
+  }
+  if (role === 'admin' || isFinanceGlobalAdmin()) {
     state.canCreateBuckets = true;
     state.canEditBuckets = true;
-    state.canDeleteBuckets = true;
+    state.canDeleteBuckets = role === 'admin';
     state.canCreateCategories = true;
     state.canEditCategories = true;
     state.canDeleteCategories = true;
@@ -81,7 +88,7 @@ export function computePermissions() {
   state.canSubmitReconciliation = level === 'member' || level === 'lead' || level === 'admin';
 
   state.canManageExpenses = level === 'member' || level === 'lead' || level === 'admin';
-  state.canTransferFunds = level === 'member' || level === 'lead' || level === 'admin';
+  state.canTransferFunds = state.canTransferFunds || level === 'member' || level === 'lead' || level === 'admin';
   state.canViewAllExpenses = level === 'admin' || level === 'lead' || level === 'oht' || level === 'view';
 
   // Team-level permissions based on access_level
@@ -126,8 +133,8 @@ export function computePermissions() {
       state.canCreateBudgets = false;
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
-      state.canManageIncome = false;
-      state.canTransferFunds = false;
+      state.canManageIncome = state.canManageIncome || false;
+      state.canTransferFunds = state.canTransferFunds || false;
       state.canManageExpenses = false;
       state.canViewAllExpenses = true;
       state.canManageTeamRoster = true;
@@ -143,7 +150,7 @@ export function computePermissions() {
       state.canCreateBudgets = false;
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
-      state.canManageIncome = false;
+      state.canManageIncome = state.canManageIncome || false;
       state.canTransferFunds = true;
       break;
     case 'view':
@@ -156,8 +163,8 @@ export function computePermissions() {
       state.canCreateBudgets = false;
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
-      state.canManageIncome = false;
-      state.canTransferFunds = false;
+      state.canManageIncome = state.canManageIncome || false;
+      state.canTransferFunds = state.canTransferFunds || false;
       state.canManageExpenses = false;
       state.canViewAllExpenses = true;
       break;
@@ -171,8 +178,8 @@ export function computePermissions() {
       state.canCreateBudgets = false;
       state.canEditBudgets = false;
       state.canDeleteBudgets = false;
-      state.canManageIncome = false;
-      state.canTransferFunds = false;
+      state.canManageIncome = state.canManageIncome || false;
+      state.canTransferFunds = state.canTransferFunds || false;
   }
 }
 

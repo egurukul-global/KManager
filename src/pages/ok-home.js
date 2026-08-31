@@ -145,6 +145,7 @@ export function initOkHomePage() {
 }
 
 async function loadNotifications() {
+  if (!state.user) return;
   const el = document.getElementById('okNotificationsList');
   if (!el) return;
 
@@ -155,6 +156,8 @@ async function loadNotifications() {
   } catch (err) {
     console.warn('approval notifs:', err);
   }
+
+  if (!state.user) return;
 
   try {
     const { data } = await supabaseClient
@@ -171,7 +174,7 @@ async function loadNotifications() {
   }
 
   if (!rows.length && !taskMsgs.length) {
-    el.innerHTML = `<p class="empty-state">No notifications yet.</p>`;
+    el.innerHTML = '<p class="empty-state">No notifications yet.</p>';
     return;
   }
 
