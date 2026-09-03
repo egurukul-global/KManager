@@ -513,14 +513,6 @@ async function advanceAfterSend(request, steps) {
 }
 
 async function resolveNextUnsatisfiedStepOrder(request, currentStep, steps, approverIds) {
-  console.log(`🔍 FRONTEND DIAGNOSTIC resolveNextUnsatisfiedStepOrder:
-    request_id: ${request.id}
-    team_id: ${request.team_id}
-    currentStep_order: ${currentStep.step_order}
-    steps: ${steps.map(s => `${s.step_order}:${s.role_code}`).join(', ')}
-    approverIds: ${approverIds.join(', ')}
-  `);
-  
   const caoStep = steps.find(s => String(s.role_code).toUpperCase() === 'CAO');
   let currentSearchStep = currentStep;
   let targetStepOrder = currentStep.step_order;
@@ -528,7 +520,6 @@ async function resolveNextUnsatisfiedStepOrder(request, currentStep, steps, appr
   while (true) {
     const nextStep = steps.find(s => s.step_order > currentSearchStep.step_order);
     if (!nextStep) {
-      console.log('🔍 FRONTEND DIAGNOSTIC: No more steps. Request is fully approved.');
       targetStepOrder = null;
       break;
     }
@@ -542,15 +533,12 @@ async function resolveNextUnsatisfiedStepOrder(request, currentStep, steps, appr
           p_role_code: nextStep.role_code,
           p_team_id: request.team_id
         });
-        console.log(`🔍 FRONTEND DIAGNOSTIC: user_has_approval_role check for user ${uid}, role ${nextStep.role_code}:`, hasRole);
         if (hasRole) {
           isSatisfied = true;
           break;
         }
       }
     }
-
-    console.log(`🔍 FRONTEND DIAGNOSTIC: nextStep ${nextStep.step_order}:${nextStep.role_code}, isSatisfied:`, isSatisfied);
 
     if (isSatisfied) {
       currentSearchStep = nextStep;
@@ -561,7 +549,6 @@ async function resolveNextUnsatisfiedStepOrder(request, currentStep, steps, appr
     }
   }
 
-  console.log('🔍 FRONTEND DIAGNOSTIC: resolved targetStepOrder:', targetStepOrder);
   return targetStepOrder;
 }
 
@@ -686,21 +673,6 @@ export async function approveAndSendRequest(requestId, message = '') {
   await insertMessage(requestId, message || 'Approved and sent forward');
 
   let isApproved = (targetStepOrder === null);
-
-  if (!isApproved && request.request_type === REQUEST_TYPES.BUDGET && request.budget_plan_id) {
-    try {
-      const { data: budget } = await supabaseClient
-        .from('budget_plans')
-        .select('paid_amount')
-        .eq('id', request.budget_plan_id)
-        .maybeSingle();
-      if (budget && parseFloat(budget.paid_amount) > 0) {
-        isApproved = true;
-      }
-    } catch (e) {
-      console.warn('Failed to check budget paid_amount:', e);
-    }
-  }
 
   const following = isApproved ? null : steps.find(s => s.step_order === targetStepOrder);
 

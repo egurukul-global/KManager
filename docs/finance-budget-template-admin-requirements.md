@@ -279,6 +279,13 @@ Monthly should continue to behave as follows:
 
 This is not a new special-case branch; it is the same design applied more broadly.
 
+### 10.3 Clarified decisions (confirmed with finance owner)
+
+- **Uniform template rule for ALL budget types.** For any budget type selected, the app searches the DB for an active template. If one exists, the new budget opens seeded with that template's category placeholders and users may add additional line items. If no template exists, the budget opens blank and users add line items freely. There is no monthly special case — the old-app monthly fallback to category master was deliberately removed.
+- **No freeze of past budgets and no SQL port/backfill is required.** Existing budget records are self-contained snapshots (categories, line items, expenses). `budget_plans.template_id` only records which template a budget used at creation time. Assigning or changing templates affects new budgets only; existing budgets and their expenses are never rewritten. The important live budget with its expenses continues to work unchanged.
+- **Templates are placeholders, not constraints.** A template enforces which categories users should fill in; users can always add extra line items on a budget for special needs not covered by the template (ad hoc lines per section 9).
+- **Template reuse across budget types.** The same template can be assigned to several budget types. Each budget type still has exactly one active template at a time.
+
 ---
 
 ## 11. UI requirements

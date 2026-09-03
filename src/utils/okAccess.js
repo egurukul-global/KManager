@@ -54,6 +54,7 @@ export const FINANCE_MENU_KEYS = [
   { key: 'add-funds', label: 'Add Income' },
   { key: 'income-manager', label: 'Income Manager' },
   { key: 'transfer', label: 'Transfer Funds' },
+  { key: 'view-transfers', label: 'View Transfers' },
   { key: 'my-income', label: 'My Income' },
   { key: 'add-expense', label: 'Add Expense' },
   { key: 'expense-manager', label: 'Expense Manager' },

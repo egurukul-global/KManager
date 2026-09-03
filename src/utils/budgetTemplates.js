@@ -46,8 +46,7 @@ export async function loadTemplateForBudgetType(budgetType) {
 }
 
 /**
- * Convert template data (if stored as JSON) into budget line items.
- * Falls back to category master if template has no data.
+ * Convert template data (if stored as JSON) into budget placeholder lines.
  */
 export async function loadCategoryMasterLines() {
   // Import here to avoid circular dependency
@@ -76,12 +75,15 @@ function parseTemplateData(templateData) {
 }
 
 /**
- * Get budget line items for a budget type.
- * If a template is assigned, use its data.
- * Otherwise, fall back to category master mandatory items.
+ * Get budget category placeholder lines for a budget type.
+ * UNIFORM RULE (applies to every budget type, including monthly):
+ * - If a template is assigned to the type, return its stored category lines.
+ *   These act as placeholders; users can still add ad hoc line items.
+ * - If no template is assigned (or the template has no data), return an
+ *   empty array and the budget opens blank for free line-item entry.
+ * There is NO monthly special case and NO category master fallback.
  */
 export async function loadBudgetCategoryLinesForType(budgetType) {
-  // Check if there's an assigned template
   const template = await loadTemplateForBudgetType(budgetType);
 
   if (template && template.template_data) {
@@ -91,12 +93,7 @@ export async function loadBudgetCategoryLinesForType(budgetType) {
     }
   }
 
-  // Fall back to category master
-  const categoryLines = await loadCategoryMasterLines();
-
-  // For monthly budgets, use only mandatory lines
-  // For other types, use all lines (for now)
-  return categoryLines;
+  return [];
 }
 
 /**

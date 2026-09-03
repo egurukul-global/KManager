@@ -1,4 +1,6 @@
 // ==================== BUDGET TYPE DEFINITIONS ====================
+import { state } from '../state.js';
+import { supabaseClient } from '../db.js';
 
 /** Org-wide monthly budgets use the calendar label; all other types use a team-specific name. */
 export const BUDGET_TYPES = [
@@ -78,6 +80,60 @@ export const BUDGET_TYPES = [
 
 const TYPE_BY_VALUE = Object.fromEntries(BUDGET_TYPES.map(t => [t.value, t]));
 
+/**
+ * Load the org-global budget types from the `budget_types` table.
+ * Falls back to the built-in BUDGET_TYPES const when the table is missing.
+ * Populates `state.budgetTypes` with rows shaped like the built-in config
+ * ({ value, label, name, usesCalendar, nameEditable }).
+ */
+let budgetTypesLoadPromise = null;
+
+export async function loadBudgetTypes() {
+  if (budgetTypesLoadPromise) return budgetTypesLoadPromise;
+  budgetTypesLoadPromise = (async () => {
+    try {
+      const { data, error } = await supabaseClient
+        .from('budget_types')
+        .select('id, code, name, label, description, is_active')
+        .eq('is_deleted', false)
+        .eq('is_active', true)
+        .order('id', { ascending: true });
+
+      if (error) throw error;
+
+      const list = (data || []).map(bt => {
+        const value = bt.code || bt.name || bt.label;
+        const isMonthly = value === 'monthly';
+        return {
+          id: bt.id,
+          value,
+          label: bt.label || bt.name || value,
+          name: bt.name || value,
+          usesCalendar: isMonthly,
+          nameEditable: !isMonthly
+        };
+      });
+
+      // DB is the single source of truth for the dropdown; keep the list even
+      // if empty (no hardcoded fallback).
+      state.budgetTypes = list;
+      return state.budgetTypes;
+    } catch (err) {
+      console.debug('budget_types not available, using built-in types:', err?.message);
+      state.budgetTypes = null;
+      budgetTypesLoadPromise = null; // allow retry later (e.g. after reconnect)
+      return null;
+    }
+  })();
+  return budgetTypesLoadPromise;
+}
+
+/** Reset cache (e.g. after admin adds/edits types so the create form refreshes). */
+export function resetBudgetTypesCache() {
+  budgetTypesLoadPromise = null;
+  state.budgetTypes = null;
+}
+
 export function isMonthlyBudgetType(type) {
   return type === 'monthly';
 }
@@ -88,6 +144,20 @@ export function isNamedBudgetType(type) {
 
 export function getBudgetTypeConfig(type) {
   if (TYPE_BY_VALUE[type]) return TYPE_BY_VALUE[type];
+
+  // Budget type defined in the DB (not one of the built-ins)
+  const dbType = (state.budgetTypes || []).find(t => t.value === type);
+  if (dbType) {
+    return {
+      value: dbType.value,
+      label: dbType.label || dbType.name || type,
+      usesCalendar: false,
+      nameEditable: true,
+      nameHint: `${dbType.label || dbType.name} budgets use a custom name and period date for your team.`,
+      namePlaceholder: `e.g. ${dbType.label || dbType.name} budget`
+    };
+  }
+
   if (type === 'adhoc') return TYPE_BY_VALUE.adhoc;
   return TYPE_BY_VALUE.adhoc;
 }
@@ -97,8 +167,12 @@ export function getBudgetTypeLabel(type) {
 }
 
 export function buildBudgetTypeOptionsHtml(selected = 'monthly') {
-  return BUDGET_TYPES.map(t => {
-    const sel = t.value === selected ? ' selected' : '';
-    return `<option value="${t.value}"${sel}>${t.label}</option>`;
+  // Budget types come ONLY from the DB (state.budgetTypes, loaded from the
+  // budget_types table). No hardcoded fallback in the dropdown.
+  const list = state.budgetTypes || [];
+  return list.map(t => {
+    const value = t.value ?? t.code;
+    const sel = value === selected ? ' selected' : '';
+    return `<option value="${value}"${sel}>${t.label}</option>`;
   }).join('');
 }

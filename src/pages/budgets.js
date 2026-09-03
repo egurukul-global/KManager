@@ -16,10 +16,11 @@ import {
   isNamedBudgetType,
   getBudgetTypeConfig,
   getBudgetTypeLabel,
-  buildBudgetTypeOptionsHtml
+  buildBudgetTypeOptionsHtml,
+  loadBudgetTypes
 } from '../utils/budgetTypes.js';
-import { loadBudgetCategoryLinesForType } from '../utils/budgetTemplates.js';
-import { btnIconEdit, btnIconDelete, cardRow } from '../utils/uiHelpers.js';
+import { loadTemplateForBudgetType } from '../utils/budgetTemplates.js';
+import { btnIconEdit, btnIconDelete, cardRow, escapeHtml } from '../utils/uiHelpers.js';
 import { canSubmitBudgetApproval } from '../utils/approvalAccess.js';
 import { submitBudgetForApproval } from '../utils/approvalEngine.js';
 import { isSystemAdmin } from '../utils/navPermissions.js';
@@ -265,6 +266,13 @@ export async function initCreateBudgetPage() {
 
   await ensureExchangeRatesLoaded();
   await loadCalendarEntriesCache();
+  await loadBudgetTypes();
+  // Rebuild the type dropdown from the DB now that types are loaded
+  const typeSelect = document.getElementById('newBudgetType');
+  if (typeSelect) {
+    const previous = typeSelect.value;
+    typeSelect.innerHTML = buildBudgetTypeOptionsHtml(previous || 'monthly');
+  }
   populateCalendarSelect();
   populateCreateBudgetCurrencySelect();
 
@@ -294,39 +302,33 @@ export async function initCreateBudgetPage() {
         showToast('Selected budget has no categories to copy', 'warning');
         return;
       }
-      const type = document.getElementById('newBudgetType')?.value || 'monthly';
-      const lines = await loadCategoryMasterLines();
-      const mandatoryLines = isMonthlyBudgetType(type) ? lines.filter(line => line.is_mandatory) : [];
       const container = document.getElementById('budgetCategoriesContainer');
       if (container) {
         container.innerHTML = '';
-        categories.forEach(cat => {
-          const displayName = formatCategoryLabel(cat.category, cat.subcategory);
+        // Group into parent rows (categories with subcategories become read-only
+        // totals of their line items) and plain rows, matching the create flow.
+        const models = groupCategoryLinesForForm(categories);
+        models.forEach(m => {
+          if (m.isGroup) {
+            container.appendChild(buildParentCategoryRow(m));
+            return;
+          }
+          const displayName = formatCategoryLabel(m.category, m.subcategory);
           const row = document.createElement('div');
           row.className = 'budget-line-card category-row';
-          if (!cat.category) row.dataset.custom = 'true';
+          if (!m.category) row.dataset.custom = 'true';
           else row.dataset.template = 'true';
           row.innerHTML = buildCategoryRowHtml({
               displayName,
-              category: cat.category || '',
-              subcategory: cat.subcategory || '',
-              localVal: formatLocalInput(cat.localAmount ?? cat.local_amount ?? ''),
-              usdVal: Number(cat.usdAmount ?? cat.usd_amount ?? 0).toFixed(2),
-              isTemplate: !!cat.category,
-              isCustom: !cat.category,
-              items: cat.items || []
+              category: m.category || '',
+              subcategory: m.subcategory || '',
+              localVal: formatLocalInput(m.localAmount ?? m.local_amount ?? ''),
+              usdVal: Number(m.usdAmount ?? m.usd_amount ?? 0).toFixed(2),
+              isTemplate: !!m.category,
+              isCustom: !m.category,
+              items: m.items || []
             });
           container.appendChild(row);
-        });
-
-        mandatoryLines.forEach(line => {
-          const alreadyExists = categories.some(cat => 
-            cat.category === line.category && 
-            (cat.subcategory || '') === (line.subcategory || '')
-          );
-          if (!alreadyExists) {
-            container.appendChild(buildCreateCategoryRow(line));
-          }
         });
 
         recalculateAllBudgetUsdFromLocal('#budgetCategoriesContainer', getCreateBudgetHeaderCurrency);
@@ -582,21 +584,22 @@ window.buildLineItemHtml = function(item = {}) {
   const rate = item.rate || '';
   const total = item.total || '0.00';
   const comment = item.comment || '';
+  const isTemplateItem = item.isTemplateItem === true;
 
   const measures = ['box', 'unit', 'kg', 'grams', 'oz', 'lb', 'bunch', 'pkt', 'ltrs', 'fl oz', 'ml'];
   const measureOptions = measures.map(m => `<option value="${m}" ${m === measure ? 'selected' : ''}>${m}</option>`).join('');
 
   return `
-    <div class="line-item-row" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--bg-secondary, rgba(0,0,0,0.05)); padding: 8px; border-radius: 4px;">
+    <div class="line-item-row"${isTemplateItem ? ' data-template-item="true"' : ''} style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--bg-secondary, rgba(0,0,0,0.05)); padding: 8px; border-radius: 4px;">
       <input type="text" class="li-name" placeholder="Item name" value="${escapeHtmlAttr(name)}" style="flex: 2; padding: 5px; height: 32px;">
       <select class="li-measure" style="flex: 1; min-width: 80px; padding: 5px; height: 32px;">
         ${measureOptions}
       </select>
       <input type="number" class="li-qty" placeholder="Qty" value="${escapeHtmlAttr(qty)}" step="0.01" min="0" style="flex: 1; min-width: 80px; padding: 5px; height: 32px;" oninput="window.onLineItemChange(this)">
       <input type="number" class="li-rate" placeholder="Rate" value="${escapeHtmlAttr(rate)}" step="0.01" min="0" style="flex: 1; min-width: 80px; padding: 5px; height: 32px;" oninput="window.onLineItemChange(this)">
-      <input type="number" class="li-total" placeholder="Total" value="${escapeHtmlAttr(total)}" readonly style="flex: 1; min-width: 80px; padding: 5px; background: var(--bg-secondary, #f3f4f6); color: var(--text-secondary, #4b5563); border: 1px solid var(--border); height: 32px;">
+      <input type="number" class="li-total" placeholder="Total" value="${escapeHtmlAttr(total)}" step="0.01" min="0" oninput="window.onLineItemTotalChange(this)" style="flex: 1; min-width: 80px; padding: 5px; height: 32px;">
       <input type="text" class="li-comment" placeholder="Comment" value="${escapeHtmlAttr(comment)}" style="flex: 2; padding: 5px; height: 32px;">
-      ${btnIconDelete('window.removeLineItem(this)', 'Remove')}
+      ${isTemplateItem ? '' : btnIconDelete('window.removeLineItem(this)', 'Remove')}
     </div>
   `;
 };
@@ -623,8 +626,13 @@ window.addLineItem = function(btn) {
 };
 
 window.removeLineItem = function(btn) {
+  const itemRow = btn.closest('.line-item-row');
+  if (itemRow?.dataset.templateItem === 'true') {
+    showToast('Template line items cannot be removed', 'warning');
+    return;
+  }
   const catRow = btn.closest('.category-row');
-  btn.closest('.line-item-row').remove();
+  itemRow.remove();
   window.recalculateCategoryTotalFromItems(catRow);
 };
 
@@ -633,8 +641,16 @@ window.onLineItemChange = function(input) {
   const qty = parseFloat(row.querySelector('.li-qty').value) || 0;
   const rate = parseFloat(row.querySelector('.li-rate').value) || 0;
   const totalInput = row.querySelector('.li-total');
-  totalInput.value = (qty * rate).toFixed(2);
+  // Auto-compute total from qty x rate, but never clobber a manually entered total
+  if (qty > 0 || rate > 0) {
+    totalInput.value = (qty * rate).toFixed(2);
+  }
 
+  const catRow = input.closest('.category-row');
+  window.recalculateCategoryTotalFromItems(catRow);
+};
+
+window.onLineItemTotalChange = function(input) {
   const catRow = input.closest('.category-row');
   window.recalculateCategoryTotalFromItems(catRow);
 };
@@ -723,16 +739,115 @@ async function seedCreateBudgetCategoryRows() {
   container.innerHTML = '';
   const type = document.getElementById('newBudgetType')?.value || 'monthly';
 
-  // Load categories from template if assigned, otherwise fall back to category master
-  const lines = await loadBudgetCategoryLinesForType(type);
+  // Load the template assigned to this type (if any) and its stored category lines.
+  // Every budget type uses a template when one is assigned.
+  const template = await loadTemplateForBudgetType(type);
+  const templateLines = parseTemplateDataRaw(template?.template_data);
 
-  if (isMonthlyBudgetType(type)) {
-    // For monthly budgets, only add mandatory items
-    const mandatoryLines = lines.filter(line => line.is_mandatory);
-    mandatoryLines.forEach(line => container.appendChild(buildCreateCategoryRow(line)));
+  if (templateLines.length > 0) {
+    // A template is assigned → seed ALL template categories for any budget type.
+    // Categories with subcategories (e.g. Utilities -> Gas/Electricity) render as
+    // ONE parent row with a read-only total; the sub items are its line items
+    // (with comments). Users can add temp line items alongside them.
+    const models = groupCategoryLinesForForm(templateLines.map(l => ({ ...l, fromTemplate: true })));
+    models.forEach(m => {
+      if (m.isGroup) {
+        container.appendChild(buildParentCategoryRow(m));
+      } else {
+        container.appendChild(buildCreateCategoryRow(m));
+      }
+    });
+  } else {
+    // No template assigned → default a single standard row so the user can enter
+    // a category of expense and the finance details directly.
+    window.addCategoryRow();
   }
 
   recalculateAllBudgetUsdFromLocal('#budgetCategoriesContainer', getCreateBudgetHeaderCurrency);
+}
+
+function parseTemplateDataRaw(data) {
+  if (!data) return [];
+  try {
+    const arr = typeof data === 'string' ? JSON.parse(data) : data;
+    return Array.isArray(arr) ? arr : [];
+  } catch (err) {
+    console.warn('Failed to parse template_data:', err);
+    return [];
+  }
+}
+
+/**
+ * Group flat category lines into form render models.
+ * A category that has subcategory lines (e.g. Utilities -> Gas/Electricity/Water)
+ * renders as ONE parent row whose amount is a READ-ONLY total of its line items
+ * (the template sub items + any additional temp line items the user adds).
+ * Categories without subcategories render as plain editable rows.
+ * This guarantees the main budget category is always the sum of all its
+ * template-based line items plus additional temp line items (no double counting).
+ */
+function groupCategoryLinesForForm(lines) {
+  const groups = new Map();
+  (lines || []).forEach(line => {
+    const cat = line.category || '';
+    if (!groups.has(cat)) groups.set(cat, { category: cat, subs: [], mains: [] });
+    const g = groups.get(cat);
+    if (line.subcategory) g.subs.push(line);
+    else g.mains.push(line);
+  });
+
+  const models = [];
+  groups.forEach(g => {
+    if (g.subs.length === 0) {
+      g.mains.forEach(m => models.push({ ...m, isGroup: false }));
+      return;
+    }
+    // Parent group: template sub lines become line items of the parent row
+    const items = g.subs.map(s => ({
+      name: s.subcategory,
+      measure: 'unit',
+      quantity: '',
+      rate: '',
+      total: Number(s.localAmount ?? s.local_amount ?? 0).toFixed(2),
+      comment: s.comment || '',
+      isTemplateItem: s.fromTemplate === true
+    }));
+    // Keep any line items already saved on the parent/main rows
+    g.mains.forEach(m => (m.items || []).forEach(it => items.push(it)));
+    const localSum = items.reduce((s, it) => s + (parseFloat(it.total) || 0), 0);
+    models.push({
+      isGroup: true,
+      category: g.category,
+      subcategory: null,
+      displayName: g.category,
+      items,
+      localAmount: localSum,
+      usdAmount: 0
+    });
+  });
+  return models;
+}
+
+/**
+ * Build a parent (grouped) category row: read-only amount = sum of line items.
+ */
+function buildParentCategoryRow(model) {
+  const localSum = (model.items || []).reduce((s, it) => s + (parseFloat(it.total) || 0), 0);
+  const row = document.createElement('div');
+  row.className = 'budget-line-card category-row';
+  row.dataset.template = 'true';
+  row.dataset.parentGroup = 'true';
+  row.innerHTML = buildCategoryRowHtml({
+    displayName: model.category,
+    category: model.category,
+    subcategory: '',
+    localVal: localSum.toFixed(2),
+    usdVal: '0',
+    isTemplate: true,
+    isCustom: false,
+    items: model.items || []
+  });
+  return row;
 }
 
 window.addCategoryRow = function() {
@@ -1064,7 +1179,10 @@ export function getViewBudgetsPage() {
           </div>
           <div class="form-group">
             <label>Budget Name</label>
-            <select id="budgetFilterName" onchange="window.initViewBudgetsPage()"><option value="">All Budgets</option></select>
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="budgetFilterSearch" placeholder="Search budget..." oninput="window.onBudgetSearchInput()" style="flex:1; margin-bottom:0;">
+              <select id="budgetFilterName" onchange="window.initViewBudgetsPage()" style="flex:1.3;"><option value="">All Budgets</option></select>
+            </div>
           </div>
         </div>
       </div>
@@ -1188,12 +1306,7 @@ export async function initViewBudgetsPage() {
 
   const nameSelect = document.getElementById('budgetFilterName');
   if (nameSelect) {
-    const currentVal = nameSelect.value;
-    nameSelect.innerHTML = '<option value="">All Budgets</option>';
-    allBudgets.filter(b => b.team_id === teamId && !b.is_deleted).forEach(b => {
-      nameSelect.innerHTML += `<option value="${b.id}">${b.name}</option>`;
-    });
-    nameSelect.value = currentVal;
+    repopulateBudgetNameFilter(nameSelect, allBudgets, teamId);
   }
 
   if (statusFilter !== 'all') {
@@ -1234,6 +1347,29 @@ export async function initViewBudgetsPage() {
 
 // Map the initialization explicitly to window for full routing access
 window.initViewBudgetsPage = initViewBudgetsPage;
+
+/** Rebuild the budget-name dropdown, filtered by the search box query. */
+function repopulateBudgetNameFilter(nameSelect, allBudgets, teamId) {
+  const searchInput = document.getElementById('budgetFilterSearch');
+  const searchQ = (searchInput?.value || '').trim().toLowerCase();
+  const currentVal = nameSelect.value;
+  const matching = (allBudgets || [])
+    .filter(b => b.team_id === teamId && !b.is_deleted)
+    .filter(b => !searchQ || (b.name || '').toLowerCase().includes(searchQ));
+
+  nameSelect.innerHTML = '<option value="">All Budgets</option>' +
+    matching.map(b => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
+
+  // Restore selection only if it's still present after filtering
+  nameSelect.value = matching.some(b => b.id === currentVal) ? currentVal : '';
+}
+
+window.onBudgetSearchInput = function() {
+  const nameSelect = document.getElementById('budgetFilterName');
+  const allBudgets = state.budgetPlans || [];
+  const teamId = state.currentTeam?.team_id;
+  if (nameSelect) repopulateBudgetNameFilter(nameSelect, allBudgets, teamId);
+};
 
 function onBudgetStatusFilterChange() {
   const nameFilter = document.getElementById('budgetFilterName');
@@ -1575,12 +1711,14 @@ export function renderBudgetReviewHtml(budget, options = {}) {
   const statusBadge = budgetStatusBadgeHtml(budget);
 
   let paymentInfoHtml = '';
-  if (budget.paid_amount != null || budget.funding_notes) {
-    const amt = budget.paid_amount != null ? `$${parseFloat(budget.paid_amount).toFixed(2)}` : '—';
-    const notes = budget.funding_notes || '—';
+  const approvedAmt = budget.approved_amount != null ? parseFloat(budget.approved_amount) : null;
+  const paidAmt = budget.paid_amount != null ? parseFloat(budget.paid_amount) : null;
+  if (approvedAmt != null || paidAmt != null || budget.funding_notes) {
     paymentInfoHtml = `
       <div class="payment-info-box" style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:4px; padding:10px; margin: 15px 0; font-size:0.85rem; color:#166534;">
-        <strong>💰 Payment Recorded:</strong> Paid Amount: <strong>${amt}</strong> | Notes: <em>${escapeHtmlAttr(notes)}</em>
+        ${approvedAmt != null ? `<strong>✅ Approved for Payment:</strong> $${approvedAmt.toFixed(2)} &nbsp;|&nbsp;` : ''}
+        ${paidAmt != null ? `<strong>💰 Paid:</strong> $${paidAmt.toFixed(2)} &nbsp;|&nbsp;` : ''}
+        ${budget.funding_notes ? `Notes: <em>${escapeHtmlAttr(budget.funding_notes)}</em>` : ''}
       </div>
     `;
   }
@@ -3082,6 +3220,23 @@ async function markBudgetReceived(budgetId) {
 
       if (updErr) throw updErr;
 
+      // Mark any pending budget-payment transfers for this budget as ACCEPTED
+      // so View Transfers shows them as received instead of Pending.
+      try {
+        await supabaseClient
+          .from('transfers')
+          .update({ status: 'ACCEPTED' })
+          .eq('linked_budget_id', budget.id)
+          .eq('status', 'PENDING');
+      } catch (e) { console.warn('transfer status update:', e.message); }
+
+      // Keep the in-memory + local cache in sync so the "Received" button
+      // disappears on re-render (and the status badge shows Received).
+      const updatedBudget = { ...budget, status: 'received' };
+      const bIdx = (state.budgetPlans || []).findIndex(b => b.id === budget.id);
+      if (bIdx >= 0) state.budgetPlans[bIdx] = updatedBudget;
+      try { await localPut('budget_plans', updatedBudget); } catch (e) { console.warn('localPut after receive:', e.message); }
+
       showToast('Funds received and allocated to bucket successfully!', 'success');
       modal.remove();
       await initViewBudgetsPage();
@@ -3174,7 +3329,9 @@ window.editBudgetPlan = async function(id) {
   const container = document.getElementById('editBudgetCategoriesContainer');
   container.innerHTML = '';
 
-  const cats = (budget.categories || []).map(normalizeBudgetCategory);
+  // Group into parent rows (categories with subcategories become read-only
+  // totals of their line items) and plain rows, matching the create flow.
+  const cats = groupCategoryLinesForForm((budget.categories || []).map(normalizeBudgetCategory));
   cats.forEach(cat => {
     window.addEditCategoryRow(cat, { deferLock: true });
   });

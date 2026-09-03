@@ -15,8 +15,7 @@ function isOrgAdmin() {
 
 const ORG_ADMIN_ONLY_PAGES = new Set([
   'user-mgmt',
-  'role-assignments',
-  'buckets'
+  'role-assignments'
 ]);
 
 const FINANCE_SETUP_PAGES = new Set([
@@ -102,6 +101,7 @@ const OHT_HIDDEN_PAGES = new Set([
   'create-budget',
   'add-funds',
   'transfer',
+  'view-transfers',
   'add-expense',
   'generate-receipt',
   'categories'
@@ -160,11 +160,11 @@ export function canAccessPage(pageName) {
 const VIEW_MENUS = {
   team: {
     sections: ['dashboard', 'setup', 'finance-setup', 'budgets', 'income', 'expense', 'financials', 'reports'],
-    pages: ['dashboard', 'profile', 'approval-portal', 'rates', 'view-budgets', 'create-budget', 'add-funds', 'transfer', 'income-manager', 'my-income', 'add-expense', 'expense-manager', 'generate-receipt', 'financial-status', 'reconcile', 'reconciliation-overview', 'reconciliation-approval', 'expense-reports', 'my-finances', 'categories', 'budget-types', 'budget-templates', 'budget-calendar']
+    pages: ['dashboard', 'profile', 'approval-portal', 'rates', 'buckets', 'view-budgets', 'create-budget', 'add-funds', 'transfer', 'view-transfers', 'income-manager', 'my-income', 'add-expense', 'expense-manager', 'generate-receipt', 'financial-status', 'reconcile', 'reconciliation-overview', 'reconciliation-approval', 'expense-reports', 'my-finances', 'categories', 'budget-types', 'budget-templates', 'budget-calendar']
   },
   manager: {
     sections: ['dashboard', 'income', 'financials', 'reports'],
-    pages: ['profile', 'approval-portal', 'transfer', 'manager-finance', 'manager-expenses', 'aggregate-reports']
+    pages: ['profile', 'approval-portal', 'transfer', 'view-transfers', 'manager-finance', 'manager-expenses', 'aggregate-reports']
   },
   admin: {
     sections: ['admin', 'setup', 'finance-setup'],
@@ -207,16 +207,21 @@ export function applyNavPermissions() {
     if (!isAdminPage && otm && !OTM_ALLOWED_PAGES.has(page)) {
       const r = String(state.user?.role || '').toLowerCase();
       const isFin = ['admin', 'caoh', 'oh', 'ceo', 'fin', 'fip', 'fih'].includes(r);
-      if ((page === 'manager-finance' || page === 'transfer' || page === 'manager-expenses') && isFin) { /* let it show */ } else { hide = true; }
+      if ((page === 'manager-finance' || page === 'transfer' || page === 'view-transfers' || page === 'manager-expenses') && isFin) { /* let it show */ } else { hide = true; }
     }
     if (!isAdminPage && viewOnly && !VIEW_ALLOWED_PAGES.has(page)) {
       const r = String(state.user?.role || '').toLowerCase();
       const isFin = ['admin', 'caoh', 'oh', 'ceo', 'fin', 'fip', 'fih'].includes(r);
-      if ((page === 'manager-finance' || page === 'transfer' || page === 'manager-expenses') && isFin) { /* let it show */ } else { hide = true; }
+      if ((page === 'manager-finance' || page === 'transfer' || page === 'view-transfers' || page === 'manager-expenses') && isFin) { /* let it show */ } else { hide = true; }
     }
     if (!isAdminPage && oht && OHT_HIDDEN_PAGES.has(page)) hide = true;
     if (page === 'team-mgmt' && !canAccessTeamsPage()) hide = true;
     if (ORG_ADMIN_ONLY_PAGES.has(page) && !isOrgAdmin() && !isSystemAdmin()) hide = true;
+    // Money Buckets: org admins always; team leads/admins at team level
+    if (page === 'buckets' && !isOrgAdmin() && !isSystemAdmin()) {
+      const level = String(state.userTeamAccess?.access_level || '').toLowerCase().trim();
+      if (level !== 'lead' && level !== 'admin') hide = true;
+    }
     if (FINANCE_SETUP_PAGES.has(page)) {
       const hasFinanceSetupRole = state.appRoleAssignments?.some(ar => ar.app_code === 'finance_setup');
       // Allow: org admins, system admins, or users with finance_setup app role
@@ -240,7 +245,7 @@ export function applyNavPermissions() {
     setup: ['rates'],
     'finance-setup': ['categories', 'budget-types', 'budget-templates', 'budget-calendar'],
     budgets: ['create-budget', 'view-budgets'],
-    income: ['add-funds', 'income-manager', 'transfer', 'my-income'],
+    income: ['add-funds', 'income-manager', 'transfer', 'view-transfers', 'my-income'],
     expense: ['add-expense', 'expense-manager', 'generate-receipt'],
     financials: ['financial-status', 'manager-finance', 'manager-expenses', 'reconcile', 'reconciliation-overview', 'reconciliation-approval'],
     reports: ['expense-reports', 'my-finances'],

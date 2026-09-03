@@ -35,6 +35,8 @@ export const state = {
   lastSync: null,
   teamDefaults: null,
   teamDefaultsTeamId: null,
+  // Org-global finance config (loaded from DB, fallback to built-ins)
+  budgetTypes: null,
   // One Kailasa shell (4D)
   isOkAdmin: false,
   okApps: [],

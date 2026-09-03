@@ -6,6 +6,7 @@ import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { createModal, openModal, closeModal } from '../components/modals.js';
 import { btnIconEdit, btnIconDelete } from '../utils/uiHelpers.js';
+import { loadBudgetTypes as loadGlobalBudgetTypes, resetBudgetTypesCache } from '../utils/budgetTypes.js';
 
 let budgetTypesList = [];
 
@@ -20,8 +21,8 @@ export function getBudgetTypesPage() {
         </button>
       </div>
       <p style="color: #666; margin-bottom: 20px;">
-        Define budget types available for <strong>${state.currentTeam?.team_name || 'current team'}</strong>.
-        Budget types organize budgets by purpose (Monthly, Medical, Travel, etc.).
+        Define the <strong>org-wide</strong> budget types available to every team.
+        Each team's budget creation uses these types and their assigned templates.
       </p>
       <div id="budgetTypesList">Loading budget types...</div>
     </div>
@@ -40,7 +41,12 @@ function getEditBudgetTypeModal() {
         <form id="budgetTypeForm" onsubmit="window.saveBudgetType(event)">
           <div class="form-group">
             <label for="btName">Type Name *</label>
-            <input type="text" id="btName" required placeholder="e.g., Monthly, Medical, Travel">
+            <input type="text" id="btName" required placeholder="e.g., Medical, Travel">
+          </div>
+          <div class="form-group">
+            <label for="btCode">Type Code *</label>
+            <input type="text" id="btCode" required pattern="[a-z0-9-]+" placeholder="e.g., medical, passport-visa" style="text-transform: lowercase;">
+            <small style="color: #666; display: block; margin-top: 5px;">Stable lowercase code stored on each budget (e.g. <code>medical</code>, <code>travel</code>).</small>
           </div>
           <div class="form-group">
             <label for="btLabel">Display Label *</label>
@@ -83,15 +89,17 @@ export async function initBudgetTypesPage() {
   window.deleteBudgetTypeBtn = deleteBudgetType;
 
   await loadBudgetTypes();
+  // Keep the shared global cache in sync so the create-budget dropdown sees new types
+  await loadGlobalBudgetTypes();
   renderBudgetTypesList();
 }
 
 async function loadBudgetTypes() {
   try {
+    // Budget types are org-global definitions (no team scope)
     const { data, error } = await supabaseClient
       .from('budget_types')
       .select('*')
-      .eq('team_id', state.currentTeam.team_id)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -134,6 +142,7 @@ function renderBudgetTypesList() {
       <thead>
         <tr style="border-bottom: 2px solid var(--border); text-align: left;">
           <th style="padding: 12px; font-weight: 600;">Type Name</th>
+          <th style="padding: 12px; font-weight: 600;">Code</th>
           <th style="padding: 12px; font-weight: 600;">Label</th>
           <th style="padding: 12px; font-weight: 600;">Status</th>
           <th style="padding: 12px; font-weight: 600;">Last Modified</th>
@@ -144,6 +153,7 @@ function renderBudgetTypesList() {
         ${budgetTypesList.map(bt => `
           <tr style="border-bottom: 1px solid var(--border); transition: background 0.2s;">
             <td style="padding: 12px; font-weight: 500;">${escapeHtml(bt.name)}</td>
+            <td style="padding: 12px;"><code style="background: rgba(0,0,0,0.05); padding: 2px 6px; border-radius: 4px;">${escapeHtml(bt.code || '')}</code></td>
             <td style="padding: 12px;">${escapeHtml(bt.label)}</td>
             <td style="padding: 12px;">
               <span style="
@@ -187,6 +197,7 @@ async function openBudgetTypeModal(budgetTypeId = null) {
 
     modalTitle.textContent = 'Edit Budget Type';
     document.getElementById('btName').value = bt.name || '';
+    document.getElementById('btCode').value = bt.code || '';
     document.getElementById('btLabel').value = bt.label || '';
     document.getElementById('btDescription').value = bt.description || '';
     document.getElementById('btActive').checked = bt.is_active !== false;
@@ -213,12 +224,17 @@ async function saveBudgetType(event) {
   event.preventDefault();
 
   const name = document.getElementById('btName').value.trim();
+  const code = (document.getElementById('btCode').value || '').trim().toLowerCase();
   const label = document.getElementById('btLabel').value.trim();
   const description = document.getElementById('btDescription').value.trim();
   const isActive = document.getElementById('btActive').checked;
 
-  if (!name || !label) {
-    showToast('Type name and label are required', 'warning');
+  if (!name || !label || !code) {
+    showToast('Type name, code and label are required', 'warning');
+    return;
+  }
+  if (!/^[a-z0-9-]+$/.test(code)) {
+    showToast('Type code must be lowercase letters, numbers and hyphens only (e.g. passport-visa)', 'warning');
     return;
   }
 
@@ -227,8 +243,8 @@ async function saveBudgetType(event) {
 
   try {
     const payload = {
-      team_id: state.currentTeam.team_id,
       name,
+      code,
       label,
       description,
       is_active: isActive,
@@ -258,7 +274,9 @@ async function saveBudgetType(event) {
     }
 
     closeBudgetTypeModal();
+    resetBudgetTypesCache();
     await loadBudgetTypes();
+    await loadGlobalBudgetTypes();
     renderBudgetTypesList();
   } catch (err) {
     console.error('Error saving budget type:', err);
@@ -267,19 +285,24 @@ async function saveBudgetType(event) {
 }
 
 async function deleteBudgetType(budgetTypeId) {
-  const ok = await showConfirm('Delete this budget type? This cannot be undone.');
+  const type = budgetTypesList.find(b => b.id === budgetTypeId);
+  if (!type) return;
+
+  const ok = await showConfirm(`Delete budget type "${type.name || type.label}"? This cannot be undone.`);
   if (!ok) return;
 
   try {
-    // Check if type is used in any budgets
-    const { data: usedInBudgets } = await supabaseClient
+    // Check if the type code is used in any budgets (soft-deactivate instead when in use)
+    const { count, error: countErr } = await supabaseClient
       .from('budget_plans')
       .select('id', { count: 'exact', head: true })
-      .eq('budget_type', budgetTypeId)
+      .eq('budget_type', type.code)
       .eq('is_deleted', false);
 
-    if (usedInBudgets && usedInBudgets.length > 0) {
-      showToast('Cannot delete budget type that is in use. Deactivate it instead.', 'warning');
+    if (countErr) throw countErr;
+
+    if (count && count > 0) {
+      showToast('Cannot delete a budget type that is used by existing budgets. Deactivate it instead.', 'warning');
       return;
     }
 
@@ -292,7 +315,9 @@ async function deleteBudgetType(budgetTypeId) {
 
     showToast('Budget type deleted', 'success');
     closeBudgetTypeModal();
+    resetBudgetTypesCache();
     await loadBudgetTypes();
+    await loadGlobalBudgetTypes();
     renderBudgetTypesList();
   } catch (err) {
     console.error('Error deleting budget type:', err);

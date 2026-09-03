@@ -1,4 +1,4 @@
-/* ========== TRANSFER FUNDS MODULE (Phase 1) ========== */
+﻿/* ========== TRANSFER FUNDS MODULE (Phase 1) ========== */
 import { state } from '../state.js';
 import { sbInsert, sbSelect, supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
@@ -28,6 +28,7 @@ import {
   fetchSentTransfers
 } from '../utils/transferActions.js';
 import { createTransferApprovalRequest } from '../utils/approvalEngine.js';
+import { uploadReceipt } from '../utils/upload.js';
 
 let teamBucketsCache = [];
 let exchangeRatesCache = [];
@@ -96,7 +97,7 @@ function populateSourceSelect() {
   const sources = filterBucketsForTransferSource(teamBucketsCache, state);
   select.innerHTML = '<option value="">Select source</option>';
   sources.forEach(b => {
-    const tag = isMemberBucket(b) ? ' · Personal' : '';
+    const tag = isMemberBucket(b) ? ' Â· Personal' : '';
     select.innerHTML += `<option value="${b.id}" data-currency="${b.currency}">${escapeHtml(b.name)}${tag} (${b.currency})</option>`;
   });
   if (sources.some(b => b.id === current)) select.value = current;
@@ -110,7 +111,7 @@ function populateDestSelect() {
   const srcId = document.getElementById('trSourceBucketId')?.value;
   select.innerHTML = '<option value="">Select destination</option>';
   dests.filter(b => b.id !== srcId).forEach(b => {
-    const tag = isMemberBucket(b) ? ' · Member' : ' · Team';
+    const tag = isMemberBucket(b) ? ' Â· Member' : ' Â· Team';
     select.innerHTML += `<option value="${b.id}" data-currency="${b.currency}">${escapeHtml(b.name)}${tag} (${b.currency})</option>`;
   });
   if (dests.some(b => b.id === current && b.id !== srcId)) select.value = current;
@@ -204,7 +205,7 @@ export function getTransferFundsPage() {
     return `
       <h1 class="page-title">Transfer Funds</h1>
       <div class="card">
-        <h2>⛔ Access Denied</h2>
+        <h2>â›” Access Denied</h2>
         <p>You do not have permission to transfer funds.</p>
       </div>
     `;
@@ -217,7 +218,7 @@ export function getTransferFundsPage() {
     <p class="page-intro">Send money within your team. Sent transfers appear below; confirm received money on the Dashboard.</p>
 
     <div class="card">
-      <h2>🔄 New Transfer</h2>
+      <h2>ðŸ”„ New Transfer</h2>
       <form id="transferFundsForm" onsubmit="window.executeFundsTransfer(event)">
         <div class="form-stack">
           <div id="trMemberFilters" class="transfer-filter-row" style="display:none;">
@@ -240,14 +241,14 @@ export function getTransferFundsPage() {
 
           <div class="form-grid-row form-grid-row--transfer-buckets">
             <div class="form-group"><label>Transfer Date</label><input type="date" id="trDate" required></div>
-            <div class="form-group"><label>Source Bucket</label><select id="trSourceBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trSourceCurrency">Currency: —</span></div>
-            <div class="form-group"><label>Destination Bucket</label><select id="trDestBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trDestCurrency">Currency: —</span></div>
+            <div class="form-group"><label>Source Bucket</label><select id="trSourceBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loadingâ€¦</option></select><span class="form-field-hint" id="trSourceCurrency">Currency: â€”</span></div>
+            <div class="form-group"><label>Destination Bucket</label><select id="trDestBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loadingâ€¦</option></select><span class="form-field-hint" id="trDestCurrency">Currency: â€”</span></div>
           </div>
 
           <div class="form-grid-row form-grid-row--transfer-amount">
             <div class="form-group"><label>Amount <span id="trAmountCurrencyLabel" style="font-weight:600;color:var(--primary);">(USD)</span></label><input type="number" class="input-amount" id="trAmount" step="0.01" placeholder="0.00" required oninput="window.onTransferAmountChange()"></div>
             <div class="form-group"><label id="trRateLabel">Rate (1 USD = ?)</label><input type="number" class="input-rate" id="trRate" step="any" min="0.000001" placeholder="95.4" oninput="window.onTransferAmountChange()"></div>
-            <div class="form-group"><label>Converted <span id="trConvertedCurrencyLabel" style="font-weight:600;color:var(--primary);"></span></label><input type="number" class="input-amount" id="trConvertedAmount" step="0.01" readonly style="background:#f3f4f6;"><span class="form-field-hint" id="trConvertedLabel">—</span></div>
+            <div class="form-group"><label>Converted <span id="trConvertedCurrencyLabel" style="font-weight:600;color:var(--primary);"></span></label><input type="number" class="input-amount" id="trConvertedAmount" step="0.01" readonly style="background:#f3f4f6;"><span class="form-field-hint" id="trConvertedLabel">â€”</span></div>
           </div>
           <div class="form-group">
             <label>Memo * <span class="form-hint">(max ${MEMO_MAX_LENGTH} chars)</span></label>
@@ -261,8 +262,35 @@ export function getTransferFundsPage() {
     </div>
 
     <div class="card">
+      <h2>ðŸ’° Pay Approved Budget</h2>
+      <p class="page-intro">Final step of the budget workflow: move funds from an Org bucket to the team / OPH buckets for budgets that are CAO-approved and FIH-approved for payment. The team lead confirms receipt.</p>
+      <div class="form-stack">
+        <div class="form-grid-row form-grid-row--transfer-buckets">
+          <div class="form-group"><label>Team *</label><select id="payTeamId" onchange="window.onPayTeamChange()"><option value="">Select team</option></select></div>
+          <div class="form-group"><label>Transfer Date</label><input type="date" id="payDate"></div>
+        </div>
+        <div id="payBudgetRows"><p class="empty-state">Select a team to see its budgets ready for payment.</p></div>
+        <div class="form-grid-row">
+          <div class="form-group">
+            <label style="font-weight: 600; font-size: 0.85rem;">Proof of Transfer (optional)</label>
+            <div class="attachment-upload-zone" onclick="document.getElementById('payProofFile').click()" style="border: 1px dashed var(--border); border-radius: 4px; padding: 12px; text-align: center; cursor: pointer; color: var(--text-secondary); background: var(--bg-secondary); font-size: 0.85rem;">
+              <span id="payProofLabel">ðŸ“Ž Click to upload proof of funds transfer</span>
+              <input type="file" id="payProofFile" onchange="window.onPayProofChange(this)" style="display: none;" accept="image/*,application/pdf">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Memo * <span class="form-hint">(max ${MEMO_MAX_LENGTH} chars)</span></label>
+            <input type="text" id="payMemo" maxlength="${MEMO_MAX_LENGTH}" required placeholder="e.g. KMOF payment">
+          </div>
+        </div>
+        <div id="payValidationError" class="form-error-inline" style="display:none;"></div>
+        <button type="button" id="paySubmitBtn" class="btn-block success" onclick="window.executeBudgetPayments()">Send Transfer</button>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="transfer-list-header">
-        <h2>📤 Sent Transfers</h2>
+        <h2>ðŸ“¤ Sent Transfers</h2>
         <div class="form-group transfer-status-filter">
           <label>Status</label>
           <select id="trStatusFilter" onchange="window.refreshSentTransfersList()">
@@ -287,7 +315,7 @@ export function getTransferFundsPage() {
             </tr>
           </thead>
           <tbody id="trSentListBody">
-            <tr><td colspan="7" class="empty-state">Loading…</td></tr>
+            <tr><td colspan="7" class="empty-state">Loadingâ€¦</td></tr>
           </tbody>
         </table>
       </div>
@@ -327,6 +355,13 @@ export async function initTransferFundsPage() {
   window.executeFundsTransfer = executeFundsTransfer;
   window.refreshSentTransfersList = refreshSentTransfersList;
   window.cancelSentTransfer = cancelSentTransfer;
+  window.executeBudgetPayments = executeBudgetPayments;
+
+  // Pay Approved Budget card
+  await loadPaySourceBuckets();
+  await loadPayTeams();
+  const payDateEl = document.getElementById('payDate');
+  if (payDateEl) payDateEl.value = new Date().toISOString().split('T')[0];
 
   onTransferBucketChange();
   await refreshSentTransfersList();
@@ -372,7 +407,7 @@ async function refreshSentTransfersList() {
       mobileHtml += `
         <article class="data-card data-card--compact">
           <div class="data-card-top">
-            <span class="data-card-title">${escapeHtml(dest?.name || '—')}</span>
+            <span class="data-card-title">${escapeHtml(dest?.name || 'â€”')}</span>
             <span class="badge ${badge.class}">${badge.label}</span>
           </div>
           <div class="data-card-row">
@@ -381,7 +416,7 @@ async function refreshSentTransfersList() {
           </div>
           <div class="data-card-row">
             <span class="data-card-row-label">From</span>
-            <span class="data-card-row-value">${escapeHtml(src?.name || '—')}</span>
+            <span class="data-card-row-value">${escapeHtml(src?.name || 'â€”')}</span>
           </div>
           <div class="data-card-row">
             <span class="data-card-row-label">Date</span>
@@ -395,13 +430,13 @@ async function refreshSentTransfersList() {
       return `
         <tr>
           <td data-label="Date">${escapeHtml(t.date)}</td>
-          <td data-label="From">${escapeHtml(src?.name || '—')}</td>
-          <td data-label="To">${escapeHtml(dest?.name || '—')}</td>
+          <td data-label="From">${escapeHtml(src?.name || 'â€”')}</td>
+          <td data-label="To">${escapeHtml(dest?.name || 'â€”')}</td>
           <td data-label="Amount">${amountStr}</td>
           <td data-label="Memo">${escapeHtml(t.description || '')}</td>
           <td data-label="Status"><span class="badge ${badge.class}">${badge.label}</span></td>
           <td data-label="Actions" class="action-buttons">
-            ${canCancel ? `<button type="button" class="danger small" onclick="window.cancelSentTransfer('${t.id}')">Cancel</button>` : '—'}
+            ${canCancel ? `<button type="button" class="danger small" onclick="window.cancelSentTransfer('${t.id}')">Cancel</button>` : 'â€”'}
           </td>
         </tr>
       `;
@@ -446,7 +481,7 @@ function onTransferBucketChange() {
     srcCurrencyEl.textContent = `Currency: ${srcBucket.currency}`;
     if (amountLabel) amountLabel.textContent = `(${srcBucket.currency})`;
   } else {
-    srcCurrencyEl.textContent = 'Currency: —';
+    srcCurrencyEl.textContent = 'Currency: â€”';
     if (amountLabel) amountLabel.textContent = '(USD)';
   }
 
@@ -454,7 +489,7 @@ function onTransferBucketChange() {
     destCurrencyEl.textContent = `Currency: ${destBucket.currency}`;
     if (convertedCurrencyLabel) convertedCurrencyLabel.textContent = `(${destBucket.currency})`;
   } else {
-    destCurrencyEl.textContent = 'Currency: —';
+    destCurrencyEl.textContent = 'Currency: â€”';
     if (convertedCurrencyLabel) convertedCurrencyLabel.textContent = '';
   }
 
@@ -466,7 +501,7 @@ function onTransferBucketChange() {
       if (rateInput) rateInput.value = '1';
       if (rateLabel) rateLabel.textContent = 'Exchange Rate (1 USD = 1 USD)';
       if (convertedInput) convertedInput.value = '';
-      if (convertedLabel) convertedLabel.textContent = 'Same currency — no conversion needed';
+      if (convertedLabel) convertedLabel.textContent = 'Same currency â€” no conversion needed';
     } else if (srcCurr === 'USD') {
       const destRate = getLatestUsdRate(exchangeRatesCache, destCurr);
       if (rateLabel) rateLabel.textContent = `Exchange Rate (1 USD = ? ${destCurr})`;
@@ -502,7 +537,7 @@ function onTransferBucketChange() {
   } else {
     if (rateInput && !rateInput.value) rateInput.value = '';
     if (convertedInput) convertedInput.value = '';
-    if (convertedLabel) convertedLabel.textContent = '—';
+    if (convertedLabel) convertedLabel.textContent = 'â€”';
   }
 }
 
@@ -706,7 +741,7 @@ async function executeFundsTransfer(e) {
 
   const btn = document.getElementById('trSubmitBtn');
   btn.disabled = true;
-  btn.textContent = 'Sending…';
+  btn.textContent = 'Sendingâ€¦';
 
   try {
     if (flow.status === TRANSFER_STATUS.ACCEPTED) {
@@ -723,10 +758,10 @@ async function executeFundsTransfer(e) {
       if (crossTeam) {
         const approvalReq = await createTransferApprovalRequest(saved);
         if (!approvalReq) {
-          showToast('Transfer sent — approval tracking needs a request alias in My Profile', 'warning');
+          showToast('Transfer sent â€” approval tracking needs a request alias in My Profile', 'warning');
         }
       }
-      showToast(crossTeam ? 'Cross-team transfer sent — awaiting OHF approval' : 'Transfer sent — waiting for confirmation', 'success');
+      showToast(crossTeam ? 'Cross-team transfer sent â€” awaiting OHF approval' : 'Transfer sent â€” waiting for confirmation', 'success');
     } else {
       showToast(`Transferred ${amount.toFixed(2)} ${srcCurr} successfully`, 'success');
     }
@@ -748,11 +783,348 @@ async function executeFundsTransfer(e) {
   }
 }
 
+// ==================== PAY APPROVED BUDGET (FIH/FIP payment) ====================
+let payTeamsCache = [];
+let payBudgetsCache = [];
+let payDestBucketsCache = [];
+let paySourceBucketsCache = [];
+let payProof = { key: null, name: null };
+
+function isPaymentUser() {
+  return hasAnyGlobalFinanceRole() || state.user?.role === 'admin';
+}
+
+async function loadPaySourceBuckets() {
+  const select = document.getElementById('paySourceBucketId');
+  try {
+    const { data, error } = await supabaseClient
+      .from('buckets')
+      .select('id, name, team_id, currency, balance, is_org_level, owner_user_id')
+      .eq('is_org_level', true)
+      .eq('is_deleted', false)
+      .order('name');
+    paySourceBucketsCache = error ? [] : (data || []);
+    if (select) {
+      select.innerHTML = '<option value="">Select source</option>';
+      paySourceBucketsCache.forEach(b => {
+        select.innerHTML += `<option value="${b.id}" data-currency="${b.currency}">${escapeHtml(b.name)} (${b.currency})</option>`;
+      });
+    }
+  } catch (err) {
+    console.warn('loadPaySourceBuckets:', err.message);
+  }
+}
+
+async function loadPayTeams() {
+  const select = document.getElementById('payTeamId');
+  if (!select) return;
+  if (isPaymentUser()) {
+    try {
+      // NOTE: teams table has no is_deleted column; exclude personal teams instead.
+      const { data, error } = await supabaseClient
+        .from('teams')
+        .select('id, name')
+        .eq('is_personal_team', false)
+        .order('name');
+      payTeamsCache = error || !data ? [] : (data || []).map(t => ({ id: t.id, name: t.name }));
+    } catch {
+      payTeamsCache = [];
+    }
+  } else {
+    // state.teams entries are shaped { team_id, team_name }
+    payTeamsCache = (state.teams || []).map(t => ({ id: t.team_id || t.id, name: t.team_name || t.name }));
+  }
+  select.innerHTML = '<option value="">Select team</option>' +
+    payTeamsCache
+      .filter(t => t.id)
+      .map(t => `<option value="${t.id}">${escapeHtml(t.name || '')}</option>`).join('');
+}
+
+function payTeamName(teamId) {
+  return payTeamsCache.find(t => t.id === teamId)?.name || '';
+}
+
+async function loadPayBudgets(teamId) {
+  if (!teamId) return [];
+  const { data, error } = await supabaseClient
+    .from('budget_plans')
+    .select('id, name, budget_type, team_id, status, approval_status, total_amount, approved_amount, paid_amount')
+    .eq('team_id', teamId)
+    .eq('is_deleted', false)
+    .eq('approval_status', 'FIH-APPROVED')
+    .neq('status', 'archive')
+    .neq('status', 'archived')
+    .order('name');
+  if (error) throw error;
+  return data || [];
+}
+
+async function loadPayDestBuckets(teamId) {
+  if (!teamId) return [];
+  // Buckets of the selected team + operational buckets of teams whose lead is an OPH
+  const teamIds = new Set([teamId]);
+  try {
+    const { data: memberships } = await supabaseClient
+      .from('user_teams')
+      .select('team_id, users:user_id(id, role)')
+      .eq('access_level', 'lead');
+    (memberships || []).forEach(m => {
+      if (m.users?.role === 'oph') teamIds.add(m.team_id);
+    });
+  } catch (err) {
+    console.warn('OPH team lookup failed:', err.message);
+  }
+  const { data, error } = await supabaseClient
+    .from('buckets')
+    .select('id, name, team_id, currency, is_org_level, owner_user_id')
+    .in('team_id', [...teamIds])
+    .eq('is_deleted', false);
+  if (error) throw error;
+  return (data || []).filter(b => !b.is_org_level && !b.owner_user_id);
+}
+
+async function onPayTeamChange() {
+  const teamId = document.getElementById('payTeamId')?.value;
+  const rowsEl = document.getElementById('payBudgetRows');
+  payBudgetsCache = [];
+  payDestBucketsCache = [];
+  if (!teamId || teamId === 'undefined' || !rowsEl) {
+    if (rowsEl) rowsEl.innerHTML = '<p class="empty-state">Select a team to see its budgets ready for payment.</p>';
+    return;
+  }
+  rowsEl.innerHTML = '<p class="empty-state">Loadingâ€¦</p>';
+  try {
+    const [budgets, destBuckets] = await Promise.all([loadPayBudgets(teamId), loadPayDestBuckets(teamId)]);
+    await loadPaySourceBuckets();
+    payBudgetsCache = budgets;
+    payDestBucketsCache = destBuckets;
+    renderPayBudgetRows();
+  } catch (err) {
+    rowsEl.innerHTML = `<p class="empty-state" style="color:#dc3545;">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function renderPayBudgetRows() {
+  const rowsEl = document.getElementById('payBudgetRows');
+  if (!rowsEl) return;
+  if (!payBudgetsCache.length) {
+    rowsEl.innerHTML = '<p class="empty-state">No FIH-approved budgets awaiting payment for this team.</p>';
+    return;
+  }
+  const destOptions = (selected) => {
+    let html = '<option value="">Select destination bucket</option>';
+    let lastTeam = null;
+    payDestBucketsCache.forEach(b => {
+      if (b.team_id !== lastTeam) {
+        html += `<option disabled>â€” ${escapeHtml(payTeamName(b.team_id) || 'Team')} â€”</option>`;
+        lastTeam = b.team_id;
+      }
+      html += `<option value="${b.id}" ${b.id === selected ? 'selected' : ''}>${escapeHtml(b.name)} (${b.currency})</option>`;
+    });
+    return html;
+  };
+
+  const sourceOptions = (selected) => {
+    let html = '<option value="">Select source bucket</option>';
+    paySourceBucketsCache.forEach(b => {
+      html += `<option value="${b.id}" ${b.id === selected ? 'selected' : ''}>${escapeHtml(b.name)} (${b.currency})</option>`;
+    });
+    return html;
+  };
+
+  rowsEl.innerHTML = payBudgetsCache.map(b => {
+    const approved = Number(b.approved_amount ?? b.total_amount ?? 0);
+    const paid = Number(b.paid_amount ?? 0);
+    const remaining = Math.max(0, approved - paid);
+    return `
+      <div class="pay-budget-row" data-budget-id="${b.id}" data-remaining="${remaining}" style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; background: var(--bg-secondary, rgba(0,0,0,0.03));">
+        <div style="font-weight:600; margin-bottom:10px;">${escapeHtml(b.name)} <span class="form-hint">(${escapeHtml(b.budget_type || '')})</span></div>
+        <div class="form-grid-row form-grid-row--transfer-buckets">
+          <div class="form-group">
+            <label>Approved (USD)</label>
+            <input type="number" value="${approved.toFixed(2)}" readonly style="background:#f3f4f6;">
+          </div>
+          <div class="form-group">
+            <label>Remaining (USD)</label>
+            <input type="number" value="${remaining.toFixed(2)}" readonly style="background:#f3f4f6;">
+          </div>
+          <div class="form-group">
+            <label>Transfer Amount (USD) *</label>
+            <input type="number" class="pay-amount" step="0.01" min="0" max="${remaining.toFixed(2)}" placeholder="0.00">
+          </div>
+          <div class="form-group">
+            <label>From Bucket (Org) *</label>
+            <select class="pay-source">${sourceOptions()}</select>
+          </div>
+          <div class="form-group">
+            <label>To Bucket (team / OPH) *</label>
+            <select class="pay-dest">${destOptions()}</select>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+window.onPayTeamChange = onPayTeamChange;
+
+window.onPayProofChange = async function(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const label = document.getElementById('payProofLabel');
+  try {
+    if (label) label.textContent = `â³ Uploading ${file.name}â€¦`;
+    const { objectKey } = await uploadReceipt(file);
+    payProof = { key: objectKey, name: file.name };
+    if (label) label.textContent = `ðŸ“Ž ${file.name} (uploaded)`;
+  } catch (err) {
+    payProof = { key: null, name: null };
+    if (label) label.textContent = 'ðŸ“Ž Upload failed â€” click to retry';
+    showToast(err.message || 'Upload failed', 'error');
+  }
+};
+
+window.executeBudgetPayments = async function() {
+  const errorEl = document.getElementById('payValidationError');
+  const hideError = () => { if (errorEl) errorEl.style.display = 'none'; };
+  hideError();
+
+  const teamId = document.getElementById('payTeamId')?.value;
+  const date = document.getElementById('payDate')?.value || new Date().toISOString().split('T')[0];
+  const memo = document.getElementById('payMemo')?.value?.trim() || 'Budget payment';
+
+  if (!teamId) return showToast('Select a team.', 'warning');
+
+  const payments = [];
+  document.querySelectorAll('#payBudgetRows .pay-budget-row').forEach(row => {
+    const amount = parseFloat(row.querySelector('.pay-amount')?.value) || 0;
+    const destId = row.querySelector('.pay-dest')?.value;
+    const srcId = row.querySelector('.pay-source')?.value;
+    if (amount > 0) {
+      payments.push({
+        budgetId: row.dataset.budgetId,
+        amount,
+        destId,
+        srcId,
+        remaining: parseFloat(row.dataset.remaining) || 0
+      });
+    }
+  });
+  if (!payments.length) return showToast('Enter a transfer amount for at least one budget.', 'warning');
+
+  for (const p of payments) {
+    if (!p.srcId) return showToast('Select a source (From) bucket for every budget with an amount.', 'warning');
+    if (!p.destId) return showToast('Select a destination (To) bucket for every budget with an amount.', 'warning');
+    if (p.srcId === p.destId) return showToast('Source and destination buckets must be different.', 'warning');
+    if (p.amount > p.remaining + 0.005) return showToast('Transfer amount cannot exceed the remaining approved amount.', 'warning');
+    if (!paySourceBucketsCache.find(b => b.id === p.srcId)) return showToast('Invalid source bucket.', 'error');
+    if (!payDestBucketsCache.find(b => b.id === p.destId)) return showToast('Invalid destination bucket.', 'error');
+    const srcBucket = paySourceBucketsCache.find(b => b.id === p.srcId);
+    const destBucket = payDestBucketsCache.find(b => b.id === p.destId);
+    // Payment transfers are always org -> team (operational) bucket
+    if (srcBucket.is_org_level !== true) return showToast('Source bucket must be an Org-level bucket.', 'warning');
+    if (destBucket.is_org_level === true || destBucket.owner_user_id) return showToast('Destination bucket must be a team operational bucket.', 'warning');
+  }
+
+  // Receiver: a lead of the selected team who will confirm receipt
+  let receiverId = null;
+  try {
+    const { data: leads } = await supabaseClient
+      .from('user_teams')
+      .select('user_id, access_level')
+      .eq('team_id', teamId)
+      .in('access_level', ['lead', 'admin', 'oht']);
+    receiverId = (leads || []).find(l => l.user_id !== state.user?.id)?.user_id || (leads || [])[0]?.user_id || null;
+  } catch (err) {
+    console.warn('Lead lookup failed:', err.message);
+  }
+
+  const btn = document.getElementById('paySubmitBtn');
+
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    for (const p of payments) {
+      const budget = payBudgetsCache.find(b => b.id === p.budgetId);
+      const srcBucket = paySourceBucketsCache.find(b => b.id === p.srcId);
+      const destBucket = payDestBucketsCache.find(b => b.id === p.destId);
+      const payload = {
+        id: crypto.randomUUID(),
+
+        team_id: srcBucket.team_id,
+        dest_team_id: teamId,
+        date,
+        from_bucket_id: srcBucket.id,
+        to_bucket_id: destBucket.id,
+        amount: p.amount,
+        rate: 1,
+        currency: srcBucket.currency || 'USD',
+        dest_amount: p.amount,
+        dest_currency: destBucket.currency || 'USD',
+        description: memo,
+        status: 'PENDING',
+        flow_type: 'org_to_team',
+        receiver_user_id: receiverId,
+        receiver_kind: 'lead',
+        pending_step: 'receiver',
+        linked_budget_id: p.budgetId,
+        attachment_url: payProof.key,
+        attachment_name: payProof.name,
+        created_by: state.user?.id,
+        created_at: new Date().toISOString(),
+        is_deleted: false
+      };
+      const result = await supabaseClient.rpc('insert_budget_payment_transfer', {
+        p_id: payload.id,
+        p_team_id: srcBucket.team_id,
+        p_dest_team_id: teamId,
+        p_date: date,
+        p_from_bucket_id: srcBucket.id,
+        p_to_bucket_id: destBucket.id,
+        p_amount: p.amount,
+        p_rate: 1,
+        p_currency: srcBucket.currency || 'USD',
+        p_dest_amount: p.amount,
+        p_dest_currency: destBucket.currency || 'USD',
+        p_description: memo,
+        p_receiver_user_id: receiverId,
+        p_linked_budget_id: p.budgetId,
+        p_attachment_url: payProof.key,
+        p_attachment_name: payProof.name
+      });
+      if (result?.error) throw new Error(result.error.message);
+      await auditLog('INSERT', payload.id, null, payload);
+
+      // Record the payment on the budget (FIH/FIP authorized via trigger)
+      const newPaid = Number(budget?.paid_amount ?? 0) + p.amount;
+      const { error: paidErr } = await supabaseClient
+        .from('budget_plans')
+        .update({ paid_amount: newPaid, funding_notes: memo })
+        .eq('id', p.budgetId);
+      if (paidErr) throw new Error('Transfer created but payment could not be recorded on the budget: ' + paidErr.message);
+    }
+    showToast(`Payment transfer${payments.length > 1 ? 's' : ''} sent â€” the team lead will confirm receipt.`, 'success');
+    payProof = { key: null, name: null };
+    const proofLabel = document.getElementById('payProofLabel');
+    if (proofLabel) proofLabel.textContent = 'ðŸ“Ž Click to upload proof of funds transfer';
+    const memoEl = document.getElementById('payMemo');
+    if (memoEl) memoEl.value = '';
+    await onPayTeamChange();
+    await refreshSentTransfersList();
+  } catch (err) {
+    console.warn('Payment transfer failed:', err?.message || err);
+    showToast(err.message || 'Payment failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Transfer';
+  }
+};
+
 // Dashboard hooks
 export async function acceptTransferFromDashboard(transferId) {
   try {
     await acceptTransfer(transferId);
-    showToast('Transfer accepted — balances updated', 'success');
+    showToast('Transfer accepted â€” balances updated', 'success');
     return true;
   } catch (err) {
     showToast(err.message || 'Accept failed', 'error');
@@ -770,3 +1142,172 @@ export async function rejectTransferFromDashboard(transferId) {
     return false;
   }
 }
+
+/* ========== VIEW TRANSFERS PAGE (Income → View Transfers) ========== */
+
+let viewTransfersCache = [];
+let viewBucketsCache = [];
+let viewTeamsCache = [];
+let viewBudgetOptionsCache = [];
+
+export function getViewTransfersPage() {
+  return `
+    <h1 class="page-title">View Transfers</h1>
+    <p class="page-intro">All transfers across teams — filter by date range, team, budget, buckets or amount.</p>
+
+    <div class="card">
+      <h2>🔍 Filters</h2>
+      <div class="form-grid-row form-grid-row--transfer-buckets">
+        <div class="form-group"><label>From Date</label><input type="date" id="vtDateFrom" onchange="window.applyViewTransfersFilters()"></div>
+        <div class="form-group"><label>To Date</label><input type="date" id="vtDateTo" onchange="window.applyViewTransfersFilters()"></div>
+        <div class="form-group"><label>Team</label><select id="vtTeam" onchange="window.applyViewTransfersFilters()"><option value="">All Teams</option></select></div>
+      </div>
+      <div class="form-grid-row form-grid-row--transfer-buckets">
+        <div class="form-group"><label>Budget Search</label><input type="text" id="vtBudgetSearch" placeholder="Search budget..." oninput="window.onViewBudgetSearchInput()" style="margin-bottom:0;"></div>
+        <div class="form-group"><label>Budget</label><select id="vtBudget" onchange="window.applyViewTransfersFilters()"><option value="">All Budgets</option></select></div>
+      </div>
+      <div class="form-grid-row form-grid-row--transfer-buckets">
+        <div class="form-group"><label>From Bucket</label><select id="vtFromBucket" onchange="window.applyViewTransfersFilters()"><option value="">All Buckets</option></select></div>
+        <div class="form-group"><label>To Bucket</label><select id="vtToBucket" onchange="window.applyViewTransfersFilters()"><option value="">All Buckets</option></select></div>
+        <div class="form-group"><label>Min Amount (USD)</label><input type="number" id="vtMinAmount" min="0" step="0.01" placeholder="e.g. 100" onchange="window.applyViewTransfersFilters()"></div>
+      </div>
+      <div style="text-align:right;">
+        <button class="sq-btn secondary" onclick="window.clearViewTransfersFilters()">Clear Filters</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📋 Transfers</h2>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Ref</th><th>Date</th><th>Team</th><th>Budget</th><th>From</th><th>To</th><th>Amount</th><th>Status</th></tr></thead>
+          <tbody id="vtListBody"><tr><td colspan="8" class="empty-state">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+
+
+export async function initViewTransfersPage() {
+  try {
+    const [bucketRes, teamRes] = await Promise.all([
+      supabaseClient.from('buckets').select('id,name,team_id,is_org_level,owner_user_id').eq('is_deleted', false),
+      supabaseClient.from('teams').select('id,name').eq('is_personal_team', false)
+    ]);
+    if (bucketRes.error) throw bucketRes.error;
+    if (teamRes.error) throw teamRes.error;
+    viewBucketsCache = bucketRes.data || [];
+    viewTeamsCache = (teamRes.data || []).map(t => ({ id: t.id, name: t.name }));
+
+    const role = String(state.user?.role || '').toLowerCase();
+    const isFin = ['admin', 'caoh', 'oh', 'ceo', 'fin', 'fip', 'fih'].includes(role);
+    let q = supabaseClient.from('transfers').select('*').eq('is_deleted', false).order('date', { ascending: false }).limit(500);
+    if (!isFin) {
+      const myTeamId = state.currentTeam?.team_id;
+      if (myTeamId) q = q.or(`team_id.eq.${myTeamId},dest_team_id.eq.${myTeamId}`);
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+    viewTransfersCache = data || [];
+
+    const teamSel = document.getElementById('vtTeam');
+    if (teamSel) teamSel.innerHTML = '<option value="">All Teams</option>' + viewTeamsCache.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+    const bucketOpts = '<option value="">All Buckets</option>' + viewBucketsCache.map(b => {
+      const team = viewTeamsCache.find(t => t.id === b.team_id);
+      const label = `${b.is_org_level ? '🌍 ' : ''}${b.name}${team ? ` (${team.name})` : (b.owner_user_id ? ' (personal)' : '')}`;
+      return `<option value="${b.id}">${escapeHtml(label)}</option>`;
+    }).join('');
+    const fromSel = document.getElementById('vtFromBucket');
+    const toSel = document.getElementById('vtToBucket');
+    if (fromSel) fromSel.innerHTML = bucketOpts;
+    if (toSel) toSel.innerHTML = bucketOpts;
+
+    const budgetIds = [...new Set(viewTransfersCache.map(t => t.linked_budget_id).filter(Boolean))];
+    let budgetOpts = '<option value="">All Budgets</option>';
+    viewBudgetOptionsCache = [];
+    if (budgetIds.length) {
+      const { data: budgets, error: bErr } = await supabaseClient.from('budget_plans').select('id,name').in('id', budgetIds).order('name');
+      if (bErr) throw bErr;
+      viewBudgetOptionsCache = budgets || [];
+      budgetOpts += viewBudgetOptionsCache.map(b => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
+    }
+    const bSel = document.getElementById('vtBudget');
+    if (bSel) bSel.innerHTML = budgetOpts;
+
+    applyViewTransfersFilters();
+  } catch (err) {
+    console.error('View transfers load:', err);
+    showToast(err.message || 'Failed to load transfers', 'error');
+  }
+}
+
+
+function applyViewTransfersFilters() {
+  const val = id => document.getElementById(id)?.value?.trim() || '';
+  const dateFrom = val('vtDateFrom');
+  const dateTo = val('vtDateTo');
+  const teamId = val('vtTeam');
+  const budgetId = val('vtBudget');
+  const fromBucket = val('vtFromBucket');
+  const toBucket = val('vtToBucket');
+  const minAmount = parseFloat(val('vtMinAmount')) || 0;
+
+  const rows = viewTransfersCache.filter(t => {
+    if (dateFrom && (t.date || '') < dateFrom) return false;
+    if (dateTo && (t.date || '') > dateTo) return false;
+    if (teamId && t.team_id !== teamId && t.dest_team_id !== teamId) return false;
+    if (budgetId && t.linked_budget_id !== budgetId) return false;
+    if (fromBucket && t.from_bucket_id !== fromBucket) return false;
+    if (toBucket && t.to_bucket_id !== toBucket) return false;
+    if (minAmount && parseFloat(t.amount_usd || t.amount || 0) < minAmount) return false;
+    return true;
+  });
+
+  renderViewTransfersRows(rows);
+}
+window.applyViewTransfersFilters = applyViewTransfersFilters;
+
+function renderViewTransfersRows(rows) {
+  const tbody = document.getElementById('vtListBody');
+  if (!tbody) return;
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No transfers match the filters.</td></tr>';
+    return;
+  }
+  const teamName = id => viewTeamsCache.find(t => t.id === id)?.name || '—';
+  const bucketName = id => viewBucketsCache.find(b => b.id === id)?.name || id || '—';
+  const budgetName = id => (id ? (viewBudgetOptionsCache.find(b => b.id === id)?.name || 'Budget') : '—');
+  const fmtAmt = t => `${parseFloat(t.amount || 0).toFixed(2)} ${t.currency || ''}${t.amount_usd != null ? ` ($${parseFloat(t.amount_usd).toFixed(2)})` : ''}`;
+  const refOf = t => (t.id ? String(t.id).replace(/-/g, '').slice(0, 8).toUpperCase() : '—');
+  tbody.innerHTML = rows.map(t => `<tr>
+    <td title="${escapeHtml(t.id || '')}">${escapeHtml(refOf(t))}</td>
+    <td>${escapeHtml(t.date || '—')}</td>
+    <td>${escapeHtml(teamName(t.dest_team_id || t.team_id))}</td>
+    <td>${escapeHtml(budgetName(t.linked_budget_id))}</td>
+    <td>${escapeHtml(bucketName(t.from_bucket_id))}</td>
+    <td>${escapeHtml(bucketName(t.to_bucket_id))}</td>
+    <td>${escapeHtml(fmtAmt(t))}</td>
+    <td>${getTransferStatusBadge(t.status)}</td>
+  </tr>`).join('');
+}
+
+window.onViewBudgetSearchInput = function () {
+  const searchQ = (document.getElementById('vtBudgetSearch')?.value || '').trim().toLowerCase();
+  const sel = document.getElementById('vtBudget');
+  if (!sel) return;
+  const current = sel.value;
+  const filtered = viewBudgetOptionsCache.filter(b => !searchQ || (b.name || '').toLowerCase().includes(searchQ));
+  sel.innerHTML = '<option value="">All Budgets</option>' + filtered.map(b => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
+  if (current && filtered.some(b => b.id === current)) sel.value = current;
+};
+
+window.clearViewTransfersFilters = function () {
+  ['vtDateFrom', 'vtDateTo', 'vtTeam', 'vtBudgetSearch', 'vtBudget', 'vtFromBucket', 'vtToBucket', 'vtMinAmount'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const sel = document.getElementById('vtBudget');
+  if (sel) sel.innerHTML = '<option value="">All Budgets</option>' + viewBudgetOptionsCache.map(b => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join('');
+  applyViewTransfersFilters();
+};

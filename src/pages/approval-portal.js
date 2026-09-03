@@ -177,16 +177,19 @@ export function getApprovalPortalPage() {
             </div>
 
             <div id="approvalPaymentFields" style="display: none; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 6px;">
-              <label style="font-weight: 600; font-size: 0.85rem; color: var(--primary);">💰 Payment & Fund Allocation</label>
+              <label style="font-weight: 600; font-size: 0.85rem; color: var(--primary);">💰 Approval &amp; Fund Authorization</label>
               <div style="display: flex; gap: 10px;">
                 <div class="form-group" style="flex: 1;">
-                  <label style="font-size: 0.75rem; color: var(--text-secondary);">Paid Amount (USD)</label>
+                  <label style="font-size: 0.75rem; color: var(--text-secondary);">Approved Amount (USD)</label>
                   <input type="number" id="approvalPaymentAmount" step="0.01" style="width: 100%;">
                 </div>
                 <div class="form-group" style="flex: 1;">
-                  <label style="font-size: 0.75rem; color: var(--text-secondary);">Funding Notes</label>
-                  <input type="text" id="approvalPaymentNotes" placeholder="e.g. KMOF full payment" style="width: 100%;">
+                  <label style="font-size: 0.75rem; color: var(--text-secondary);">Approval Notes</label>
+                  <input type="text" id="approvalPaymentNotes" placeholder="e.g. Full budget approved" style="width: 100%;">
                 </div>
+              </div>
+              <div class="note-text" style="font-size: 0.75rem; color: var(--text-secondary);">
+                ℹ️ This is the final approval. Actual payment happens in Manager View → Income → Transfer Funds.
               </div>
             </div>
           </div>
@@ -1033,16 +1036,18 @@ async function submitApprovalAction() {
           }
 
           if (paidAmount > 0 && request.budget_plan_id) {
+            // FIH final approval: record the AUTHORIZED amount (not a payment).
+            // Actual payments are recorded by the Transfer Funds payment module.
             const { error: updateErr } = await supabaseClient
               .from('budget_plans')
               .update({
-                paid_amount: paidAmount,
+                approved_amount: paidAmount,
                 funding_notes: fundingNotes
               })
               .eq('id', request.budget_plan_id);
             if (updateErr) {
-              console.warn('Failed to update paid_amount on budget plan:', updateErr.message);
-              showToast('Database failed to save payment: ' + updateErr.message, 'error');
+              console.warn('Failed to update approved_amount on budget plan:', updateErr.message);
+              showToast('Database failed to save approval: ' + updateErr.message, 'error');
               isSubmittingApproval = false;
               setButtonLoading(confirmBtn, false);
               return;

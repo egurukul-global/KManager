@@ -21,12 +21,15 @@ import {
 
 import {
   getTransferFundsPage,
-  initTransferFundsPage
+  initTransferFundsPage,
+  getViewTransfersPage,
+  initViewTransfersPage
 } from './pages/transfer.js';
 import { getBudgetCalendarPage, initBudgetCalendarPage } from './pages/budget-calendar.js';
 import { getCategoryMasterPage, initCategoryMasterPage } from './pages/category-master.js';
 import { getBudgetTypesPage, initBudgetTypesPage } from './pages/budget-types.js';
 import { getBudgetTemplatesPage, initBudgetTemplatesPage } from './pages/budget-templates.js';
+import { loadBudgetTypes } from './utils/budgetTypes.js';
 import { getFinancialStatusPage, initFinancialStatusPage } from './pages/financial-status.js';
 import { getManagerFinancePage } from './pages/manager-finance.js';
 import { getManagerExpensesPage, initManagerExpensesPage } from './pages/manager-expenses.js';
@@ -408,6 +411,8 @@ async function routeAfterAuth() {
   syncCurrentTeamAfterReload(pendingTeamId || undefined);
   await loadUserTeamDefaultsForCurrentTeam();
   await initLocalDB();
+  // Load org-global budget types/templates config (falls back to built-ins)
+  await loadBudgetTypes();
 
     if (navigator.onLine) {
       const app = document.getElementById('app');
@@ -701,6 +706,7 @@ function renderAppShell() {
             </div>
             <div class="nav-subitems">
               <div class="nav-subitem" data-page="rates" onclick="window.showPage('rates')">Exchange Rates</div>
+              <div class="nav-subitem" data-page="buckets" onclick="window.showPage('buckets')">Money Buckets</div>
             </div>
           </div>
 
@@ -740,6 +746,7 @@ function renderAppShell() {
               <div class="nav-subitem" data-page="add-funds" onclick="window.showPage('add-funds')">Add Income</div>
               <div class="nav-subitem" data-page="income-manager" onclick="window.showPage('income-manager')">Income Manager</div>
               <div class="nav-subitem" data-page="transfer" onclick="window.showPage('transfer')">Transfer Funds</div>
+              <div class="nav-subitem" data-page="view-transfers" onclick="window.showPage('view-transfers')">View Transfers</div>
               <div class="nav-subitem" data-page="my-income" onclick="window.showPage('my-income')">My Income</div>
             </div>
           </div>
@@ -948,6 +955,7 @@ const PAGE_TITLES = {
   'add-funds': 'Add Income',
   'income-manager': 'Income Manager',
   transfer: 'Transfer Funds',
+  'view-transfers': 'View Transfers',
   'my-income': 'My Income',
   'add-expense': 'Add Expense',
   'expense-manager': 'Expense Manager',
@@ -1011,6 +1019,7 @@ export function showPage(pageName) {
    'add-funds': { html: getRecordIncomePage, init: initRecordIncomePage },
     'income-manager': { html: getIncomeManagerPage, init: initIncomeManagerPage },
     'transfer': { html: getTransferFundsPage, init: initTransferFundsPage },
+    'view-transfers': { html: getViewTransfersPage, init: initViewTransfersPage },
     'add-expense': { html: getAddExpensePage, init: initAddExpensePage },
     'expense-manager': { html: getExpenseManagerPage, init: initExpenseManagerPage },
     'manager-expenses': { html: getManagerExpensesPage, init: initManagerExpensesPage },

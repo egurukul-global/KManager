@@ -51,6 +51,10 @@ export function getBudgetStatus(budget) {
   const fromApproval = mapApprovalToBudgetStatus(budget.approval_status);
 
   if (fromStatus === BUDGET_STATUS.ARCHIVED) return BUDGET_STATUS.ARCHIVED;
+  // Explicit funding terminal states from the status column win, so a
+  // received/paid budget doesn't revert to "approved" just because the
+  // approval_status still holds the historical FIH-APPROVED value.
+  if (fromStatus === BUDGET_STATUS.RECEIVED || fromStatus === BUDGET_STATUS.PAID) return fromStatus;
 
   if (fromApproval) {
     if (fromStatus === BUDGET_STATUS.APPROVED && fromApproval === BUDGET_STATUS.SUBMITTED) {
@@ -92,11 +96,14 @@ export function budgetStatusBadge(budgetOrStatus) {
     if (approval === 'FIN-REVIEWED' || approval === 'FIN-APPROVED') {
       return { label: 'Awaiting FIH Approval', class: 'badge-info', status: BUDGET_STATUS.SUBMITTED };
     }
-    if (approval === 'FIH-REVIEWED' || approval === 'FIH-APPROVED') {
+    if (approval === 'FIH-REVIEWED') {
       return { label: 'Awaiting CAO Approval', class: 'badge-info', status: BUDGET_STATUS.SUBMITTED };
     }
     if (approval === 'CAO-REVIEWED' || approval === 'CAO-APPROVED') {
-      return { label: 'Awaiting Payment', class: 'badge-info', status: BUDGET_STATUS.APPROVED };
+      return { label: 'Awaiting FIH Final Approval', class: 'badge-info', status: BUDGET_STATUS.SUBMITTED };
+    }
+    if (approval === 'FIH-APPROVED') {
+      return { label: 'Ready for Payment', class: 'badge-success', status: BUDGET_STATUS.APPROVED };
     }
     if (approval === 'FIP-APPROVED' || approval === 'PAID') {
       return { label: 'Paid', class: 'badge-success', status: BUDGET_STATUS.PAID };

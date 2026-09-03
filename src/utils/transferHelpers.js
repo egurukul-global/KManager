@@ -117,7 +117,7 @@ export function userCanApproveOhf(transfer, state) {
 }
 
 export function userCanReceivePendingTransfer(transfer, state) {
-  return transfer && transfer.dest_user_id === state.user?.id;
+  return transfer && transfer.receiver_user_id === state.user?.id;
 }
 
 export function isOhfApprover(state) {

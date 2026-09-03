@@ -4,7 +4,7 @@
 import { state } from '../state.js';
 import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
-import { getBudgetTypeLabel } from '../utils/budgetTypes.js';
+import { getBudgetTypeLabel, loadBudgetTypes as loadGlobalBudgetTypes } from '../utils/budgetTypes.js';
 
 let templatesList = [];
 let categoriesList = [];
@@ -103,16 +103,18 @@ export async function initBudgetTemplatesPage() {
     loadBudgetTypes()
   ]);
   await loadAssignments();
+  // Keep the shared global cache in sync so budget creation resolves labels
+  await loadGlobalBudgetTypes();
 
   renderTemplatesList();
 }
 
 async function loadTemplates() {
   try {
+    // Templates are org-global definitions (no team scope)
     const { data, error } = await supabaseClient
       .from('budget_type_templates')
       .select('*')
-      .eq('team_id', state.currentTeam.team_id)
       .eq('is_deleted', false)
       .order('created_at', { ascending: false });
 
@@ -158,10 +160,10 @@ async function loadCategories() {
 
 async function loadBudgetTypes() {
   try {
+    // Budget types are org-global definitions (no team scope)
     const { data, error } = await supabaseClient
       .from('budget_types')
       .select('*')
-      .eq('team_id', state.currentTeam.team_id)
       .eq('is_active', true)
       .order('name', { ascending: true });
 
@@ -179,8 +181,7 @@ async function loadAssignments() {
   try {
     const { data, error } = await supabaseClient
       .from('budget_type_template_assignments')
-      .select('template_id, budget_type_id')
-      .eq('team_id', state.currentTeam.team_id)
+      .select('template_id, budget_type')
       .eq('is_deleted', false);
 
     if (error && !error.message.includes('does not exist')) {
@@ -265,11 +266,10 @@ function renderTemplatesList() {
 
 function getAssignmentForTemplate(templateId) {
   const assignment = assignmentsList.find(a => a.template_id === templateId);
-  if (!assignment) return null;
-  const budgetType = allBudgetTypes.find(bt => bt.id === assignment.budget_type_id);
+  if (!assignment || !assignment.budget_type) return null;
   return {
-    budget_type_id: assignment.budget_type_id,
-    budget_type_label: budgetType?.label || 'Unknown'
+    budget_type: assignment.budget_type,
+    budget_type_label: getBudgetTypeLabel(assignment.budget_type)
   };
 }
 
@@ -300,8 +300,8 @@ async function openTemplateModal(templateId = null) {
 
     // Set assigned budget type
     loadAssignmentForTemplate(templateId).then(assignment => {
-      if (assignment) {
-        budgetTypeSelect.value = assignment.budget_type_id;
+      if (assignment && assignment.budget_type) {
+        budgetTypeSelect.value = assignment.budget_type;
       } else {
         budgetTypeSelect.value = '';
       }
@@ -315,10 +315,11 @@ async function openTemplateModal(templateId = null) {
     budgetTypeSelect.value = '';
   }
 
-  // Populate budget type dropdown
+  // Populate budget type dropdown (options use the stable type `code`)
   budgetTypeSelect.innerHTML = '<option value="">-- No assignment --</option>';
   allBudgetTypes.forEach(bt => {
-    budgetTypeSelect.innerHTML += `<option value="${bt.id}">${escapeHtml(bt.label)}</option>`;
+    const code = bt.code || bt.name;
+    budgetTypeSelect.innerHTML += `<option value="${escapeHtml(code)}">${escapeHtml(bt.label)}</option>`;
   });
 
   modal.classList.add('active');
@@ -382,7 +383,7 @@ async function saveTemplate(event) {
 
   const name = document.getElementById('templateName').value.trim();
   const description = document.getElementById('templateDescription').value.trim();
-  const budgetTypeId = document.getElementById('assignBudgetType').value || null;
+  const budgetTypeCode = document.getElementById('assignBudgetType').value || null;
 
   if (!name) {
     showToast('Template name is required', 'warning');
@@ -408,7 +409,6 @@ async function saveTemplate(event) {
 
   try {
     const payload = {
-      team_id: state.currentTeam.team_id,
       name,
       description,
       template_data: JSON.stringify(selectedCategories),
@@ -444,8 +444,8 @@ async function saveTemplate(event) {
     }
 
     // Handle assignment if selected
-    if (budgetTypeId) {
-      await assignTemplateToType(savedTemplateId, budgetTypeId);
+    if (budgetTypeCode) {
+      await assignTemplateToType(savedTemplateId, budgetTypeCode);
     }
 
     closeTemplateModal();
@@ -458,24 +458,23 @@ async function saveTemplate(event) {
   }
 }
 
-async function assignTemplateToType(templateId, budgetTypeId) {
+async function assignTemplateToType(templateId, budgetTypeCode) {
   try {
-    if (!templateId) return;
+    if (!templateId || !budgetTypeCode) return;
 
-    // First, soft-delete any existing assignment for this budget type
+    // First, soft-delete any existing assignment for this budget type (one active per type)
     await supabaseClient
       .from('budget_type_template_assignments')
       .update({ is_deleted: true })
-      .eq('budget_type_id', budgetTypeId)
+      .eq('budget_type', budgetTypeCode)
       .eq('is_deleted', false);
 
-    // Create new assignment
+    // Create new global assignment
     await supabaseClient
       .from('budget_type_template_assignments')
       .insert([{
-        budget_type_id: budgetTypeId,
+        budget_type: budgetTypeCode,
         template_id: templateId,
-        team_id: state.currentTeam.team_id,
         is_deleted: false,
         created_at: new Date().toISOString(),
         created_by: state.user.id
@@ -513,7 +512,7 @@ async function loadAssignmentForTemplate(templateId) {
   try {
     const { data, error } = await supabaseClient
       .from('budget_type_template_assignments')
-      .select('budget_type_id')
+      .select('budget_type')
       .eq('template_id', templateId)
       .eq('is_deleted', false)
       .single();
@@ -523,11 +522,10 @@ async function loadAssignmentForTemplate(templateId) {
     }
     if (error) throw error;
 
-    if (data) {
-      const budgetType = allBudgetTypes.find(bt => bt.id === data.budget_type_id);
+    if (data && data.budget_type) {
       return {
-        budget_type_id: data.budget_type_id,
-        budget_type_label: budgetType?.label || 'Unknown'
+        budget_type: data.budget_type,
+        budget_type_label: getBudgetTypeLabel(data.budget_type)
       };
     }
     return null;

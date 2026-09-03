@@ -316,10 +316,12 @@ export async function fetchPendingTransfersForUser(teamId, userId) {
 }
 
 export async function fetchSentTransfers(teamId, userId, { statusFilter = '' } = {}) {
+  // Scope by who sent the transfer. The team_id filter is intentionally NOT applied:
+  // budget payments made by finance roles carry the receiving team's id, so filtering
+  // by the sender's current team hid them from the Sent Transfers list.
   let query = supabaseClient
     .from('transfers')
     .select('*')
-    .eq('team_id', teamId)
     .eq('created_by', userId)
     .eq('is_deleted', false)
     .order('date', { ascending: false });
