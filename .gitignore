@@ -16,3 +16,6 @@ scratch/
 AGENTS.md
 
 .system_generated/
+scripts/.db-live-state.json
+scripts/.db-live-state2.json
+scripts/.db-columns-detailed.json

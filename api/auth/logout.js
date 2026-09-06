@@ -1,7 +1,8 @@
+import { applyCors } from '../_lib/cors.js';
+import { clearSessionCookies } from '../_lib/cookies.js';
+
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  applyCors(req, res, 'POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -12,20 +13,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const clearOptions = [
-      `Path=/`,
-      `HttpOnly`,
-      `Secure`,
-      `SameSite=Lax`,
-      `Max-Age=0`
-    ].join('; ');
+    clearSessionCookies(res);
 
-    res.setHeader('Set-Cookie', [
-      `sb-access-token=; ${clearOptions}`,
-      `sb-refresh-token=; ${clearOptions}`
-    ]);
-
-    return res.status(200).json({ 
+    return res.status(200).json({
       success: true,
       message: 'Logged out successfully' 
     });

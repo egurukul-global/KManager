@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_032_approval_inbox_visible_to_assignees_sql", "label": "032_approval_inbox_visible_to_assignees.sql", "file_type": "code", "source_file": "supabase/migrations/032_approval_inbox_visible_to_assignees.sql", "source_location": null}], "edges": []}

@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_062_cleanup_personal_teams_role_assignments_sql", "label": "062_cleanup_personal_teams_role_assignments.sql", "file_type": "code", "source_file": "supabase/migrations/062_cleanup_personal_teams_role_assignments.sql", "source_location": null}], "edges": []}

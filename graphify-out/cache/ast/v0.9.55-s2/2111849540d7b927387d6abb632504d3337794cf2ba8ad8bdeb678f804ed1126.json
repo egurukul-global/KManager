@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_054_allow_fin_fip_select_all_approval_requests_sql", "label": "054_allow_fin_fip_select_all_approval_requests.sql", "file_type": "code", "source_file": "supabase/migrations/054_allow_fin_fip_select_all_approval_requests.sql", "source_location": null}], "edges": []}

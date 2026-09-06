@@ -39,9 +39,15 @@ export async function allocateRequestNumber(userId) {
   return data;
 }
 
+const SEARCH_QUERY_RE = /^[A-Z0-9-]{1,40}$/;
+
 export async function searchRequestByNumber(requestNumber) {
   const q = String(requestNumber || '').trim().toUpperCase();
-  if (!q) return null;
+  // Request/group numbers are always ALIAS-NNN style (letters, digits, hyphens).
+  // Rejecting anything else prevents PostgREST filter-string injection - q is
+  // interpolated directly into .or(), so a comma/period/paren would let an
+  // attacker splice in arbitrary extra filter clauses.
+  if (!q || !SEARCH_QUERY_RE.test(q)) return null;
 
   const { data, error } = await supabaseClient
     .from('approval_requests')

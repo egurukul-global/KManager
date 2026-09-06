@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_056_allow_fin_fip_manage_budget_plans_sql", "label": "056_allow_fin_fip_manage_budget_plans.sql", "file_type": "code", "source_file": "supabase/migrations/056_allow_fin_fip_manage_budget_plans.sql", "source_location": null}], "edges": []}

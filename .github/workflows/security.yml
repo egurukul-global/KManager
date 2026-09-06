@@ -1,0 +1,186 @@
+name: Security Audit Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run security scan daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    # 1. NPM Audit - Check for vulnerable dependencies
+    - name: Run npm audit
+      run: |
+        echo "=== Checking for vulnerable dependencies ==="
+        npm audit --audit-level=high
+      continue-on-error: true
+    
+    # 2. ESLint Security - Check for code vulnerabilities
+    - name: Run ESLint with security plugin
+      run: |
+        echo "=== Running ESLint security checks ==="
+        npx eslint . --ext .js,.jsx --format json --output-file eslint-report.json
+      continue-on-error: true
+    
+    # 3. Secret Scanning - Check for hardcoded secrets
+    - name: Scan for hardcoded secrets
+      run: |
+        echo "=== Scanning for hardcoded secrets ==="
+        
+        # Check for common secret patterns
+        echo "Checking for hardcoded API keys..."
+        grep -r "api.key\|API_KEY\|apiKey.*=" src/ api/ --include="*.js" --include="*.jsx" || echo "✓ No obvious API key patterns found"
+        
+        echo "Checking for hardcoded passwords..."
+        grep -r "password.*=" src/ api/ --include="*.js" --include="*.jsx" || echo "✓ No hardcoded passwords found"
+        
+        echo "Checking for hardcoded URLs..."
+        grep -r "https://.*supabase\|process.env.*||" src/ api/ --include="*.js" --include="*.jsx" || echo "✓ No hardcoded Supabase URLs found"
+        
+        echo "Checking for sensitive console logs..."
+        grep -r "console.log.*password\|console.log.*token\|console.log.*key" src/ api/ --include="*.js" --include="*.jsx" || echo "✓ No sensitive console logs found"
+      continue-on-error: true
+    
+    # 4. Environment Variable Check
+    - name: Check environment variables
+      run: |
+        echo "=== Checking environment variable usage ==="
+        
+        # Check if .env is in gitignore
+        if grep -q "^\.env" .gitignore; then
+          echo "✓ .env is properly gitignored"
+        else
+          echo "⚠ .env not in .gitignore - THIS MUST BE FIXED!"
+          exit 1
+        fi
+        
+        # Check if .env.example exists
+        if [ -f ".env.example" ]; then
+          echo "✓ .env.example template exists"
+        else
+          echo "⚠ No .env.example file found - consider creating one"
+        fi
+    
+    # 5. Dependency Audit - Check for outdated packages
+    - name: Check for outdated dependencies
+      run: |
+        echo "=== Checking for outdated dependencies ==="
+        npm outdated || echo "✓ All dependencies up to date"
+      continue-on-error: true
+    
+    # 6. Report Generation
+    - name: Generate security report
+      if: always()
+      run: |
+        echo "=== Security Audit Report ===" > security-report.txt
+        echo "Date: $(date)" >> security-report.txt
+        echo "Commit: ${{ github.sha }}" >> security-report.txt
+        echo "Branch: ${{ github.ref }}" >> security-report.txt
+        echo "" >> security-report.txt
+        
+        echo "Checks Run:" >> security-report.txt
+        echo "✓ npm audit - dependency scanning" >> security-report.txt
+        echo "✓ ESLint security - code pattern scanning" >> security-report.txt
+        echo "✓ Secret scanning - hardcoded secrets check" >> security-report.txt
+        echo "✓ Environment variables - proper configuration" >> security-report.txt
+        echo "✓ Dependency versions - outdated package check" >> security-report.txt
+    
+    # 7. Upload reports
+    - name: Upload security reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          eslint-report.json
+          security-report.txt
+    
+    # 8. Fail if critical issues found
+    - name: Check critical issues
+      run: |
+        echo "=== Checking for critical issues ==="
+        
+        # Check if any critical vulnerabilities exist
+        npm audit --json 2>/dev/null | grep -q '"severity":"high"' && {
+          echo "❌ HIGH severity vulnerabilities found!"
+          echo "Run 'npm audit' locally and fix issues before pushing"
+          exit 1
+        } || echo "✓ No high severity vulnerabilities"
+        
+        # Check .env in git history
+        if git log --oneline -S "SUPABASE_URL" | grep -q "SUPABASE_URL"; then
+          echo "⚠ WARNING: Environment variables found in git history!"
+          echo "Consider using git-filter-repo to clean history"
+        fi
+
+  # Run on pull requests - block merge if issues
+  pr-security-gate:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Security gate check
+      run: |
+        echo "=== PR Security Gate Check ==="
+        
+        # This check MUST pass for PR to be mergeable
+        echo "Checking: No hardcoded secrets"
+        grep -r "process.env.*||" api/auth/login.js && {
+          echo "❌ FAILED: Hardcoded fallback values found in login.js"
+          echo "Remove fallback: process.env.SUPABASE_URL || 'hardcoded-value'"
+          exit 1
+        } || echo "✓ PASSED: No fallback secrets"
+        
+        echo "Checking: No console.log with secrets"
+        grep -r "console.log.*URL\|console.log.*KEY\|console.log.*key" api/auth/login.js && {
+          echo "❌ FAILED: console.log with secrets found"
+          echo "Remove: console.log('URL IS:', url, 'KEY IS:', key);"
+          exit 1
+        } || echo "✓ PASSED: No sensitive console logs"
+        
+        echo "✓ All security gates passed"
+
+  # Code quality analysis (optional - requires SonarCloud token)
+  sonarcloud:
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONARCLOUD_TOKEN: ${{ secrets.SONARCLOUD_TOKEN }}
+      continue-on-error: true

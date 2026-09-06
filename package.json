@@ -19,5 +19,12 @@
     "tesseract.js": "^7.0.0",
     "vite": "^6.0.0",
     "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "eslint": "^10.10.0",
+    "eslint-plugin-security": "^4.0.1",
+    "pg": "^8.23.0",
+    "snyk": "^1.1307.0",
+    "sonarqube-scanner": "^5.0.0"
   }
 }

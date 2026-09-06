@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_scripts_fix_aed_exchange_rate_sql", "label": "fix_aed_exchange_rate.sql", "file_type": "code", "source_file": "supabase/scripts/fix_aed_exchange_rate.sql", "source_location": null}], "edges": []}

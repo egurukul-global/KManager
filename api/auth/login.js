@@ -1,16 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
-
-const getSupabaseConfig = () => {
-  const url = process.env.SUPABASE_URL || 'https://nvhaetvreopkktlxxdwg.supabase.co';
-  const key = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52aGFldHZyZW9wa2t0bHh4ZHdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0Mzg3MDcsImV4cCI6MjA5NDAxNDcwN30.yjsQeAhjZfXYV_Od6lkdZCCBSgt00Z9Pb-9Ki-a79kA';
-  return { url, key };
-};
+import { getSupabaseConfig } from '../_lib/supabaseConfig.js';
+import { applyCors } from '../_lib/cors.js';
+import { setSessionCookies } from '../_lib/cookies.js';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  applyCors(req, res, 'POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -27,8 +21,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
+    // Reject oversized input before it reaches Supabase - hashing/comparing a
+    // multi-MB password wastes compute on every attempt (long-password DoS).
+    // RFC 5321 caps mailbox length at 254; 256 is a generous password ceiling.
+    if (email.length > 254 || password.length > 256) {
+      return res.status(400).json({ error: 'Invalid email or password' });
+    }
+
     const { url, key } = getSupabaseConfig();
-    console.log('URL IS:', url, 'KEY IS:', key); const supabase = createClient(url, key);
+    const supabase = createClient(url, key);
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -37,23 +38,15 @@ export default async function handler(req, res) {
 
     if (error) {
       console.error('Login error:', error.message);
-      return res.status(401).json({ error: error.message });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
 
     const { session, user } = data;
 
-    const cookieOptions = [
-      `Path=/`,
-      `HttpOnly`,
-      `Secure`,
-      `SameSite=Lax`,
-      `Max-Age=${60 * 60 * 24 * 7}`
-    ].join('; ');
-
-    res.setHeader('Set-Cookie', [
-      `sb-access-token=${session.access_token}; ${cookieOptions}`,
-      `sb-refresh-token=${session.refresh_token}; ${cookieOptions}`
-    ]);
+    setSessionCookies(res, {
+      accessToken: session.access_token,
+      refreshToken: session.refresh_token
+    });
 
     return res.status(200).json({
       user: {

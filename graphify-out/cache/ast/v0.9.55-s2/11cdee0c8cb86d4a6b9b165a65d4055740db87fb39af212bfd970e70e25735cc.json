@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_insert_buckets2_sql", "label": "insert_buckets2.sql", "file_type": "code", "source_file": "insert_buckets2.sql", "source_location": null}, {"id": "buckets", "label": "buckets", "file_type": "code", "source_file": "", "source_location": "", "origin_file": "$graphify-root$/insert_buckets2.sql"}], "edges": []}

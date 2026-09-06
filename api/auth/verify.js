@@ -1,15 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
-
-const getSupabaseConfig = () => {
-  const url = process.env.SUPABASE_URL || 'https://nvhaetvreopkktlxxdwg.supabase.co';
-  const key = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52aGFldHZyZW9wa2t0bHh4ZHdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0Mzg3MDcsImV4cCI6MjA5NDAxNDcwN30.yjsQeAhjZfXYV_Od6lkdZCCBSgt00Z9Pb-9Ki-a79kA';
-  return { url, key };
-};
+import { getSupabaseConfig } from '../_lib/supabaseConfig.js';
+import { applyCors } from '../_lib/cors.js';
+import { setSessionCookies } from '../_lib/cookies.js';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  applyCors(req, res, 'GET, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -42,18 +37,10 @@ export default async function handler(req, res) {
         });
 
         if (!refreshError && refreshData.session) {
-          const cookieOptions = [
-            `Path=/`,
-            `HttpOnly`,
-            `Secure`,
-            `SameSite=Lax`,
-            `Max-Age=${60 * 60 * 24 * 7}`
-          ].join('; ');
-
-          res.setHeader('Set-Cookie', [
-            `sb-access-token=${refreshData.session.access_token}; ${cookieOptions}`,
-            `sb-refresh-token=${refreshData.session.refresh_token}; ${cookieOptions}`
-          ]);
+          setSessionCookies(res, {
+            accessToken: refreshData.session.access_token,
+            refreshToken: refreshData.session.refresh_token
+          });
 
           return res.status(200).json({
             authenticated: true,

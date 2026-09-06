@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_049_allow_message_update_for_all_readable_sql", "label": "049_allow_message_update_for_all_readable.sql", "file_type": "code", "source_file": "supabase/migrations/049_allow_message_update_for_all_readable.sql", "source_location": null}], "edges": []}

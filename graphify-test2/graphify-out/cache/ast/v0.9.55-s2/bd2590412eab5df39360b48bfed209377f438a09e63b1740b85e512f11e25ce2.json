@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_supabase_migrations_047_auto_assign_personal_team_roles_sql", "label": "047_auto_assign_personal_team_roles.sql", "file_type": "code", "source_file": "supabase/migrations/047_auto_assign_personal_team_roles.sql", "source_location": null}], "edges": []}

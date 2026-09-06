@@ -1,16 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
-
-const getSupabaseConfig = () => {
-  const url = process.env.SUPABASE_URL || 'https://nvhaetvreopkktlxxdwg.supabase.co';
-  const key = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52aGFldHZyZW9wa2t0bHh4ZHdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0Mzg3MDcsImV4cCI6MjA5NDAxNDcwN30.yjsQeAhjZfXYV_Od6lkdZCCBSgt00Z9Pb-9Ki-a79kA';
-  return { url, key };
-};
+import { getSupabaseConfig } from '../_lib/supabaseConfig.js';
+import { applyCors } from '../_lib/cors.js';
+import { setSessionCookies, setAccessOnlyCookie } from '../_lib/cookies.js';
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  applyCors(req, res, 'POST, OPTIONS');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -27,6 +21,15 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Legacy token required' });
     }
 
+    // Reject oversized input before parsing/using it - a real Supabase session
+    // blob is at most a few KB; anything past 8KB is abuse, not a legitimate token.
+    const legacyTokenSize = typeof legacyToken === 'string'
+      ? legacyToken.length
+      : JSON.stringify(legacyToken).length;
+    if (legacyTokenSize > 8192) {
+      return res.status(400).json({ error: 'Invalid or expired token. Please login again.', expired: true });
+    }
+
     const { url, key } = getSupabaseConfig();
     let tokenData;
     try {
@@ -39,30 +42,57 @@ export default async function handler(req, res) {
 
     const supabase = createClient(url, key);
 
+    // If a refresh token was supplied, don't trust it blindly - exchange it with
+    // Supabase and use the session Supabase hands back. This closes the gap where
+    // an unverified client-supplied refresh_token would otherwise be written
+    // straight into the response cookie (BUG-008).
+    if (tokenData.refresh_token) {
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession({
+        refresh_token: tokenData.refresh_token
+      });
+
+      if (refreshError || !refreshData.session) {
+        console.error('Legacy token migration failed:', refreshError);
+        return res.status(401).json({
+          error: 'Invalid or expired token. Please login again.',
+          expired: true
+        });
+      }
+
+      setSessionCookies(res, {
+        accessToken: refreshData.session.access_token,
+        refreshToken: refreshData.session.refresh_token
+      });
+
+      const migratedUser = refreshData.user;
+      return res.status(200).json({
+        success: true,
+        user: {
+          id: migratedUser.id,
+          email: migratedUser.email,
+          role: migratedUser.role || 'user',
+          name: migratedUser.user_metadata?.name || migratedUser.email,
+          created_at: migratedUser.created_at
+        },
+        migrated: true
+      });
+    }
+
+    // No refresh token in the legacy blob - verify the access token directly and
+    // issue an access-only cookie (no refresh cookie, since we have nothing verified).
     const { data: { user }, error: verifyError } = await supabase.auth.getUser(
       tokenData.access_token
     );
 
     if (verifyError || !user) {
       console.error('Token verification failed:', verifyError);
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Invalid or expired token. Please login again.',
         expired: true
       });
     }
 
-    const cookieOptions = [
-      `Path=/`,
-      `HttpOnly`,
-      `Secure`,
-      `SameSite=Lax`,
-      `Max-Age=${60 * 60 * 24 * 7}`
-    ].join('; ');
-
-    res.setHeader('Set-Cookie', [
-      `sb-access-token=${tokenData.access_token}; ${cookieOptions}`,
-      `sb-refresh-token=${tokenData.refresh_token || ''}; ${cookieOptions}`
-    ]);
+    setAccessOnlyCookie(res, { accessToken: tokenData.access_token });
 
     return res.status(200).json({
       success: true,
