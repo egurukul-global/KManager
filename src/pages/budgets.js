@@ -10,6 +10,7 @@ import {
   roundUsd
 } from '../utils/currency.js';
 import { loadCategoryMasterLines, normalizeBudgetCategory, formatCategoryLabel } from '../utils/categoryMaster.js';
+import { buildBudgetCategoryRows } from '../utils/budgetCategoryLines.js';
 import { formatDisplayDate, isDateCnBudgetName, DATE_CN_BUDGET_NAME_WARNING, filterOpenCalendarEntries, isCalendarEntryOpen } from '../utils/budgetCalendar.js';
 import {
   isMonthlyBudgetType,
@@ -1273,11 +1274,35 @@ export function getViewBudgetsPage() {
   `;
 }
 
+// Pending budget-payment transfers (installments awaiting team receipt),
+// keyed by linked_budget_id -> { usd, count }. Refreshed per page load.
+let pendingBudgetTransfersMap = new Map();
+
+async function loadPendingBudgetTransfers(teamId) {
+  pendingBudgetTransfersMap = new Map();
+  if (!teamId) return;
+  try {
+    // SECURITY DEFINER RPC: budget-payment transfers are hidden from team
+    // leads by the base transfers SELECT policy (no approval_request link).
+    const { data, error } = await supabaseClient
+      .rpc('get_pending_budget_transfers', { p_team_id: teamId });
+    if (error) throw error;
+    for (const row of data || []) {
+      if (!row.linked_budget_id) continue;
+      pendingBudgetTransfersMap.set(row.linked_budget_id, {
+        usd: parseFloat(row.pending_usd) || 0,
+        count: Number(row.transfer_count) || 0
+      });
+    }
+  } catch (e) {
+    console.warn('Pending budget transfers load failed:', e.message);
+  }
+}
+
 export async function initViewBudgetsPage() {
   window.submitBudgetApproval = submitBudgetApprovalHandler;
   window.onBudgetStatusFilterChange = onBudgetStatusFilterChange;
   window.backToBudgetList = backToBudgetList;
-  window.markBudgetReceived = markBudgetReceived;
 
   const container = document.getElementById('budgetsContainer');
   if (!container) {
@@ -1291,6 +1316,8 @@ export async function initViewBudgetsPage() {
   const nameFilter = nameFilterEl ? nameFilterEl.value : '';
 
   const teamId = state.currentTeam?.team_id;
+
+  await loadPendingBudgetTransfers(teamId);
 
   if (!state.budgetPlans || state.budgetPlans.length === 0) {
     try {
@@ -1414,9 +1441,16 @@ function renderBudgetSummaryTable(container, budgets) {
                         state.userTeamAccess?.access_level === 'oht' ||
                         state.user?.role === 'admin';
     const status = getBudgetStatus(budget);
-    const showMarkReceived = isTeamLead && (status === BUDGET_STATUS.PAID || status === BUDGET_STATUS.APPROVED);
+    const pendingForBudget = pendingBudgetTransfersMap.get(budget.id);
+    // Show "Received" for new payments (Paid/Approved), and again for new
+    // installments on already-received budgets while a pending transfer exists.
+    const showMarkReceived = isTeamLead && (
+      status === BUDGET_STATUS.PAID ||
+      status === BUDGET_STATUS.APPROVED ||
+      (status === BUDGET_STATUS.RECEIVED && pendingForBudget?.usd > 0)
+    );
     const receivedBtn = showMarkReceived
-      ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.markBudgetReceived('${budget.id}')">Received</button>`
+      ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.showPage('income-manager')">Receive Funds</button>`
       : '';
 
     const canClose = isTeamLead && (status === 'APPROVED' || status === 'PAID');
@@ -1733,47 +1767,57 @@ export function renderBudgetReviewHtml(budget, options = {}) {
                      state.userTeamAccess?.access_level === 'oht' ||
                      state.user?.role === 'admin';
   const status = getBudgetStatus(budget);
-  const showMarkReceived = isTeamLead && (status === BUDGET_STATUS.PAID || status === BUDGET_STATUS.APPROVED);
+  const pendingForBudget = pendingBudgetTransfersMap.get(budget.id);
+  const showMarkReceived = isTeamLead && (
+    status === BUDGET_STATUS.PAID ||
+    status === BUDGET_STATUS.APPROVED ||
+    (status === BUDGET_STATUS.RECEIVED && pendingForBudget?.usd > 0)
+  );
   const receivedBtn = showMarkReceived
-    ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.markBudgetReceived('${budget.id}')">Received</button>`
+    ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.showPage('income-manager')">Receive Funds</button>`
     : '';
 
-  (budget.categories || []).forEach(cat => {
-    const budgetedUSD = cat.usdAmount || cat.usd_amount || 0;
-    totalBudgetedUSD += budgetedUSD;
+  // Parent category rows + indented subcategory rows (handles both storage styles:
+  // inline subcategory lines and items[] line items, incl. legacy budgets).
+  buildBudgetCategoryRows(budget.categories).forEach(row => {
+    const budgetedUSD = row.usdAmount || 0;
     const spentUSD = 0;
-    totalSpentUSD += spentUSD;
     const remainingUSD = budgetedUSD - spentUSD;
     const percent = budgetedUSD > 0 ? (remainingUSD / budgetedUSD * 100) : 0;
-    const localAmtVal = cat.localAmount || cat.local_amount || 0;
-    const localDisplay = localAmtVal
-      ? `${Number(localAmtVal).toLocaleString()} ${cat.currency || ''}`
+    if (row.isParent) {
+      totalBudgetedUSD += budgetedUSD;
+      totalSpentUSD += spentUSD;
+    }
+    const nameHtml = row.isParent
+      ? `<strong>${row.category || ''}</strong>`
+      : `<span style="padding-left:18px; opacity:0.85;">↳ ${row.subcategory || ''}</span>`;
+    const localDisplay = row.localAmount
+      ? `${Number(row.localAmount).toLocaleString()} ${row.currency || ''}`
       : '—';
 
     if (isApprovalMode) {
       tableRows += `
         <tr>
-          <td data-label="Category"><strong>${cat.name || ''}</strong></td>
+          <td data-label="Category">${nameHtml}</td>
           <td data-label="Local">${localDisplay}</td>
-          <td data-label="Budgeted">$${budgetedUSD.toFixed(2)}</td>
+          <td data-label="Budgeted">${row.isParent ? '<strong>' : ''}$${budgetedUSD.toFixed(2)}${row.isParent ? '</strong>' : ''}</td>
         </tr>
       `;
 
       mobileCards += `
         <article class="data-card data-card--compact">
           <div class="data-card-top">
-            <span class="data-card-title">${cat.name || ''}</span>
+            <span class="data-card-title">${row.isParent ? (row.category || '') : `↳ ${row.subcategory || ''}`}</span>
           </div>
-          ${cardRow('Local', localDisplay)}
           ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)}`)}
         </article>
       `;
     } else {
       tableRows += `
-        <tr>
-          <td data-label="Category"><strong>${cat.name || ''}</strong></td>
+        <tr${row.isParent ? ' style="border-top: 1px solid var(--border);"' : ''}>
+          <td data-label="Category">${nameHtml}</td>
           <td data-label="Local">${localDisplay}</td>
-          <td data-label="Budgeted">$${budgetedUSD.toFixed(2)}</td>
+          <td data-label="Budgeted">${row.isParent ? '<strong>' : ''}$${budgetedUSD.toFixed(2)}${row.isParent ? '</strong>' : ''}</td>
           <td data-label="Spent">$${spentUSD.toFixed(2)}</td>
           <td data-label="Remaining">$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)</td>
         </tr>
@@ -1782,12 +1826,11 @@ export function renderBudgetReviewHtml(budget, options = {}) {
       mobileCards += `
         <article class="data-card data-card--compact">
           <div class="data-card-top">
-            <span class="data-card-title">${cat.name || ''}</span>
+            <span class="data-card-title">${row.isParent ? (row.category || '') : `↳ ${row.subcategory || ''}`}</span>
           </div>
-          ${cardRow('Local', localDisplay)}
           ${cardRow('Budgeted', `$${budgetedUSD.toFixed(2)}`)}
-          ${cardRow('Spent', `$${spentUSD.toFixed(2)}`)}
-          ${cardRow('Remaining', `$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)`)}
+          ${row.isParent ? cardRow('Spent', `$${spentUSD.toFixed(2)}`) : ''}
+          ${row.isParent ? cardRow('Remaining', `$${remainingUSD.toFixed(2)} (${percent.toFixed(1)}%)`) : ''}
         </article>
       `;
     }
@@ -1842,7 +1885,7 @@ export function renderBudgetReviewHtml(budget, options = {}) {
         <span>${budget.name} ${statusBadge} <span class="badge badge-secondary">${typeLabel}</span></span>
         ${showActions ? `<span class="action-icon-group">
           ${submitBtn ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.submitBudgetApproval('${budget.id}')">Submit</button>` : ''}
-          ${receivedBtn ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.markBudgetReceived('${budget.id}')">Received</button>` : ''}
+          ${receivedBtn ? `<button type="button" class="small success" onclick="event.stopPropagation(); window.showPage('income-manager')">Receive Funds</button>` : ''}
           ${canEdit ? btnIconEdit(`window.editBudgetPlan('${budget.id}')`) : ''}
           ${canDelete ? btnIconDelete(`window.deleteBudgetPlan('${budget.id}')`) : ''}
         </span>` : ''}
@@ -2998,7 +3041,7 @@ async function markBudgetReceived(budgetId) {
 
   const teamId = budget.team_id;
   const bucketsResult = await sbSelect('buckets', { teamId, orderBy: 'name', ascending: true });
-  const activeBuckets = (bucketsResult.data || []).filter(b => !b.is_deleted);
+  const activeBuckets = (bucketsResult.data || []).filter(b => !b.is_deleted && b.is_active !== false);
   
   if (activeBuckets.length === 0) {
     showToast('No active buckets found for this team. Please create a bucket first.', 'warning');
@@ -3008,6 +3051,23 @@ async function markBudgetReceived(budgetId) {
   const ratesResult = await sbSelect('exchange_rates', { teamId, orderBy: 'date', ascending: false });
   const exchangeRates = (ratesResult.data || []).filter(r => !r.is_deleted);
 
+  // Determine the amount actually awaiting receipt: pending installment
+  // transfers linked to this budget (falls back to paid_amount for first receive).
+  let pendingUsd = 0;
+  try {
+    const { data: pendRows, error: pendErr } = await supabaseClient
+      .rpc('get_pending_budget_transfers', { p_team_id: teamId });
+    if (pendErr) throw pendErr;
+    const row = (pendRows || []).find(r => r.linked_budget_id === budget.id);
+    if (row) pendingUsd = parseFloat(row.pending_usd) || 0;
+  } catch (e) {
+    console.warn('Pending transfer lookup failed:', e.message);
+  }
+  if (budget.status === 'received' && pendingUsd <= 0) {
+    showToast('No pending payment installments to receive for this budget.', 'info');
+    return;
+  }
+
   const existing = document.getElementById('receiveFundsModal');
   if (existing) existing.remove();
 
@@ -3016,7 +3076,7 @@ async function markBudgetReceived(budgetId) {
   modal.className = 'modal active';
   modal.style.display = 'flex';
 
-  const defaultAmount = budget.paid_amount || budget.total_amount || 0;
+  const defaultAmount = pendingUsd > 0 ? pendingUsd : (budget.paid_amount || budget.total_amount || 0);
 
   const categoryOptions = (budget.categories || []).map(c => {
     const label = c.name || c.category || '';
@@ -3031,7 +3091,7 @@ async function markBudgetReceived(budgetId) {
     <div class="modal-content small" style="max-width: 480px; padding: 20px;">
       <h3>📥 Receive Funds & Allocate to Bucket</h3>
       <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px;">
-        Allocate funds for budget: <strong>${budget.name}</strong> (Paid: $${defaultAmount.toFixed(2)} USD)
+        Allocate funds for budget: <strong>${budget.name}</strong> (${pendingUsd > 0 ? `Pending receipt: $${defaultAmount.toFixed(2)}` : `Paid: $${defaultAmount.toFixed(2)}`} USD)
       </p>
       
       <div class="form-stack" style="display: flex; flex-direction: column; gap: 12px;">
@@ -3223,12 +3283,17 @@ async function markBudgetReceived(budgetId) {
       // Mark any pending budget-payment transfers for this budget as ACCEPTED
       // so View Transfers shows them as received instead of Pending.
       try {
-        await supabaseClient
+        const { error: trErr } = await supabaseClient
           .from('transfers')
-          .update({ status: 'ACCEPTED' })
+          .update({ status: 'ACCEPTED', accepted_at: new Date().toISOString(), pending_step: null })
           .eq('linked_budget_id', budget.id)
-          .eq('status', 'PENDING');
-      } catch (e) { console.warn('transfer status update:', e.message); }
+          .eq('status', 'PENDING')
+          .eq('is_deleted', false);
+        if (trErr) throw trErr;
+      } catch (e) {
+        console.warn('transfer status update:', e.message);
+        showToast('Funds recorded, but the linked transfer could not be marked Accepted: ' + e.message, 'warning');
+      }
 
       // Keep the in-memory + local cache in sync so the "Received" button
       // disappears on re-render (and the status badge shows Received).

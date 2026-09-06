@@ -1,6 +1,6 @@
-// ==================== USER MANAGEMENT (Phase 4C Lite) ====================
+﻿// ==================== USER MANAGEMENT (Phase 4C Lite) ====================
 import { state } from '../state.js';
-import { supabaseClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../db.js';
+import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { renderAppRoleManager } from '../components/AppRoleManager.js';
 import { isFinanceGlobalAdmin } from '../utils/appRoles.js';
@@ -142,7 +142,7 @@ export function getUserMgmtPage() {
             </tr>
           </thead>
           <tbody id="userMgmtTableBody">
-            <tr><td colspan="6" class="empty-state">Loading…</td></tr>
+            <tr><td colspan="6" class="empty-state">Loadingâ€¦</td></tr>
           </tbody>
         </table>
       </div>
@@ -304,8 +304,8 @@ async function loadUserMgmtList() {
   const tbody = document.getElementById('userMgmtTableBody');
   const mobile = document.getElementById('userMgmtMobile');
 
-  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loading…</td></tr>';
-  if (mobile) mobile.innerHTML = '<p class="empty-state">Loading…</p>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Loadingâ€¦</td></tr>';
+  if (mobile) mobile.innerHTML = '<p class="empty-state">Loadingâ€¦</p>';
 
   try {
     const { data: users, error } = await supabaseClient
@@ -439,7 +439,7 @@ async function openUserSelect(userId) {
   toggleUserCreateCard(false);
 
   removeModal(USER_SELECT_MODAL_ID);
-  createModal(USER_SELECT_MODAL_ID, '<p class="empty-state">Loading user details and memberships…</p>', { maxWidth: '720px' });
+  createModal(USER_SELECT_MODAL_ID, '<p class="empty-state">Loading user details and membershipsâ€¦</p>', { maxWidth: '720px' });
   wireUserSelectModal();
   openModal(USER_SELECT_MODAL_ID);
 
@@ -588,7 +588,7 @@ async function openUserSelect(userId) {
               <div class="form-group">
                 <label for="okAddTeamSelect">Select Team</label>
                 <select id="okAddTeamSelect" required style="width:100%;">
-                  <option value="">Choose team…</option>
+                  <option value="">Choose teamâ€¦</option>
                   ${availableTeams.map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('')}
                 </select>
               </div>
@@ -975,55 +975,59 @@ async function createAppUser(e) {
   setButtonLoading(btn, true, 'Create user');
 
   try {
-    const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
-    if (sessionError) throw sessionError;
-    const token = sessionData?.session?.access_token;
-    if (!token) throw new Error('You are not signed in. Sign out and sign in again, then retry.');
-
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/create-user`, {
+    // Use supabaseClient.functions.invoke() which routes through the
+    // custom proxy fetch in db.js. The proxy reads the sb-access-token
+    // HttpOnly cookie and adds the correct Authorization header.
+    // (supabaseClient.auth.getSession() always returns null because the
+    //  client is configured with persistSession:false and autoRefreshToken:false.)
+    const { data, error: invokeError } = await supabaseClient.functions.invoke('create-user', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+      headers: { 'Content-Type': 'application/json' },
+      body: {
         email,
         name,
         password,
         role,
         team_id: team_id || null,
         access_level
-      })
+      }
     });
 
-    const rawText = await res.text();
-    let data = null;
-    try {
-      data = rawText ? JSON.parse(rawText) : null;
-    } catch (_) {
-      data = null;
-    }
+    // FunctionsHttpError — invokeError.context is the Response object
+    if (invokeError) {
+      const ctx = invokeError.context;
+      let rawText = '';
+      let parsed = null;
 
-    console.error('Create user response:', res.status, rawText);
-
-    if (!res.ok) {
-      const detail = formatInvokeError(data, null, rawText)
-        || `Create user failed (server code ${res.status}). If you tried this email before, delete it in Supabase → Authentication → Users, then try again.`;
-
-      // If function was not updated, body is still {"error":"{}" } with no fn version
-      if (!data?.fn && (rawText.includes('"error":"{}"') || rawText === '{"error":"{}"}')) {
-        throw new Error(
-          'The create-user function in Supabase is still the OLD version. ' +
-          'Open Edge Functions → create-user, paste the new code from Cursor, click Deploy, ' +
-          'then confirm the code contains the text create-user-v4 before trying again.'
-        );
+      if (ctx) {
+        try {
+          rawText = await ctx.clone().text();
+          parsed = rawText ? JSON.parse(rawText) : null;
+        } catch (_) {
+          // parse failed, keep rawText as-is
+        }
       }
 
-      throw new Error(detail);
+      console.error('Create user response:', invokeError, rawText);
+
+      if (parsed?.error || !rawText) {
+        const detail = formatInvokeError(parsed, null, rawText)
+          || `Create user failed. If you tried this email before, delete it in Supabase → Authentication → Users, then try again.`;
+
+        // If function was not updated, body is still {"error":"{}" } with no fn version
+        if (!parsed?.fn && (rawText.includes('"error":"{}"') || rawText === '{"error":"{}"}')) {
+          throw new Error(
+            'The create-user function in Supabase is still the OLD version. ' +
+            'Open Edge Functions → create-user, paste the new code from Cursor, click Deploy, ' +
+            'then confirm the code contains the text create-user-v4 before trying again.'
+          );
+        }
+
+        throw new Error(detail);
+      }
     }
 
-    if (data?.error) throw new Error(formatInvokeError(data, null, rawText) || data.error);
+    if (data?.error) throw new Error(formatInvokeError(data, null, '') || data.error);
     if (!data?.user_id) throw new Error('Create user failed — no user id returned');
 
     if (data.warning) {
@@ -1127,3 +1131,5 @@ async function sendUserPasswordReset() {
     showToast(err.message || 'Failed to send reset email', 'error');
   }
 }
+
+

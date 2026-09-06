@@ -32,12 +32,24 @@ export function getBudgetCategoryOptions(budget, teamCategories = []) {
 }
 
 export function getExpenseCategoryLabel(expense, teamCategories = []) {
+  let catName = null;
+  let subName = null;
   if (expense.category_id) {
     const cat = teamCategories.find(c => c.id === expense.category_id);
-    if (cat) return cat.name;
+    if (cat) {
+      catName = cat.name;
+      // Look up subcategory if present
+      if (expense.subcategory_id && cat.subcategories) {
+        const sub = cat.subcategories.find(s => s.id === expense.subcategory_id);
+        if (sub) subName = sub.name;
+      }
+    }
   }
-  if (expense.vendor_info?.startsWith('budget_cat:')) {
+  if (!catName && expense.vendor_info?.startsWith('budget_cat:')) {
     return expense.vendor_info.replace('budget_cat:', '');
+  }
+  if (catName) {
+    return subName ? `${catName} → ${subName}` : catName;
   }
   return expense.vendor_info || '—';
 }
@@ -97,6 +109,9 @@ export function checkBudgetOvershoot({ expenses, budget, categoryOption, usdAmou
   if (!budget || !categoryOption) return { overshoot: false };
 
   const budgetedUsd = categoryOption.budgetedUsd || 0;
+  // No budgeted amount defined for this category → no overshoot check
+  if (budgetedUsd <= 0) return { overshoot: false };
+  
   const spentUsd = sumExpensesForBudgetCategory(
     expenses,
     budget.id,
@@ -147,9 +162,13 @@ export function buildExpensePayload(form, teamId, userId) {
   };
 
   const categorySelect = form.elements?.category || form.querySelector('#expCategory') || form.querySelector('#editExpCategory');
-  const selected = categorySelect?.selectedOptions?.[0];
-  const categoryId = selected?.dataset?.categoryId || null;
-  const categoryLabel = selected?.dataset?.label || '';
+  const categoryId = categorySelect?.value || null;
+
+  // Extract subcategory_id from subcategory select element
+  const subcategorySelect = form.elements?.subcategory || form.querySelector('#expSubcategory') || form.querySelector('#editExpSubcategory');
+  const subcategoryId = subcategorySelect?.value || null;
+
+  const categoryLabel = categorySelect?.selectedOptions?.[0]?.dataset?.label || categorySelect?.selectedOptions?.[0]?.text || '';
 
   const currency = (val('currency', 'expCurrency') || val('currency', 'editExpCurrency') || 'USD').toUpperCase();
   const rate = resolveExpenseRate(
@@ -173,6 +192,7 @@ export function buildExpensePayload(form, teamId, userId) {
     description: (val('description', 'expDescription') || val('description', 'editExpDescription')).trim() || null,
     budget_id: val('budget_id', 'expBudget') || val('budget_id', 'editExpBudget'),
     category_id: categoryId || null,
+    subcategory_id: subcategoryId || null,
     bucket_id: val('bucket_id', 'expBucket') || val('bucket_id', 'editExpBucket'),
     local_amount: localAmount,
     currency,

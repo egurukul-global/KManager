@@ -168,7 +168,7 @@ export async function initRecordIncomePage() {
         bucketSelect.value = unallocated.id;
         setTimeout(() => window.onIncomeBucketChange(bucketSelect), 50);
       } else {
-        teamBucketsCache.forEach(b => {
+        teamBucketsCache.filter(b => b.is_active !== false).forEach(b => {
           bucketSelect.innerHTML += '<option value="' + b.id + '" data-currency="' + b.currency + '">' + b.name + ' (' + b.currency + ')</option>';
         });
       }
@@ -557,7 +557,8 @@ export function getIncomeManagerPage() {
           <div class="form-grid-row form-grid-row--filter-main">
             <div class="form-group"><label>Bucket</label><select id="filterIncBucket" onchange="window.initIncomeManagerPage()"><option value="all">All Accounts</option></select></div>
             <div class="form-group"><label>Budget</label><select id="filterIncBudget" onchange="window.initIncomeManagerPage()"><option value="all">All Budgets</option></select></div>
-            <div class="form-group"><label>Received From</label><input type="text" id="filterIncFrom" placeholder="Search…" oninput="window.initIncomeManagerPage()"></div>
+            <div class="form-group"><label>Type</label><select id="filterIncType" onchange="window.initIncomeManagerPage()"><option value="all">All</option><option value="budget_payment">Budget Funding</option><option value="manual">Regular Income</option></select></div>
+            <div class="form-group"><label>Search</label><input type="text" id="filterIncFrom" placeholder="Budget, bucket, from…" oninput="window.initIncomeManagerPage()"></div>
           </div>
           <div class="form-grid-row form-grid-row--filter-dates">
             <div class="form-group"><label>From</label><input type="date" id="filterIncDateFrom" onchange="window.initIncomeManagerPage()"></div>
@@ -567,18 +568,38 @@ export function getIncomeManagerPage() {
       </div>
     </div>
 
+    <div class="card" id="pendingBudgetPaymentsCard" style="display:none; border-left: 4px solid var(--warning, #f59e0b);">
+      <h2>📥 Pending Budget Payments</h2>
+      <p class="page-intro">Installments sent by Finance that are awaiting your confirmation. Click <strong>Receive</strong> on a record to accept it into a bucket. Once received, it moves to the ledger below.</p>
+      <div class="table-container show-desktop">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Budget</th>
+              <th>Received From</th>
+              <th>Amount (USD)</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="pendingPaymentsBody"></tbody>
+        </table>
+      </div>
+      <div id="pendingPaymentsMobile" class="show-mobile data-card-list"></div>
+    </div>
+
     <div class="card">
       <h2>📊 Historical Inflow Ledger</h2>
       <div class="table-container show-desktop">
         <table>
           <thead>
             <tr>
+              <th>Ref</th>
               <th>Date</th>
+              <th>Budget</th>
               <th>Received From</th>
               <th>Bucket</th>
-              <th>Total (USD)</th>
-              <th>Foreign Valuation</th>
-              <th>Allocations</th>
+              <th>Amount (USD)</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -643,16 +664,18 @@ export async function initIncomeManagerPage() {
   const filterSelect = document.getElementById('filterIncBucket');
   if (filterSelect && filterSelect.options.length <= 1) {
     filterSelect.innerHTML = '<option value="all">All Accounts</option>';
-    teamBucketsCache.forEach(b => {
+    teamBucketsCache.filter(b => b.is_active !== false).forEach(b => {
       filterSelect.innerHTML += `<option value="${b.id}">${b.name}</option>`;
     });
   }
 
-  // Load income records
-  if (!state.incomeRecords || state.incomeRecords.length === 0) {
-    const all = await localGetAll('income');
-    state.incomeRecords = all.filter(i => i.team_id === teamId && !i.is_deleted);
+  // Load income records from the server (falls back to local cache offline)
+  // so system-generated receipts (created via RPC) always appear.
+  const incResult = await sbSelect('income', { teamId, orderBy: 'date', ascending: false });
+  if (incResult.error) {
+    console.warn('Income load failed, using local cache:', incResult.error.message);
   }
+  state.incomeRecords = (incResult.data || []).filter(i => !i.is_deleted);
 
   // Load budget plans for allocation name resolution
   let plans = state.budgetPlans || [];
@@ -662,16 +685,45 @@ export async function initIncomeManagerPage() {
     state.budgetPlans = plans;
   }
 
+  // Populate budget filter dropdown from budget plans (new system:
+  // income records carry budget_allocations with budget_id)
+  const budgetFilter = document.getElementById('filterIncBudget');
+  if (budgetFilter && budgetFilter.options.length <= 1) {
+    budgetFilter.innerHTML = '<option value="all">All Budgets</option>' +
+      plans
+        .slice()
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+        .map(p => `<option value="${p.id}">${spEscapeHtml(p.name)}</option>`)
+        .join('');
+  }
+
+  await renderPendingBudgetPayments(teamId);
+
   const filterBucketId = document.getElementById('filterIncBucket')?.value || 'all';
+  const filterBudgetId = document.getElementById('filterIncBudget')?.value || 'all';
   const filterFrom = document.getElementById('filterIncFrom')?.value.toLowerCase().trim() || '';
+  const filterType = document.getElementById('filterIncType')?.value || 'all';
 
   let records = [...(state.incomeRecords || [])];
 
   if (filterBucketId !== 'all') {
     records = records.filter(r => r.bucket_id === filterBucketId);
   }
+  if (filterBudgetId !== 'all') {
+    records = records.filter(r => (r.budget_allocations || []).some(a => a.budget_id === filterBudgetId));
+  }
   if (filterFrom) {
-    records = records.filter(r => (r.payment_from || '').toLowerCase().includes(filterFrom));
+    records = records.filter(r => {
+      const hay = [
+        r.payment_from || '',
+        getBucketById(r.bucket_id)?.name || r.payment_bucket || '',
+        ...(r.budget_allocations || []).map(a => plans.find(p => p.id === a.budget_id)?.name || '')
+      ].join(' ').toLowerCase();
+      return hay.includes(filterFrom);
+    });
+  }
+  if (filterType !== 'all') {
+    records = records.filter(r => incomeSourceOf(r) === filterType);
   }
 
   if (records.length === 0) {
@@ -685,45 +737,42 @@ export async function initIncomeManagerPage() {
 
   records.sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(rec => {
     const allocs = rec.budget_allocations || [];
-    let allocSummaryText = allocs.length === 0
-      ? '<span style="color: #888; font-size:0.85em;">Unallocated</span>'
-      : '';
-
-    allocs.forEach(a => {
-      const targetPlan = plans.find(p => p.id === a.budget_id);
-      const name = targetPlan ? targetPlan.name : 'Unknown Plan';
-      allocSummaryText += `<div style="font-size:0.8em; margin-bottom:2px;">💼 ${name}: <strong>$${(a.amount_usd || 0).toFixed(2)}</strong></div>`;
-    });
+    let budgetCell = '<span style="color: #888;">Unallocated</span>';
+    if (allocs.length > 0) {
+      budgetCell = allocs.map(a => {
+        const targetPlan = plans.find(p => p.id === a.budget_id);
+        const name = targetPlan ? targetPlan.name : 'Unknown Plan';
+        return `<div>${spEscapeHtml(name)}</div>`;
+      }).join('');
+    }
+    const budgetPlain = allocs.length === 0
+      ? 'Unallocated'
+      : allocs.map(a => {
+          const targetPlan = plans.find(p => p.id === a.budget_id);
+          const name = targetPlan ? targetPlan.name : 'Unknown Plan';
+          return name;
+        }).join(' · ');
 
     // Resolve bucket name from cache
     const bucket = getBucketById(rec.bucket_id);
     const bucketName = bucket ? bucket.name : (rec.payment_bucket || 'Unknown');
     const bucketCurrency = bucket ? bucket.currency : (rec.currency || 'USD');
 
-    const valDisplay = rec.currency !== 'USD'
-      ? `${(rec.local_amount || 0).toLocaleString()} ${rec.currency} (@ ${rec.exchange_rate})`
-      : '-';
+    const ref = rec.id ? String(rec.id).replace(/-/g, '').slice(0, 8).toUpperCase() : '—';
+    const isSystem = incomeSourceOf(rec) === 'budget_payment';
 
-    const allocPlain = allocs.length === 0
-      ? 'Unallocated'
-      : allocs.map(a => {
-          const targetPlan = plans.find(p => p.id === a.budget_id);
-          const name = targetPlan ? targetPlan.name : 'Unknown Plan';
-          return `${name}: $${(a.amount_usd || 0).toFixed(2)}`;
-        }).join(' · ');
-
-    const actionButtons = state.canManageIncome
+    const actionButtons = (state.canManageIncome && !isSystem)
       ? `${btnIconEdit(`window.openEditIncomeRecord('${rec.id}')`)}${btnIconDelete(`window.deleteIncomeRecord('${rec.id}')`)}`
       : '—';
 
     tableHtml += `
       <tr>
-        <td data-label="Date"><strong>${rec.date}</strong></td>
+        <td data-label="Ref" title="${spEscapeHtml(rec.id || '')}">${ref}</td>
+        <td data-label="Date">${rec.date}</td>
+        <td data-label="Budget">${budgetCell}</td>
         <td data-label="From">${rec.payment_from || 'Unknown'}</td>
-        <td data-label="Bucket"><span class="badge badge-info">${bucketName}</span></td>
-        <td data-label="USD"><strong>$${(rec.amount_usd || 0).toFixed(2)}</strong></td>
-        <td data-label="Foreign">${valDisplay}</td>
-        <td data-label="Allocations">${allocSummaryText}</td>
+        <td data-label="Bucket"><span class="badge badge-info">${spEscapeHtml(bucketName)}</span></td>
+        <td data-label="USD">$${(rec.amount_usd || 0).toFixed(2)}</td>
         <td data-label="Actions" class="action-buttons">${actionButtons}</td>
       </tr>
     `;
@@ -731,14 +780,14 @@ export async function initIncomeManagerPage() {
     mobileHtml += `
       <article class="data-card data-card--compact">
         <div class="data-card-top">
-          <span class="data-card-title">${rec.payment_from || 'Unknown'}</span>
-          ${state.canManageIncome ? `<span class="action-icon-group">${actionButtons}</span>` : ''}
+          <span class="data-card-title">${spEscapeHtml(rec.payment_from || 'Unknown')}</span>
+          ${state.canManageIncome && !isSystem ? `<span class="action-icon-group">${actionButtons}</span>` : ''}
         </div>
+        ${cardRow('Ref', ref)}
         ${cardRow('Date', rec.date)}
+        ${cardRow('Budget', budgetPlain)}
         ${cardRow('Bucket', `${bucketName} (${bucketCurrency})`)}
         ${cardRow('USD', `$${(rec.amount_usd || 0).toFixed(2)}`)}
-        ${valDisplay !== '-' ? cardRow('Foreign', valDisplay) : ''}
-        ${cardRow('Allocations', allocPlain)}
       </article>
     `;
   });
@@ -746,6 +795,135 @@ export async function initIncomeManagerPage() {
   tbody.innerHTML = tableHtml;
   if (mobile) mobile.innerHTML = mobileHtml;
 }
+
+/** System-generated budget funding income vs manually entered income. */
+function incomeSourceOf(rec) {
+  if (rec.source) return rec.source === 'budget_payment' ? 'budget_payment' : 'manual';
+  // Fallback for rows created before the source column existed
+  const isSystem = rec.payment_from === 'KMOF / Budget Funding' ||
+    String(rec.description || '').toLowerCase().startsWith('received funding for budget');
+  return isSystem ? 'budget_payment' : 'manual';
+}
+// ==================== PENDING BUDGET PAYMENTS (per-record receipt) ====================
+
+function spEscapeHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function renderPendingBudgetPayments(teamId) {
+  const card = document.getElementById('pendingBudgetPaymentsCard');
+  const tbody = document.getElementById('pendingPaymentsBody');
+  const mobile = document.getElementById('pendingPaymentsMobile');
+  if (!card || !tbody) return;
+
+  let rows = [];
+  try {
+    const { data, error } = await supabaseClient
+      .rpc('get_pending_budget_payment_list', { p_team_id: teamId });
+    if (error) throw error;
+    rows = data || [];
+  } catch (err) {
+    console.warn('Pending budget payments load failed:', err.message);
+    card.style.display = 'none';
+    return;
+  }
+
+  if (!rows.length) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td data-label="Date"><strong>${spEscapeHtml(r.transfer_date || '')}</strong></td>
+      <td data-label="Budget">${spEscapeHtml(r.budget_name || 'Unknown budget')} <span class="form-hint">(${spEscapeHtml(r.budget_type || '')})</span></td>
+      <td data-label="From">${spEscapeHtml(r.payer || 'KMOF / Finance')}</td>
+      <td data-label="USD"><strong>$${Number(r.amount_usd || 0).toFixed(2)}</strong></td>
+      <td data-label="Actions" class="action-buttons">
+        <button type="button" class="small success" onclick="window.openReceivePaymentModal('${r.transfer_id}')">Receive</button>
+      </td>
+    </tr>
+  `).join('');
+
+  mobile.innerHTML = rows.map(r => `
+    <article class="data-card data-card--compact">
+      <div class="data-card-top">
+        <span class="data-card-title">${spEscapeHtml(r.budget_name || 'Unknown budget')}</span>
+        <button type="button" class="small success" onclick="window.openReceivePaymentModal('${r.transfer_id}')">Receive</button>
+      </div>
+      ${cardRow('Date', r.transfer_date || '')}
+      ${cardRow('From', r.payer || 'KMOF / Finance')}
+      ${cardRow('USD', `$${Number(r.amount_usd || 0).toFixed(2)}`)}
+    </article>
+  `).join('');
+}
+
+window.openReceivePaymentModal = async function (transferId) {
+  if (teamBucketsCache.length === 0) await loadTeamBuckets();
+  const buckets = teamBucketsCache.filter(b => !b.is_deleted);
+  if (!buckets.length) {
+    showToast('No active buckets found for this team. Please create a bucket first.', 'warning');
+    return;
+  }
+
+  const existing = document.getElementById('receivePaymentModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'receivePaymentModal';
+  modal.className = 'modal active';
+  modal.style.display = 'flex';
+  modal.innerHTML = `
+    <div class="modal-content small" style="max-width: 420px; padding: 20px;">
+      <h3>📥 Receive Budget Payment</h3>
+      <p style="font-size: 0.85rem; color: var(--text-secondary);">Select the bucket this installment should be allocated to.</p>
+      <div class="form-stack" style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="form-group">
+          <label style="font-weight: 600; font-size: 0.85rem;">Select Bucket</label>
+          <select id="recvPayBucketSelect" style="width: 100%;">
+            ${buckets.map(b => `<option value="${b.id}">${spEscapeHtml(b.name)} (${b.currency || 'USD'})</option>`).join('')}
+          </select>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+          <button type="button" class="small" onclick="document.getElementById('receivePaymentModal').remove()">Cancel</button>
+          <button type="button" id="recvPayConfirmBtn" class="small success">Confirm &amp; Receive</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('#recvPayConfirmBtn').onclick = async () => {
+    const bucketId = modal.querySelector('#recvPayBucketSelect')?.value;
+    const btn = modal.querySelector('#recvPayConfirmBtn');
+    if (!bucketId) {
+      showToast('Select a bucket.', 'warning');
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Receiving…';
+    try {
+      const { data, error } = await supabaseClient.rpc('accept_budget_payment_transfer', {
+        p_transfer_id: transferId,
+        p_bucket_id: bucketId,
+        p_user_id: state.user?.id || null
+      });
+      if (error) throw error;
+      showToast(`Received $${Number(data?.amount_usd || 0).toFixed(2)} into the bucket successfully!`, 'success');
+      modal.remove();
+      // Refresh ledger + pending list
+      state.incomeRecords = [];
+      await initIncomeManagerPage();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to receive payment', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Confirm & Receive';
+    }
+  };
+};
+
 window.initIncomeManagerPage = initIncomeManagerPage;
 
 window.openEditIncomeRecord = async function(id) {
@@ -753,6 +931,10 @@ window.openEditIncomeRecord = async function(id) {
     const rec = state.incomeRecords.find(r => r.id === id);
     if (!rec) {
       showToast('Income record not found.', 'error');
+      return;
+    }
+    if (incomeSourceOf(rec) === 'budget_payment') {
+      showToast('System-generated budget funding records cannot be edited.', 'warning');
       return;
     }
 
@@ -770,7 +952,7 @@ window.openEditIncomeRecord = async function(id) {
       bucketSelect.innerHTML += '<option value="' + unallocated.id + '" data-currency="' + unallocated.currency + '">' + unallocated.name + ' (' + unallocated.currency + ')</option>';
       bucketSelect.value = unallocated.id;
     } else {
-      teamBucketsCache.forEach(b => {
+      teamBucketsCache.filter(b => b.is_active !== false).forEach(b => {
         bucketSelect.innerHTML += '<option value="' + b.id + '" data-currency="' + b.currency + '">' + b.name + ' (' + b.currency + ')</option>';
       });
       bucketSelect.value = rec.bucket_id || '';
@@ -987,6 +1169,10 @@ window.deleteIncomeRecord = async function(id) {
     'Are you sure you want to delete this income entry? Allocations tied to it will clear.',
     async () => {
       const existing = state.incomeRecords.find(r => r.id === id);
+      if (existing && incomeSourceOf(existing) === 'budget_payment') {
+        showToast('System-generated budget funding records cannot be deleted.', 'warning');
+        return;
+      }
 
       try {
         const result = await sbSoftDelete('income', id);

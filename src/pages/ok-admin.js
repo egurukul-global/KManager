@@ -1,5 +1,5 @@
 import { state } from '../state.js';
-import { supabaseClient, SUPABASE_URL, SUPABASE_ANON_KEY } from '../db.js';
+import { supabaseClient } from '../db.js';
 import { showToast, showConfirm } from '../components/toasts.js';
 import { setButtonLoading, cardRow } from '../utils/uiHelpers.js';
 import { createModal, openModal, closeModal, removeModal } from '../components/modals.js';
@@ -280,13 +280,19 @@ async function saveActiveOkAdminTab() {
   const activeTab = document.querySelector('.tabs-container .tab-btn.active');
   if (!activeTab) return;
   const id = activeTab.id;
+  const headerSaveBtn = document.getElementById('okHeaderSaveBtn');
   if (id === 'btnTabProfile') {
     const form = document.getElementById('okProfileForm');
     if (form) {
       form.requestSubmit();
     }
   } else if (id === 'btnTabAppaccess' || id === 'btnTabChat') {
-    await saveAccess(selectedUserId);
+    setButtonLoading(headerSaveBtn, true, 'Save');
+    try {
+      await saveAccess(selectedUserId);
+    } finally {
+      setButtonLoading(headerSaveBtn, false, 'Save');
+    }
   } else if (id === 'btnTabTeams') {
     showToast('Team changes are saved automatically.', 'info');
   } else if (id === 'btnTabPermissions') {
@@ -1063,6 +1069,8 @@ window.toggleSelectAllTeamsClearance = (isChecked) => {
 // Inline Password Reset
 async function sendResetEmailInline(email) {
   if (!email) return;
+  const btn = document.getElementById('okResetPwdBtn');
+  setButtonLoading(btn, true, 'Sending');
   try {
     const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
       redirectTo: window.location.origin
@@ -1071,11 +1079,16 @@ async function sendResetEmailInline(email) {
     showToast(`Password reset email sent to ${email}`, 'success');
   } catch (err) {
     showToast(err.message || 'Reset failed', 'error');
+  } finally {
+    setButtonLoading(btn, false, 'Send Password Reset Email');
   }
 }
 
 // Inline Team Management Actions
 window.updateTeamAccessInline = async (teamId, accessLevel) => {
+  // Find the dropdown that triggered this and show loading state
+  const dropdown = document.querySelector(`select[onchange*="'${teamId}'"]`);
+  if (dropdown) dropdown.disabled = true;
   try {
     const { error } = await supabaseClient
       .from('user_teams')
@@ -1086,12 +1099,17 @@ window.updateTeamAccessInline = async (teamId, accessLevel) => {
     showToast('Team membership access updated', 'success');
   } catch (err) {
     showToast(err.message || 'Update failed', 'error');
+  } finally {
+    if (dropdown) dropdown.disabled = false;
   }
 };
 
 window.removeTeamMemberInline = async (teamId) => {
   const ok = await showConfirm('Remove this user from the team?');
   if (!ok) return;
+  // Find the remove button that was clicked
+  const btn = document.querySelector(`button[onclick*="'${teamId}'"]`);
+  setButtonLoading(btn, true, 'Removing');
   try {
     const { error } = await supabaseClient
       .from('user_teams')
@@ -1103,6 +1121,8 @@ window.removeTeamMemberInline = async (teamId) => {
     selectUser(selectedUserId);
   } catch (err) {
     showToast(err.message || 'Remove failed', 'error');
+  } finally {
+    setButtonLoading(btn, false, 'Remove');
   }
 };
 
@@ -1121,7 +1141,7 @@ window.addTeamMemberInline = async (e) => {
         user_id: selectedUserId,
         team_id: teamId,
         access_level: accessLevel,
-        is_active: true
+        is_primary: false
       });
     if (error) throw error;
 
@@ -1474,29 +1494,43 @@ function setupCreateModal() {
 
     setButtonLoading(btn, true, 'Creating');
     try {
-      const { data: sessionData } = await supabaseClient.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) throw new Error('Not signed in');
-
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/create-user`, {
+      // Use supabaseClient.functions.invoke() which routes through the
+      // custom proxy fetch in db.js. The proxy reads the sb-access-token
+      // HttpOnly cookie and adds the correct Authorization header.
+      // (supabaseClient.auth.getSession() always returns null because the
+      //  client is configured with persistSession:false and autoRefreshToken:false.)
+      const { data: payload, error: invokeError } = await supabaseClient.functions.invoke('create-user', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          apikey: SUPABASE_ANON_KEY
-        },
-        body: JSON.stringify({ 
-          email, 
-          name, 
-          password, 
-          role: 'user', 
-          gender, 
-          team_id: teamId, 
-          access_level: accessLevel 
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: {
+          email,
+          name,
+          password,
+          role: 'user',
+          gender,
+          team_id: teamId,
+          access_level: accessLevel
+        }
       });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok || payload.error) throw new Error(payload.error || 'Create failed');
+
+      if (invokeError) {
+        // FunctionsHttpError — invokeError.context is the Response object
+        const ctx = invokeError.context;
+        let errMsg = invokeError.message || 'Create failed';
+        if (ctx) {
+          try {
+            const ctxData = await ctx.clone().json();
+            errMsg = ctxData?.error || ctxData?.message || errMsg;
+          } catch (_) {
+            if (invokeError.message && invokeError.message !== 'Edge Function returned a non-2xx status code') {
+              errMsg = invokeError.message;
+            }
+          }
+        }
+        throw new Error(errMsg);
+      }
+
+      if (!payload || payload.error) throw new Error(payload?.error || 'Create failed');
 
       const userId = payload.user_id;
       showToast(`Created ${email}`, 'success');

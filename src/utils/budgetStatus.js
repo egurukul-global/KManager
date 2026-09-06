@@ -144,7 +144,10 @@ export function canEditBudgetLines(budget) {
 export function canOpenBudgetEditor(budget) {
   if (isSystemAdmin()) return true;
   if (!state.canEditBudgets) return false;
-  return true;
+  // Only draft and rejected budgets are editable; anything submitted or beyond
+  // is locked under the approval workflow.
+  const status = getBudgetStatus(budget);
+  return status === BUDGET_STATUS.DRAFT || status === BUDGET_STATUS.REJECTED;
 }
 
 /** Team lead / admin may archive approved budgets. */

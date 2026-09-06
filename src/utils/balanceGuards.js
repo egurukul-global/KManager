@@ -46,3 +46,20 @@ export function formatNonZeroBucketList(buckets) {
     .map(b => `${b.name}: ${(parseFloat(b.balance) || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${b.currency || ''}`)
     .join('; ');
 }
+
+/**
+ * Checks if a bucket has been used in any transactions.
+ */
+export async function hasBucketTransactions(bucketId) {
+  if (!bucketId) return false;
+  
+  const [transfersSource, transfersDest, expenses, incomes] = await Promise.all([
+    supabaseClient.from('transfers').select('id', { count: 'exact', head: true }).eq('source_bucket_id', bucketId),
+    supabaseClient.from('transfers').select('id', { count: 'exact', head: true }).eq('destination_bucket_id', bucketId),
+    supabaseClient.from('expenses').select('id', { count: 'exact', head: true }).eq('bucket_id', bucketId),
+    supabaseClient.from('income').select('id', { count: 'exact', head: true }).eq('bucket_id', bucketId)
+  ]);
+
+  return (transfersSource.count > 0 || transfersDest.count > 0 || expenses.count > 0 || incomes.count > 0);
+}
+

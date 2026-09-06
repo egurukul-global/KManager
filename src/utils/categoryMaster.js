@@ -33,7 +33,7 @@ export async function loadCategoryMaster() {
       is_mandatory: cat.is_mandatory,
       subcategories: (subs || [])
         .filter(s => s.category_master_id === cat.id)
-        .map(s => ({ name: s.name, is_mandatory: s.is_mandatory }))
+        .map(s => ({ id: s.id, name: s.name, is_mandatory: s.is_mandatory }))
     }));
   } catch (e) {
     console.warn('category_master not available, using defaults:', e.message);

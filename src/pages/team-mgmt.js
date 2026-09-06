@@ -940,6 +940,9 @@ async function addTeamMember(e) {
 }
 
 async function updateMemberAccess(membershipId, accessLevel) {
+  // Find the dropdown that triggered this and show loading state
+  const dropdown = document.querySelector(`select[onchange*="'${membershipId}'"]`);
+  if (dropdown) dropdown.disabled = true;
   try {
     const { error } = await supabaseClient
       .from('user_teams')
@@ -959,12 +962,22 @@ async function updateMemberAccess(membershipId, accessLevel) {
     console.error('Update access error:', err);
     showToast(err.message || 'Failed to update access', 'error');
     if (activeTeamId) await loadTeamMembers(activeTeamId);
+  } finally {
+    if (dropdown) dropdown.disabled = false;
   }
 }
 
 async function setMemberPrimary(membershipId) {
   const member = membersCache.find(m => m.id === membershipId);
   if (!member) return;
+
+  // Find the "Set default" button that was clicked
+  const btn = document.querySelector(`button[onclick*="'${membershipId}'"]`);
+  const originalText = btn ? btn.textContent : 'Set default';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Setting…';
+  }
 
   try {
     await supabaseClient
@@ -988,6 +1001,11 @@ async function setMemberPrimary(membershipId) {
   } catch (err) {
     console.error('Set primary error:', err);
     showToast(err.message || 'Failed to set default team', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
   }
 }
 
@@ -1000,6 +1018,13 @@ function removeTeamMember(membershipId) {
   const label = userLabel(member?.user);
 
   showConfirm(`Remove ${label} from this team?`, async () => {
+    // Find the remove button that was clicked
+    const btn = document.querySelector(`button[onclick*="'${membershipId}'"]`);
+    const originalText = btn ? btn.textContent : 'Remove';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Removing…';
+    }
     try {
       if (activeTeamId && member?.user_id) {
         const nonZero = await findNonZeroBucketsOnTeam(activeTeamId, member.user_id);
@@ -1031,6 +1056,11 @@ function removeTeamMember(membershipId) {
     } catch (err) {
       console.error('Remove member error:', err);
       showToast(err.message || 'Failed to remove member', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
   });
 }
@@ -1134,6 +1164,13 @@ async function deleteTeam() {
   if (!team) return;
   
   showConfirm(`Are you sure you want to delete the team "${team.name}"? This cannot be undone and will delete all member assignments.`, async () => {
+    // Find the delete button and show loading state
+    const btn = document.querySelector('button[onclick="window.deleteTeam()"]');
+    const originalText = btn ? btn.textContent : 'Delete team';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Deleting…';
+    }
     try {
       // 1. Delete user_teams association
       const { error: utError } = await supabaseClient
@@ -1167,6 +1204,11 @@ async function deleteTeam() {
     } catch (err) {
       console.error('Delete team error:', err);
       showToast(err.message || 'Failed to delete team', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
   });
 }
@@ -1274,6 +1316,14 @@ async function addTeamRelationship() {
     return;
   }
 
+  // Find the "Add Relationships" button and show loading state
+  const btn = document.querySelector('button[onclick="window.addTeamRelationship()"]');
+  const originalText = btn ? btn.textContent : 'Add Relationships';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+  }
+
   const insertRows = checkedBoxes.map(cb => {
     const targetId = cb.value;
     const parentId = relType === 'child' ? teamId : targetId;
@@ -1302,12 +1352,24 @@ async function addTeamRelationship() {
   } catch (err) {
     console.error('Add team relationships error:', err);
     showToast(err.message || 'Failed to add relationships', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
   }
 }
 
 async function removeTeamRelationship(parentId, childId) {
   const teamId = activeTeamId || document.getElementById('teamsPageSelect')?.value;
   showConfirm('Are you sure you want to remove this relationship?', async () => {
+    // Find the remove button that was clicked
+    const btn = document.querySelector(`button[onclick*="'${parentId}'"]`);
+    const originalText = btn ? btn.textContent : 'Remove';
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Removing…';
+    }
     try {
       const { error } = await supabaseClient
         .from('team_relationships')
@@ -1320,6 +1382,11 @@ async function removeTeamRelationship(parentId, childId) {
     } catch (err) {
       console.error('Remove team relationship error:', err);
       showToast(err.message || 'Failed to remove relationship', 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
   });
 }

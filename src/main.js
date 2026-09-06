@@ -32,6 +32,8 @@ import { getBudgetTemplatesPage, initBudgetTemplatesPage } from './pages/budget-
 import { loadBudgetTypes } from './utils/budgetTypes.js';
 import { getFinancialStatusPage, initFinancialStatusPage } from './pages/financial-status.js';
 import { getManagerFinancePage } from './pages/manager-finance.js';
+import { getManagerTeamReportPage } from './pages/manager-team-report.js';
+import { getSpendingPatternPage } from './pages/spending-pattern.js';
 import { getManagerExpensesPage, initManagerExpensesPage } from './pages/manager-expenses.js';
 import { getReconcilePage, initReconcilePage } from './pages/reconcile.js';
 import { getReconciliationOverviewPage, initReconciliationOverviewPage } from './pages/reconciliation-overview.js';
@@ -788,6 +790,8 @@ function renderAppShell() {
               <span class="arrow">▶</span>
             </div>
             <div class="nav-subitems">
+              <div class="nav-subitem" data-page="team-report" onclick="window.showPage('team-report')">Team Report</div>
+              <div class="nav-subitem" data-page="spending-pattern" onclick="window.showPage('spending-pattern')">Spending Pattern</div>
               <div class="nav-subitem" data-page="expense-reports" onclick="window.showPage('expense-reports')">Expense Reports</div>
               <div class="nav-subitem" data-page="my-finances" onclick="window.showPage('my-finances')">My Finances</div>
             </div>
@@ -962,6 +966,8 @@ const PAGE_TITLES = {
   'generate-receipt': 'Generate Receipt',
   'financial-status': 'Treasury',
   'manager-finance': 'Receivables',
+  'team-report': 'Team Report',
+  'spending-pattern': 'Spending Pattern',
   reconcile: 'Reconcile',
   'reconciliation-overview': 'Reconciliation Overview',
   'reconciliation-approval': 'Reconciliation Approval',
@@ -1029,6 +1035,8 @@ export function showPage(pageName) {
     'my-income': { html: getMyIncomePage, init: initMyIncomePage },
     'financial-status': { html: getFinancialStatusPage, init: initFinancialStatusPage },
       'manager-finance': { html: getManagerFinancePage, init: () => {} },
+      'team-report': { html: getManagerTeamReportPage, init: () => {} },
+      'spending-pattern': { html: getSpendingPatternPage, init: () => {} },
     'reconcile': { html: getReconcilePage, init: initReconcilePage },
     'reconciliation-overview': { html: getReconciliationOverviewPage, init: initReconciliationOverviewPage },
     'reconciliation-approval': { html: getReconciliationApprovalPage, init: initReconciliationApprovalPage },

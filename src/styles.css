@@ -822,10 +822,7 @@ input.input-rate {
 }
 
 .form-grid-row--expense-money {
-  grid-template-columns:
-    minmax(var(--field-select-min), 1.3fr)
-    minmax(var(--field-rate-min), auto)
-    minmax(var(--field-amount-min), auto);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .form-grid-row--defaults {

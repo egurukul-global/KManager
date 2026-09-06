@@ -23,6 +23,7 @@ import {
   getExpenseCategoryLabel,
   resolveExpenseRate
 } from '../utils/expenseHelpers.js';
+import { loadCategoryMaster } from '../utils/categoryMaster.js';
 import {
   getUserTeamDefaults,
   saveUserTeamDefaults,
@@ -96,10 +97,8 @@ async function loadTeamBudgets() {
 }
 
 async function loadTeamCategories() {
-  const teamId = state.currentTeam?.team_id;
-  if (!teamId) return [];
-  const result = await sbSelect('categories', { teamId, orderBy: 'name', ascending: true });
-  teamCategoriesCache = (result.data || []).filter(c => !c.is_deleted);
+  // Load from category_master + subcategory_master (not the old 'categories' table)
+  teamCategoriesCache = await loadCategoryMaster();
   return teamCategoriesCache;
 }
 
@@ -180,7 +179,7 @@ function populateBucketSelect(selectEl) {
   if (!selectEl) return;
   const current = selectEl.value;
   selectEl.innerHTML = '<option value="">Select bucket</option>';
-  teamBucketsCache.forEach(b => {
+  teamBucketsCache.filter(b => b.is_active !== false).forEach(b => {
     selectEl.innerHTML += `<option value="${b.id}">${b.name} (${b.currency})</option>`;
   });
   if (current) selectEl.value = current;
@@ -204,12 +203,34 @@ function populateCurrencySelect(selectEl) {
 
 function updateCategorySelect(selectEl, budgetId) {
   if (!selectEl) return;
-  const budget = getBudgetById(budgetId);
   selectEl.innerHTML = '<option value="">Select category</option>';
-  if (!budget) return;
-  getBudgetCategoryOptions(budget, teamCategoriesCache).forEach(opt => {
-    selectEl.innerHTML += `<option value="${opt.value}" data-category-id="${opt.categoryId || ''}" data-label="${opt.label.replace(/"/g, '&quot;')}" data-budgeted="${opt.budgetedUsd}">${opt.label}</option>`;
+  // Populate from category_master (all active categories)
+  (teamCategoriesCache || []).forEach(cat => {
+    const id = cat.id || '';
+    const name = cat.name || '';
+    selectEl.innerHTML += `<option value="${id}" data-category-id="${id}" data-label="${name.replace(/"/g, '&quot;')}">${name}</option>`;
   });
+  // Trigger subcategory update
+  if (selectEl.id === 'expCategory') {
+    updateSubcategorySelect(document.getElementById('expSubcategory'), selectEl.value);
+  } else if (selectEl.id === 'editExpCategory') {
+    updateSubcategorySelect(document.getElementById('editExpSubcategory'), selectEl.value);
+  }
+}
+
+function updateSubcategorySelect(subSelectEl, categoryId) {
+  if (!subSelectEl) return;
+  subSelectEl.innerHTML = '<option value="">None</option>';
+  if (!categoryId) return;
+  // Find the category in teamCategoriesCache and populate its subcategories
+  const cat = (teamCategoriesCache || []).find(c => c.id === categoryId);
+  if (cat && cat.subcategories) {
+    cat.subcategories.forEach(sub => {
+      const subId = sub.id || '';
+      const subName = sub.name || '';
+      subSelectEl.innerHTML += `<option value="${subId}" data-subcategory-id="${subId}">${subName}</option>`;
+    });
+  }
 }
 
 function updateRateSelect(selectEl, manualEl, currency, usdEl, localEl) {
@@ -313,6 +334,8 @@ async function saveExpenseRecord(payload, isEdit = false, existingId = null) {
   }
 }
 
+let expenseSaving = false;
+
 function validateAndWarnExpense(payload, excludeId, onSuccess) {
   const budget = getBudgetById(payload.budget_id);
   const bucket = getBucketById(payload.bucket_id);
@@ -413,16 +436,17 @@ export function getAddExpensePage() {
           <div class="form-grid-row form-grid-row--expense-header">
             <div class="form-group"><label>Date</label><input type="date" name="date" id="expDate" required></div>
             <div class="form-group"><label>Budget</label><select name="budget_id" id="expBudget" required onchange="window.onExpenseBudgetChange()"><option value="">Select budget</option></select></div>
-            <div class="form-group"><label>Category</label><select name="category" id="expCategory" required><option value="">Select budget first</option></select></div>
-            <div class="form-group"><label>Payment bucket</label><select name="bucket_id" id="expBucket" required onchange="window.onExpenseBucketChange()"><option value="">Select bucket</option></select></div>
+            <div class="form-group"><label>Category</label><select name="category" id="expCategory" required onchange="window.onExpenseCategoryChange()"><option value="">Select category</option></select></div>
+            <div class="form-group"><label>Sub-category</label><select name="subcategory" id="expSubcategory"><option value="">None</option></select></div>
           </div>
           <div class="form-grid-row form-grid-row--expense-chunk">
             <div class="form-group"><label class="required">Item</label><input type="text" name="item" id="expItem" required maxlength="20" placeholder="e.g. Groceries"></div>
-            <div class="form-group"><label class="required">Local amount</label><input type="number" class="input-amount" name="local_amount" id="expLocalAmount" step="0.01" min="0" required oninput="window.onExpenseMathChange()"></div>
-            <div class="form-group"><label>Currency</label><select name="currency" id="expCurrency" required onchange="window.onExpenseCurrencyChange()"><option value="">—</option></select></div>
+            <div class="form-group"><label class="required">Payment bucket</label><select name="bucket_id" id="expBucket" required onchange="window.onExpenseBucketChange()"><option value="">Select bucket</option></select></div>
           </div>
           <div class="form-grid-row form-grid-row--expense-money">
-            <div class="form-group"><label>Rate (1 USD = ?)</label><select name="rate_select" id="expRateSelect" onchange="window.onExpenseMathChange()"><option value="">Rate</option></select></div>
+            <div class="form-group"><label>Currency</label><select name="currency" id="expCurrency" required onchange="window.onExpenseCurrencyChange()"><option value="">—</option></select></div>
+            <div class="form-group"><label class="required">Local amount</label><input type="number" class="input-amount" name="local_amount" id="expLocalAmount" step="0.01" min="0" required oninput="window.onExpenseMathChange()"></div>
+            <div class="form-group"><label>Rate</label><select name="rate_select" id="expRateSelect" onchange="window.onExpenseMathChange()"><option value="">Rate</option></select></div>
             <div class="form-group"><label>Manual</label><input type="number" class="input-rate" name="rate_manual" id="expRateManual" step="any" placeholder="Rate" oninput="window.onExpenseMathChange()"></div>
             <div class="form-group"><label>USD</label><input type="number" class="input-amount" id="expUSD" step="0.01" readonly></div>
           </div>
@@ -448,6 +472,13 @@ export function getAddExpensePage() {
             <div id="expReceiptPreview" style="margin-top:8px;"></div>
           </div>
           <div class="form-group form-span-full"><label for="expDescription">Notes</label><textarea name="description" id="expDescription" rows="2" placeholder="Optional notes"></textarea></div>
+          <div class="form-group form-span-full" style="background:var(--bg-secondary); padding:15px; border-radius:6px; border:1px solid var(--border);">
+            <label style="display:flex; align-items:center; gap:8px; margin:0; cursor:pointer;">
+              <input type="checkbox" id="expSubmitReview" name="is_submitted" style="width:18px; height:18px; cursor:pointer;" checked>
+              <strong style="color:var(--primary);">Submit for Finance Review</strong>
+            </label>
+            <p class="form-hint" id="expSubmitHint" style="margin-top:6px; margin-bottom:0; font-size:0.85em; color:var(--error);">A receipt must be attached to submit for review.</p>
+          </div>
         </div>
         <div class="btn-group"><button type="submit">Confirm &amp; Save expense</button></div>
       </form>
@@ -474,6 +505,9 @@ export async function initAddExpensePage() {
 
   window.onExpenseBudgetChange = () => {
     updateCategorySelect(document.getElementById('expCategory'), document.getElementById('expBudget')?.value);
+  };
+  window.onExpenseCategoryChange = () => {
+    updateSubcategorySelect(document.getElementById('expSubcategory'), document.getElementById('expCategory')?.value);
   };
   window.onExpenseBucketChange = () => {
     const bucket = getBucketById(document.getElementById('expBucket')?.value);
@@ -521,7 +555,10 @@ export async function initAddExpensePage() {
   if (itemEl) setTimeout(() => itemEl.focus(), 100);
 
   const form = document.getElementById('expenseForm');
-  form?.addEventListener('submit', handleAddExpenseSubmit);
+  if (form && !form.dataset.submitBound) {
+    form.dataset.submitBound = 'true';
+    form?.addEventListener('submit', handleAddExpenseSubmit);
+  }
 
   wireReceiptUpload({
     urlInputId: 'expReceiptUrl',
@@ -580,12 +617,18 @@ function wireReceiptUpload({
   if (!urlInput || !fileBtn || !fileInput) return;
   if (!cameraBtn && !useJscanifyCamera) return;
 
-  urlInput.oninput = () => {
+    urlInput.oninput = () => {
     const val = urlInput.value.trim();
     if (val) {
       stagedAttachments.push({ id: crypto.randomUUID(), file_url: val, unsaved: true });
       urlInput.value = '';
       if (hint) hint.textContent = 'Link added to receipts';
+      // Trigger submit checkbox re-check
+      const form = urlInput.closest('form');
+      const prefix = form?.id?.includes('edit') ? 'edit' : 'add';
+      if (typeof window.checkReceiptForReview === 'function') {
+        window.checkReceiptForReview(prefix, true);
+      }
       if (previewId) renderStagedAttachments(previewId);
     }
   };
@@ -842,8 +885,14 @@ function wireReceiptUpload({
 
       setBusy(true, 'Uploading…');
       if (hint && !hint.textContent) hint.textContent = 'Uploading receipt…';
-      const { objectKey } = await uploadReceipt(file);
+            const { objectKey } = await uploadReceipt(file);
       stagedAttachments.push({ id: crypto.randomUUID(), file_url: objectKey, unsaved: true });
+      // Trigger submit checkbox re-check for edit mode
+      const form = urlInput.closest('form');
+      const prefix = form?.id?.includes('edit') ? 'edit' : 'add';
+      if (typeof window.checkReceiptForReview === 'function') {
+        window.checkReceiptForReview(prefix, true);
+      }
       if (hint) hint.textContent = `Saved: ${objectKey}`;
       if (previewId) await renderStagedAttachments(previewId);
       showToast('Receipt uploaded', 'success');
@@ -1198,6 +1247,8 @@ async function clearExpenseDefaultsPanel() {
 
 async function handleAddExpenseSubmit(e) {
   e.preventDefault();
+  if (expenseSaving) return;
+  expenseSaving = true;
   const form = e.target;
   form._rates = exchangeRatesCache;
 
@@ -1236,10 +1287,12 @@ async function handleAddExpenseSubmit(e) {
       showToast(err.message || 'Failed to save expense', 'error');
     } finally {
       btn.disabled = false;
+      expenseSaving = false;
     }
   });
 
   btn.disabled = false;
+  expenseSaving = false;
 }
 
 // ========== EXPENSE MANAGER ==========
@@ -1264,9 +1317,10 @@ export function getExpenseManagerPage() {
       <p style="color:var(--text-secondary);margin-bottom:16px;">${scopeNote}</p>
       <div class="filter-section">
         <div class="form-stack">
-          <div class="form-grid-row form-grid-row--filter-main">
+          <div class="form-grid-row form-grid-row--filter-main" style="grid-template-columns: repeat(4, 1fr); width: 100%;">
             <div class="form-group"><label>Budget</label><select id="expFilterBudget" onchange="window.onExpenseBudgetFilterChange()"><option value="">All</option></select></div>
-            <div class="form-group"><label>Category</label><select id="expFilterCategory" onchange="window.refreshExpenseList()"><option value="">All</option></select></div>
+            <div class="form-group"><label>Category</label><select id="expFilterCategory" onchange="window.onExpenseCategoryFilterChange()"><option value="">All</option></select></div>
+            <div class="form-group"><label>Subcategory</label><select id="expFilterSubcategory" onchange="window.refreshExpenseList()"><option value="">All</option></select></div>
             <div class="form-group"><label>Bucket</label><select id="expFilterBucket" onchange="window.refreshExpenseList()"><option value="">All</option></select></div>
           </div>
           <div class="form-grid-row form-grid-row--filter-dates" style="grid-template-columns: repeat(4, 1fr); width: 100%;">
@@ -1326,15 +1380,16 @@ export function getExpenseManagerPage() {
             <div class="form-grid-row form-grid-row--expense-header">
               <div class="form-group"><label class="required">Date</label><input type="date" name="date" id="editExpDate" required></div>
               <div class="form-group"><label class="required">Budget</label><select name="budget_id" id="editExpBudget" required onchange="window.onEditExpenseBudgetChange()"></select></div>
-              <div class="form-group"><label class="required">Category</label><select id="editExpCategory" name="category" required></select></div>
-              <div class="form-group"><label class="required">Bucket</label><select id="editExpBucket" name="bucket_id" required onchange="window.onEditExpenseBucketChange()"></select></div>
+              <div class="form-group"><label class="required">Category</label><select id="editExpCategory" name="category" required onchange="window.onEditExpenseCategoryChange()"></select></div>
+              <div class="form-group"><label>Sub-category</label><select id="editExpSubcategory" name="subcategory"><option value="">None</option></select></div>
             </div>
             <div class="form-grid-row form-grid-row--expense-chunk">
               <div class="form-group"><label class="required">Item</label><input type="text" name="item" id="editExpItem" required maxlength="20"></div>
-              <div class="form-group"><label class="required">Local amount</label><input type="number" class="input-amount" name="local_amount" id="editExpLocalAmount" step="0.01" required oninput="window.onEditExpenseMathChange()"></div>
-              <div class="form-group"><label class="required">Currency</label><select id="editExpCurrency" name="currency" required onchange="window.onEditExpenseCurrencyChange()"></select></div>
+              <div class="form-group"><label class="required">Bucket</label><select id="editExpBucket" name="bucket_id" required onchange="window.onEditExpenseBucketChange()"></select></div>
             </div>
             <div class="form-grid-row form-grid-row--expense-money">
+              <div class="form-group"><label>Currency</label><select id="editExpCurrency" name="currency" required onchange="window.onEditExpenseCurrencyChange()"></select></div>
+              <div class="form-group"><label class="required">Local amount</label><input type="number" class="input-amount" name="local_amount" id="editExpLocalAmount" step="0.01" required oninput="window.onEditExpenseMathChange()"></div>
               <div class="form-group"><label>Rate</label><select id="editExpRateSelect" name="rate_select" onchange="window.onEditExpenseMathChange()"></select></div>
               <div class="form-group"><label>Manual</label><input type="number" class="input-rate" id="editExpRateManual" name="rate_manual" step="any" oninput="window.onEditExpenseMathChange()"></div>
               <div class="form-group"><label>USD</label><input type="number" class="input-amount" id="editExpUSD" readonly></div>
@@ -1392,7 +1447,11 @@ export async function initExpenseManagerPage() {
 
   populateExpenseCategoryFilter();
 
-  document.getElementById('editExpenseForm')?.addEventListener('submit', handleEditExpenseSubmit);
+  const editForm = document.getElementById('editExpenseForm');
+  if (editForm && !editForm.dataset.submitBound) {
+    editForm.dataset.submitBound = 'true';
+    editForm?.addEventListener('submit', handleEditExpenseSubmit);
+  }
 
   wireReceiptUpload({
     urlInputId: 'editExpReceiptUrl',
@@ -1427,6 +1486,7 @@ export async function initExpenseManagerPage() {
   window.deleteExpense = deleteExpense;
   window.closeEditExpenseModal = closeEditExpenseModal;
   window.onEditExpenseBudgetChange = () => updateCategorySelect(document.getElementById('editExpCategory'), document.getElementById('editExpBudget')?.value);
+  window.onEditExpenseCategoryChange = () => updateSubcategorySelect(document.getElementById('editExpSubcategory'), document.getElementById('editExpCategory')?.value);
   window.onEditExpenseBucketChange = () => {
     const bucket = getBucketById(document.getElementById('editExpBucket')?.value);
     if (bucket?.currency) {
@@ -1457,65 +1517,55 @@ export async function initExpenseManagerPage() {
   refreshExpenseList();
 }
 
-function expenseMatchesCategoryFilter(exp, filterKey) {
-  if (!filterKey) return true;
-  if (filterKey.startsWith('id:')) {
-    return exp.category_id === filterKey.slice(3);
-  }
-  if (filterKey.startsWith('label:')) {
-    return getExpenseCategoryLabel(exp, teamCategoriesCache) === filterKey.slice(6);
-  }
-  return true;
-}
+window.onExpenseCategoryFilterChange = function() {
+  populateExpenseSubcategoryFilter();
+  window.refreshExpenseList();
+};
 
 function populateExpenseCategoryFilter(budgetId = '') {
   const select = document.getElementById('expFilterCategory');
   if (!select) return;
   const current = select.value;
   select.innerHTML = '<option value="">All</option>';
-
-  const seen = new Set();
-  const addOption = (value, label) => {
-    if (!value || !label || seen.has(value)) return;
-    seen.add(value);
-    const safeLabel = label.replace(/</g, '&lt;');
-    select.innerHTML += `<option value="${value.replace(/"/g, '&quot;')}">${safeLabel}</option>`;
-  };
-
-  const budgets = budgetId
-    ? teamBudgetsCache.filter(b => b.id === budgetId)
-    : teamBudgetsCache;
-
-  budgets.forEach(budget => {
-    getBudgetCategoryOptions(budget, teamCategoriesCache).forEach(opt => {
-      const key = opt.categoryId ? `id:${opt.categoryId}` : `label:${opt.label}`;
-      addOption(key, opt.label);
-    });
+  
+  (teamCategoriesCache || []).forEach(cat => {
+    select.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
   });
+  
+  if (current) select.value = current;
+  populateExpenseSubcategoryFilter();
+}
 
-  teamExpensesCache.forEach(exp => {
-    if (budgetId && exp.budget_id !== budgetId) return;
-    const label = getExpenseCategoryLabel(exp, teamCategoriesCache);
-    if (exp.category_id) {
-      addOption(`id:${exp.category_id}`, label);
-    } else if (label && label !== '—') {
-      addOption(`label:${label}`, label);
+function populateExpenseSubcategoryFilter() {
+  const catId = document.getElementById('expFilterCategory')?.value;
+  const subSelect = document.getElementById('expFilterSubcategory');
+  if (!subSelect) return;
+  const current = subSelect.value;
+  subSelect.innerHTML = '<option value="">All</option>';
+  
+  if (catId) {
+    const cat = (teamCategoriesCache || []).find(c => c.id === catId);
+    if (cat && cat.subcategories) {
+      cat.subcategories.forEach(sub => {
+        subSelect.innerHTML += `<option value="${sub.id}">${sub.name}</option>`;
+      });
     }
-  });
-
-  if (current && seen.has(current)) select.value = current;
+  }
+  if (current) subSelect.value = current;
 }
 
 function getFilteredExpenses() {
   const budgetId = document.getElementById('expFilterBudget')?.value;
-  const categoryKey = document.getElementById('expFilterCategory')?.value;
+  const catId = document.getElementById('expFilterCategory')?.value;
+  const subcatId = document.getElementById('expFilterSubcategory')?.value;
   const bucketId = document.getElementById('expFilterBucket')?.value;
   const start = document.getElementById('expFilterStart')?.value;
   const end = document.getElementById('expFilterEnd')?.value;
 
   return teamExpensesCache.filter(e => {
     if (budgetId && e.budget_id !== budgetId) return false;
-    if (!expenseMatchesCategoryFilter(e, categoryKey)) return false;
+    if (catId && e.category_id !== catId) return false;
+    if (subcatId && e.subcategory_id !== subcatId) return false;
     if (bucketId && e.bucket_id !== bucketId) return false;
     if (start && e.date < start) return false;
     if (end && e.date > end) return false;
@@ -1557,7 +1607,8 @@ function refreshExpenseList() {
   filtered.forEach(exp => {
     const budget = getBudgetById(exp.budget_id);
     const bucket = getBucketById(exp.bucket_id);
-    const catLabel = getExpenseCategoryLabel(exp, teamCategoriesCache);
+    let catLabel = getExpenseCategoryLabel(exp, teamCategoriesCache);
+  if (catLabel && catLabel.startsWith('budget_cat:')) { catLabel = catLabel.replace('budget_cat:', ''); }
     const canEdit = canEditExpense(exp);
     const receipt = receiptCellHtml(exp);
     let statusBadge = '<span class="status-pill warning" style="font-size:0.7em;">Draft</span>';
@@ -1646,6 +1697,7 @@ function updateExpenseSelectionUi() {
 function resetExpenseFilters() {
   document.getElementById('expFilterBudget').value = '';
   document.getElementById('expFilterCategory').value = '';
+  if(document.getElementById('expFilterSubcategory')) document.getElementById('expFilterSubcategory').value = '';
   document.getElementById('expFilterBucket').value = '';
   document.getElementById('expFilterStart').value = '';
   document.getElementById('expFilterEnd').value = '';
@@ -1696,11 +1748,8 @@ function editExpense(id) {
   const alertNotes = document.getElementById('editExpCorrectionNotes');
   
   if (cbSubmit) {
-    cbSubmit.checked = exp.is_submitted !== false;
-    window.checkReceiptForReview('edit', false);
-    if (exp.is_submitted === false) {
-      cbSubmit.checked = false; 
-    }
+    cbSubmit.disabled = true;
+    cbSubmit.checked = false;
   }
 
   if (alertBox && alertNotes) {
@@ -1731,15 +1780,52 @@ function editExpense(id) {
   
   renderStagedAttachments('editExpReceiptPreview');
 
+  // Restore the submit-review checkbox from the saved expense state.
+  // Enabled only if the expense has a receipt (url or attachment), and
+  // checked according to the last saved is_submitted value.
+  if (cbSubmit) {
+    const hasReceipt = allKeys.length > 0;
+    cbSubmit.disabled = !hasReceipt;
+    cbSubmit.checked = hasReceipt ? (exp.is_submitted !== false) : false;
+    const eHint = document.getElementById('editExpSubmitHint');
+    if (eHint) eHint.style.display = hasReceipt ? 'none' : 'block';
+  }
+
   populateBudgetSelect(document.getElementById('editExpBudget'), false);
   document.getElementById('editExpBudget').value = exp.budget_id;
   window.onEditExpenseBudgetChange();
 
-  const catLabel = getExpenseCategoryLabel(exp, teamCategoriesCache);
-  const catSelect = document.getElementById('editExpCategory');
-  for (const opt of catSelect.options) {
-    if (opt.dataset.label === catLabel) { catSelect.value = opt.value; break; }
+    const catSelect = document.getElementById('editExpCategory');
+  // Restore category: prefer category_id (option values are category UUIDs),
+  // fall back to label matching for legacy expenses without category_id.
+  if (exp.category_id) {
+    catSelect.value = exp.category_id;
+  } else {
+    const catLabel = getExpenseCategoryLabel(exp, teamCategoriesCache);
+    for (const opt of catSelect.options) {
+      if (opt.dataset.label === catLabel) {
+        catSelect.value = opt.value;
+        break;
+      }
+    }
   }
+
+  // Populate subcategory list, then restore selected subcategory
+  window.onEditExpenseCategoryChange();
+  const subSelect = document.getElementById('editExpSubcategory');
+  if (subSelect && exp.subcategory_id) {
+    subSelect.value = exp.subcategory_id;
+  } else if (subSelect && exp.vendor_info?.includes('→')) {
+    const subName = exp.vendor_info.split('→')[1]?.trim();
+    for (const opt of subSelect.options) {
+      if (opt.textContent === subName) {
+        subSelect.value = opt.value;
+        break;
+      }
+    }
+  }
+
+  populateBucketSelect(document.getElementById('editExpBucket'));
 
   populateBucketSelect(document.getElementById('editExpBucket'));
   document.getElementById('editExpBucket').value = exp.bucket_id;
@@ -1772,6 +1858,8 @@ function closeEditExpenseModal() {
 
 async function handleEditExpenseSubmit(e) {
   e.preventDefault();
+  if (expenseSaving) return;
+  expenseSaving = true;
   const id = document.getElementById('editExpId').value;
   const existing = teamExpensesCache.find(x => x.id === id);
   if (!existing || !canEditExpense(existing)) return;
@@ -1792,6 +1880,8 @@ async function handleEditExpenseSubmit(e) {
       refreshExpenseList();
     } catch (err) {
       showToast(err.message || 'Update failed', 'error');
+    } finally {
+      expenseSaving = false;
     }
   });
 }

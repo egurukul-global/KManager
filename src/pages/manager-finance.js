@@ -136,16 +136,17 @@ export function getManagerFinancePage() {
           <thead id="finTableHead">
             <tr>
               <th>Team</th>
-              <th>Budget Plan</th>
+              <th>Approved Budget</th>
+              <th>Budget</th>
+              <th>Approved</th>
               <th>Allocated</th>
-              <th>Expenses Logged</th>
-              <th>Funds Returned</th>
-              <th>Remaining Held</th>
-              <th>Status</th>
+              <th>Received</th>
+              <th>Pending</th>
+              <th>Expenses</th>
             </tr>
           </thead>
           <tbody id="financeDashboardTableBody">
-            <tr><td colspan="7" style="text-align:center;">Loading database view...</td></tr>
+            <tr><td colspan="8" style="text-align:center;">Loading database view...</td></tr>
           </tbody>
         </table>
       </div>
@@ -369,30 +370,34 @@ window.renderFinanceTable = function() {
     return;
   }
 
-  // Detailed View HTML Setup
-  thead.innerHTML = "<tr><th>Team</th><th>Budget Plan</th><th>Allocated</th><th>Expenses Logged</th><th>Funds Returned</th><th>Remaining Held</th><th>Status</th></tr>";
+  // Detailed View HTML Setup (same columns as Team Report)
+  thead.innerHTML = "<tr><th>Team</th><th>Approved Budget</th><th>Budget</th><th>Approved</th><th>Allocated</th><th>Received</th><th>Pending</th><th>Expenses</th></tr>";
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">No budget records match criteria.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">No budget records match criteria.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = filtered.map(b => {
-    const isReconciled = b.remaining_held_balance === 0;
-    const isError = b.remaining_held_balance < 0;
-    let statusBadge = '<span class="badge badge-warning">Open</span>';
-    if (isReconciled) statusBadge = '<span class="badge badge-success">Reconciled</span>';
-    if (isError) statusBadge = '<span class="badge badge-error" style="background:var(--error);color:white;">Error</span>';
-    
+  const sorted = [...filtered].sort((a, b) =>
+    String(a.team_name || 'Global').localeCompare(String(b.team_name || 'Global')) ||
+    String(a.budget_name || '').localeCompare(String(b.budget_name || ''))
+  );
+
+  tbody.innerHTML = sorted.map(b => {
+    const allocated = b.allocated_amount || 0;
+    const received = b.received_amount !== undefined ? b.received_amount : allocated;
+    const pending = allocated - received;
+
     return `
       <tr>
         <td>${b.team_name || 'Global'}</td>
         <td>${b.budget_name || (b.budget_id ? b.budget_id.substring(0,8) + '...' : 'Unknown')}</td>
-        <td>${(b.allocated_amount || 0).toFixed(2)}</td>
+        <td>${(b.approved_amount || 0).toFixed(2)}</td>
+        <td>${(b.approved_amount || 0).toFixed(2)}</td>
+        <td>${allocated.toFixed(2)}</td>
+        <td>${received.toFixed(2)}</td>
+        <td style="color: ${pending > 0 ? 'var(--warning)' : 'inherit'};">${pending.toFixed(2)}</td>
         <td>${(b.expenses_amount || 0).toFixed(2)}</td>
-        <td>${(b.unused_funds_returned || 0).toFixed(2)}</td>
-        <td style="font-weight:bold; color: ${isError ? 'var(--error)' : 'var(--text)'};">${(b.remaining_held_balance || 0).toFixed(2)}</td>
-        <td>${statusBadge}</td>
       </tr>
     `;
   }).join('');
@@ -405,24 +410,34 @@ window.exportFinanceReportToPDF = function() {
     return;
   }
   try {
-    const rows = cachedReconciliationData.map(b => [
-      b.team_name || 'Global',
-      b.budget_name || (b.budget_id ? b.budget_id.substring(0,8) : ''),
-      '$' + (b.allocated_amount || 0).toFixed(2),
-      '$' + (b.expenses_amount || 0).toFixed(2),
-      '$' + (b.unused_funds_returned || 0).toFixed(2),
-      '$' + (b.remaining_held_balance || 0).toFixed(2)
-    ]);
+    const sorted = [...cachedReconciliationData].sort((a, b) =>
+      String(a.team_name || 'Global').localeCompare(String(b.team_name || 'Global')) ||
+      String(a.budget_name || '').localeCompare(String(b.budget_name || ''))
+    );
+    const rows = sorted.map(b => {
+      const allocated = b.allocated_amount || 0;
+      const received = b.received_amount !== undefined ? b.received_amount : allocated;
+      return [
+        b.team_name || 'Global',
+        b.budget_name || (b.budget_id ? b.budget_id.substring(0,8) : ''),
+        '$' + (b.approved_amount || 0).toFixed(2),
+        '$' + (b.approved_amount || 0).toFixed(2),
+        '$' + allocated.toFixed(2),
+        '$' + received.toFixed(2),
+        '$' + (allocated - received).toFixed(2),
+        '$' + (b.expenses_amount || 0).toFixed(2)
+      ];
+    });
     const docDefinition = {
       content: [
-        { text: 'Global Budget Reconciliation Report', style: 'header' },
-        { text: 'Generated on: ' + new Date().toLocaleDateString(), margin: [0,0,0,10] },
+        { text: 'Receivables Report', style: 'header' },
+        { text: 'Generated on: ' + new Date().toLocaleString(), margin: [0,0,0,10] },
         {
           table: {
             headerRows: 1,
-            widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto'],
+            widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto', 'auto', 'auto'],
             body: [
-              ['Team', 'Budget Plan', 'Allocated', 'Expenses', 'Returned', 'Remaining'],
+              ['Team', 'Approved Budget', 'Budget', 'Approved', 'Allocated', 'Received', 'Pending', 'Expenses'],
               ...rows
             ]
           }
@@ -432,7 +447,7 @@ window.exportFinanceReportToPDF = function() {
         header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] }
       }
     };
-    pdfMake.createPdf(docDefinition).download('finance_report.pdf');
+    pdfMake.createPdf(docDefinition).download('receivables_report.pdf');
   } catch(e) {
     console.error(e);
     alert('Failed to generate PDF. Make sure pdfmake is loaded.');
@@ -444,9 +459,15 @@ window.exportFinanceReportToCSV = function() {
     alert('No data to export.');
     return;
   }
-  let csv = 'Team Name,Budget Name,Allocated Amount,Expenses Amount,Funds Returned,Remaining Balance\n';
-  cachedReconciliationData.forEach(b => {
-    csv += `"${b.team_name || 'Global'}","${b.budget_name || b.budget_id}",${b.allocated_amount || 0},${b.expenses_amount || 0},${b.unused_funds_returned || 0},${b.remaining_held_balance || 0}\n`;
+  let csv = 'Team,Approved Budget,Budget,Approved,Allocated,Received,Pending,Expenses\n';
+  const sorted = [...cachedReconciliationData].sort((a, b) =>
+    String(a.team_name || 'Global').localeCompare(String(b.team_name || 'Global')) ||
+    String(a.budget_name || '').localeCompare(String(b.budget_name || ''))
+  );
+  sorted.forEach(b => {
+    const allocated = b.allocated_amount || 0;
+    const received = b.received_amount !== undefined ? b.received_amount : allocated;
+    csv += `"${b.team_name || 'Global'}","${b.budget_name || b.budget_id}",${(b.approved_amount || 0)},${(b.approved_amount || 0)},${allocated},${received},${allocated - received},${b.expenses_amount || 0}\n`;
   });
   
   const blob = new Blob([csv], { type: 'text/csv' });

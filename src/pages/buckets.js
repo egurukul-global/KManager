@@ -19,7 +19,7 @@ import {
   sumBucketBalancesToUsd,
   formatUsdDisplay
 } from '../utils/currency.js';
-import { hasNonZeroBalance } from '../utils/balanceGuards.js';
+import { hasNonZeroBalance, hasBucketTransactions } from '../utils/balanceGuards.js';
 import { filterBucketsForCurrentUser } from '../utils/bucketVisibility.js';
 import { isOpsStaff } from '../utils/roleLabels.js';
 
@@ -212,8 +212,9 @@ function renderBucketGrid(buckets, accessMap = null) {
     const typeLabel = `${bucket.type?.replace(/_/g, ' ') || 'Other'}${isPersonal ? ' · Personal' : ''}`;
 
     html += `
-      <article class="data-card data-card--compact ${isDeleted ? 'data-card--deleted' : ''}">
+      <article class="data-card data-card--compact ${isDeleted ? 'data-card--deleted' : ''}" style="${bucket.is_active === false ? 'opacity: 0.7;' : ''}">
         ${isDeleted ? '<div class="deleted-banner">DELETED</div>' : ''}
+        ${bucket.is_active === false && !isDeleted ? '<div class="deleted-banner" style="background:#6b7280; text-align:center;">INACTIVE</div>' : ''}
         <div class="data-card-top">
           <span class="data-card-title">${typeEmoji} ${bucket.name}</span>
           <span class="action-icon-group">
@@ -221,7 +222,7 @@ function renderBucketGrid(buckets, accessMap = null) {
               ${canEdit ? `<button type="button" class="btn-icon" onclick="window.loadBucketForEdit('${bucket.id}')" title="Edit Bucket" aria-label="Edit Bucket" style="background: none; border: none; color: #48bb78; cursor: pointer; font-size: 1.1em; padding: 4px;"><i class="fas fa-check-square"></i></button>` : ''}
               ${bucket.is_org_level && isFinanceGlobalAdmin() ? `<button type="button" class="btn-icon" onclick="window.openAssignUsersModal('${bucket.id}', '${safeName}')" title="Assign Users" aria-label="Assign Users" style="background: none; border: none; color: #3b82f6; cursor: pointer; font-size: 1.1em; padding: 4px; margin-right: 4px;"><i class="fas fa-plus-square"></i></button>` : ''}
               ${canDelete ? btnIconDelete(`window.confirmDeleteBucket('${bucket.id}', '${safeName}')`) : ''}
-            ${canRestore ? `<button type="button" class="btn-icon btn-icon--edit" onclick="window.restoreBucket('${bucket.id}')" title="Restore" aria-label="Restore">↩</button>` : ''}
+            ${canRestore ? `<button type="button" class="btn-icon btn-icon--edit" onclick="window.restoreBucket('${bucket.id}')" title="Restore" aria-label="Restore">↺</button>` : ''}
           </span>
         </div>
         ${cardRow('Type', typeLabel)}
@@ -302,7 +303,6 @@ function renderBuckets() {
 }
 
 // ==================== MODAL FUNCTIONS ====================
-
 export function openBucketModal(bucketId = null) {
   const isEdit = !!bucketId;
   const modalId = 'bucketModal';
@@ -314,19 +314,23 @@ export function openBucketModal(bucketId = null) {
       <div class="form-stack">
         <div class="form-grid-row form-grid-row--bucket">
           <div class="form-group"><label>Bucket Name *</label><input type="text" id="bucketName" placeholder="Operations Cash" required></div>
-          <div class="form-group"><label>Bucket Type *</label><select id="bucketType" required><option value="">Type</option><option value="cash">💵 Cash</option><option value="bank">🏦 Bank</option><option value="mobile_money">📱 Mobile</option><option value="crypto">₿ Crypto</option><option value="other">📦 Other</option></select></div>
-          <div class="form-group"><label>Currency *</label><select id="bucketCurrency" required><option value="">—</option><option value="USD">USD</option><option value="XOF">XOF</option><option value="AED">AED</option><option value="INR">INR</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select></div>
+          <div class="form-group"><label>Bucket Type *</label><select id="bucketType" required><option value="">Type</option><option value="cash">💵 Cash</option><option value="bank">🏦 Bank</option><option value="mobile_money">📱 Mobile</option><option value="crypto">🪙 Crypto</option><option value="other">📦 Other</option></select></div>
+          <div class="form-group"><label>Currency *</label><select id="bucketCurrency" required><option value="">🌎</option><option value="USD">USD</option><option value="XOF">XOF</option><option value="AED">AED</option><option value="INR">INR</option><option value="EUR">EUR</option><option value="GBP">GBP</option></select></div>
           <div class="form-group"><label>Balance *</label><input type="number" class="input-amount" id="bucketBalance" step="0.01" placeholder="0.00" required></div>
         </div>
-        <div class="form-group form-group--checkbox">
+        <div class="form-group form-group--checkbox" style="display: flex; gap: 20px;">
           <label class="checkbox-inline" for="bucketPersonal">
             <input type="checkbox" id="bucketPersonal">
             <span>Personal bucket (owned by me)</span>
           </label>
+          <label class="checkbox-inline" for="bucketActive">
+            <input type="checkbox" id="bucketActive" checked>
+            <span>Active</span>
+          </label>
         </div>
       </div>
       <div class="btn-group">
-        <button type=\"button\" onclick=\"window.saveBucket(event)\">${isEdit ? 'Save Changes' : 'Create Bucket'}</button>
+        <button type="button" onclick="window.saveBucket(event)">${isEdit ? 'Save Changes' : 'Create Bucket'}</button>
         <button type="button" class="secondary" onclick="document.getElementById('${modalId}').classList.remove('active')">Cancel</button>
       </div>
     </form>
@@ -356,12 +360,30 @@ async function loadBucketData(bucketId) {
     if (personalEl) {
       personalEl.checked = bucket.owner_user_id === state.user?.id;
     }
+    const activeEl = document.getElementById('bucketActive');
+    if (activeEl) {
+      activeEl.checked = bucket.is_active !== false;
+    }
     const modalEl = document.getElementById('bucketModal');
     if (modalEl) {
       if (bucket.is_org_level) {
         modalEl.dataset.isOrg = 'true';
       } else {
         delete modalEl.dataset.isOrg;
+      }
+    }
+
+    const hasTx = await hasBucketTransactions(bucketId);
+    if (hasTx) {
+      const balEl = document.getElementById('bucketBalance');
+      const curEl = document.getElementById('bucketCurrency');
+      if (balEl) {
+        balEl.disabled = true;
+        balEl.title = "Balance cannot be edited directly once transactions have occurred.";
+      }
+      if (curEl) {
+        curEl.disabled = true;
+        curEl.title = "Currency cannot be changed once transactions have occurred.";
       }
     }
   } catch (err) {
@@ -382,6 +404,7 @@ export async function saveBucket(e) {
   // Removed hardcoded role bypasses
 
   const isPersonal = !!document.getElementById('bucketPersonal')?.checked && !isOrgBucket;
+  const isActive = document.getElementById('bucketActive') ? !!document.getElementById('bucketActive').checked : true;
   const bucketData = {
     name: document.getElementById('bucketName').value.trim(),
     type: document.getElementById('bucketType').value,
@@ -389,7 +412,8 @@ export async function saveBucket(e) {
     balance: parseFloat(document.getElementById('bucketBalance').value) || 0,
     owner_user_id: isPersonal ? state.user?.id : null,
     is_org_level: isOrgBucket,
-    team_id: state.currentTeam?.team_id
+    team_id: state.currentTeam?.team_id,
+    is_active: isActive
   }
 
   if (isDuplicateBucketName(bucketData.name, isEdit ? bucketId : null)) {

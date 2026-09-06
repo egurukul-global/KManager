@@ -24,4 +24,14 @@
 ### Additional Dashboard Requirements
 - [x] Add "Outstanding Amount" blob to Dashboard.
 - [x] Add "Logged Expenses" blob to Dashboard.
+
+### Phase 2.3: Manager View - Reports (Team Report)
+- [x] Add "Team Report" to Reports section of sidebar (Manager view).
+- [x] New page `src/pages/manager-team-report.js`: one row per active, approved, non-closed budget.
+- [x] Columns: Team | Approved Budget | Budget Amount | Approved Amount | Allocated (Sent) | Received (Accepted) | Pending | Expenses, with totals row.
+- [x] Filters: date range (budget period), Teams (multi-select), Budgets (multi-select), text search.
+- [x] CSV and PDF export of the currently filtered rows.
+- [x] Migration `076_team_report_view.sql`: view gains `received_amount` (ACCEPTED transfers only), `allocated_amount` now includes PENDING + ACCEPTED, exposes `budget_status`. **MUST be run in Supabase.**
+- Note: Allocated and Received columns display the same value until the migration is applied to the database.
+
 - [x] Fix "Expenses Timeline" in Profile Settings to filter by Custom Budget Calendar Periods, not Gregorian months.

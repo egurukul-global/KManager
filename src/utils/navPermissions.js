@@ -1,7 +1,7 @@
 // ==================== ROLE-BASED NAV VISIBILITY (Phase 3 + 4A + 4D menu access) ====================
 import { state } from '../state.js';
 import { hasMenuAccess } from './okAccess.js';
-import { isFinanceGlobalAdmin } from './appRoles.js';
+import { isFinanceGlobalAdmin, hasAnyGlobalFinanceRole } from './appRoles.js';
 
 /** Only system admin bypasses team-level role restrictions. */
 export function isSystemAdmin() {
@@ -31,7 +31,7 @@ const FINANCE_PAGES = new Set([
   'add-funds', 'income-manager', 'transfer', 'my-income',
   'add-expense', 'expense-manager', 'generate-receipt',
   'financial-status', 'reconcile-label', 'reconcile', 'reconciliation-overview', 'reconciliation-approval',
-  'expense-reports', 'my-finances', 'manager-finance', 'manager-expenses', 'category-master', 'budget-calendar',
+  'expense-reports', 'my-finances', 'manager-finance', 'manager-expenses', 'team-report', 'spending-pattern', 'category-master', 'budget-calendar',
   'budget-types', 'budget-templates'
 ]);
 
@@ -164,7 +164,7 @@ const VIEW_MENUS = {
   },
   manager: {
     sections: ['dashboard', 'income', 'financials', 'reports'],
-    pages: ['profile', 'approval-portal', 'transfer', 'view-transfers', 'manager-finance', 'manager-expenses', 'aggregate-reports']
+    pages: ['profile', 'approval-portal', 'transfer', 'view-transfers', 'manager-finance', 'manager-expenses', 'team-report', 'spending-pattern', 'aggregate-reports']
   },
   admin: {
     sections: ['admin', 'setup', 'finance-setup'],
@@ -205,14 +205,12 @@ export function applyNavPermissions() {
 
     if (!isAdminPage && otm && OTM_HIDDEN_PAGES.has(page)) hide = true;
     if (!isAdminPage && otm && !OTM_ALLOWED_PAGES.has(page)) {
-      const r = String(state.user?.role || '').toLowerCase();
-      const isFin = ['admin', 'caoh', 'oh', 'ceo', 'fin', 'fip', 'fih'].includes(r);
-      if ((page === 'manager-finance' || page === 'transfer' || page === 'view-transfers' || page === 'manager-expenses') && isFin) { /* let it show */ } else { hide = true; }
+      const isFin = hasAnyGlobalFinanceRole();
+      if ((page === 'manager-finance' || page === 'transfer' || page === 'view-transfers' || page === 'manager-expenses' || page === 'team-report' || page === 'spending-pattern') && isFin) { /* let it show */ } else { hide = true; }
     }
     if (!isAdminPage && viewOnly && !VIEW_ALLOWED_PAGES.has(page)) {
-      const r = String(state.user?.role || '').toLowerCase();
-      const isFin = ['admin', 'caoh', 'oh', 'ceo', 'fin', 'fip', 'fih'].includes(r);
-      if ((page === 'manager-finance' || page === 'transfer' || page === 'view-transfers' || page === 'manager-expenses') && isFin) { /* let it show */ } else { hide = true; }
+      const isFin = hasAnyGlobalFinanceRole();
+      if ((page === 'manager-finance' || page === 'transfer' || page === 'view-transfers' || page === 'manager-expenses' || page === 'team-report' || page === 'spending-pattern') && isFin) { /* let it show */ } else { hide = true; }
     }
     if (!isAdminPage && oht && OHT_HIDDEN_PAGES.has(page)) hide = true;
     if (page === 'team-mgmt' && !canAccessTeamsPage()) hide = true;
@@ -234,7 +232,7 @@ export function applyNavPermissions() {
     if (state.okMenus?.length && !NON_FINANCE_PAGES.has(page) && !hasMenuAccess('finance', page)) hide = true;
 
     // Check selected team capabilities
-    if (FINANCE_PAGES.has(page) && state.currentTeam?.has_budget_access === false && page !== 'manager-finance' && page !== 'manager-expenses') hide = true;
+    if (FINANCE_PAGES.has(page) && state.currentTeam?.has_budget_access === false && page !== 'manager-finance' && page !== 'manager-expenses' && page !== 'team-report' && page !== 'spending-pattern') hide = true;
     if (page === 'tasks' && state.currentTeam?.has_tasks_access === false) hide = true;
     if (['gurukul-lms', 'learners', 'courses'].includes(page) && state.currentTeam?.has_lms_access === false) hide = true;
 
@@ -248,7 +246,7 @@ export function applyNavPermissions() {
     income: ['add-funds', 'income-manager', 'transfer', 'view-transfers', 'my-income'],
     expense: ['add-expense', 'expense-manager', 'generate-receipt'],
     financials: ['financial-status', 'manager-finance', 'manager-expenses', 'reconcile', 'reconciliation-overview', 'reconciliation-approval'],
-    reports: ['expense-reports', 'my-finances'],
+    reports: ['team-report', 'spending-pattern', 'expense-reports', 'my-finances'],
     tasks: ['tasks'],
     gurukul: ['gurukul-lms', 'courses'],
     admin: ['team-mgmt', 'role-assignments', 'user-mgmt', 'buckets'],

@@ -97,7 +97,7 @@ function populateSourceSelect() {
   const sources = filterBucketsForTransferSource(teamBucketsCache, state);
   select.innerHTML = '<option value="">Select source</option>';
   sources.forEach(b => {
-    const tag = isMemberBucket(b) ? ' Â· Personal' : '';
+    const tag = isMemberBucket(b) ? ' · Personal' : '';
     select.innerHTML += `<option value="${b.id}" data-currency="${b.currency}">${escapeHtml(b.name)}${tag} (${b.currency})</option>`;
   });
   if (sources.some(b => b.id === current)) select.value = current;
@@ -111,7 +111,7 @@ function populateDestSelect() {
   const srcId = document.getElementById('trSourceBucketId')?.value;
   select.innerHTML = '<option value="">Select destination</option>';
   dests.filter(b => b.id !== srcId).forEach(b => {
-    const tag = isMemberBucket(b) ? ' Â· Member' : ' Â· Team';
+    const tag = isMemberBucket(b) ? ' · Member' : ' · Team';
     select.innerHTML += `<option value="${b.id}" data-currency="${b.currency}">${escapeHtml(b.name)}${tag} (${b.currency})</option>`;
   });
   if (dests.some(b => b.id === current && b.id !== srcId)) select.value = current;
@@ -205,7 +205,7 @@ export function getTransferFundsPage() {
     return `
       <h1 class="page-title">Transfer Funds</h1>
       <div class="card">
-        <h2>â›” Access Denied</h2>
+        <h2>⛔ Access Denied</h2>
         <p>You do not have permission to transfer funds.</p>
       </div>
     `;
@@ -218,7 +218,7 @@ export function getTransferFundsPage() {
     <p class="page-intro">Send money within your team. Sent transfers appear below; confirm received money on the Dashboard.</p>
 
     <div class="card">
-      <h2>ðŸ”„ New Transfer</h2>
+      <h2>🔄 New Transfer</h2>
       <form id="transferFundsForm" onsubmit="window.executeFundsTransfer(event)">
         <div class="form-stack">
           <div id="trMemberFilters" class="transfer-filter-row" style="display:none;">
@@ -241,14 +241,14 @@ export function getTransferFundsPage() {
 
           <div class="form-grid-row form-grid-row--transfer-buckets">
             <div class="form-group"><label>Transfer Date</label><input type="date" id="trDate" required></div>
-            <div class="form-group"><label>Source Bucket</label><select id="trSourceBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loadingâ€¦</option></select><span class="form-field-hint" id="trSourceCurrency">Currency: â€”</span></div>
-            <div class="form-group"><label>Destination Bucket</label><select id="trDestBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loadingâ€¦</option></select><span class="form-field-hint" id="trDestCurrency">Currency: â€”</span></div>
+            <div class="form-group"><label>Source Bucket</label><select id="trSourceBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trSourceCurrency">Currency: —</span></div>
+            <div class="form-group"><label>Destination Bucket</label><select id="trDestBucketId" required onchange="window.onTransferBucketChange()"><option value="">Loading…</option></select><span class="form-field-hint" id="trDestCurrency">Currency: —</span></div>
           </div>
 
           <div class="form-grid-row form-grid-row--transfer-amount">
             <div class="form-group"><label>Amount <span id="trAmountCurrencyLabel" style="font-weight:600;color:var(--primary);">(USD)</span></label><input type="number" class="input-amount" id="trAmount" step="0.01" placeholder="0.00" required oninput="window.onTransferAmountChange()"></div>
             <div class="form-group"><label id="trRateLabel">Rate (1 USD = ?)</label><input type="number" class="input-rate" id="trRate" step="any" min="0.000001" placeholder="95.4" oninput="window.onTransferAmountChange()"></div>
-            <div class="form-group"><label>Converted <span id="trConvertedCurrencyLabel" style="font-weight:600;color:var(--primary);"></span></label><input type="number" class="input-amount" id="trConvertedAmount" step="0.01" readonly style="background:#f3f4f6;"><span class="form-field-hint" id="trConvertedLabel">â€”</span></div>
+            <div class="form-group"><label>Converted <span id="trConvertedCurrencyLabel" style="font-weight:600;color:var(--primary);"></span></label><input type="number" class="input-amount" id="trConvertedAmount" step="0.01" readonly style="background:#f3f4f6;"><span class="form-field-hint" id="trConvertedLabel">—</span></div>
           </div>
           <div class="form-group">
             <label>Memo * <span class="form-hint">(max ${MEMO_MAX_LENGTH} chars)</span></label>
@@ -262,7 +262,7 @@ export function getTransferFundsPage() {
     </div>
 
     <div class="card">
-      <h2>ðŸ’° Pay Approved Budget</h2>
+      <h2>💰 Pay Approved Budget</h2>
       <p class="page-intro">Final step of the budget workflow: move funds from an Org bucket to the team / OPH buckets for budgets that are CAO-approved and FIH-approved for payment. The team lead confirms receipt.</p>
       <div class="form-stack">
         <div class="form-grid-row form-grid-row--transfer-buckets">
@@ -274,7 +274,7 @@ export function getTransferFundsPage() {
           <div class="form-group">
             <label style="font-weight: 600; font-size: 0.85rem;">Proof of Transfer (optional)</label>
             <div class="attachment-upload-zone" onclick="document.getElementById('payProofFile').click()" style="border: 1px dashed var(--border); border-radius: 4px; padding: 12px; text-align: center; cursor: pointer; color: var(--text-secondary); background: var(--bg-secondary); font-size: 0.85rem;">
-              <span id="payProofLabel">ðŸ“Ž Click to upload proof of funds transfer</span>
+              <span id="payProofLabel">📎 Click to upload proof of funds transfer</span>
               <input type="file" id="payProofFile" onchange="window.onPayProofChange(this)" style="display: none;" accept="image/*,application/pdf">
             </div>
           </div>
@@ -286,40 +286,6 @@ export function getTransferFundsPage() {
         <div id="payValidationError" class="form-error-inline" style="display:none;"></div>
         <button type="button" id="paySubmitBtn" class="btn-block success" onclick="window.executeBudgetPayments()">Send Transfer</button>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="transfer-list-header">
-        <h2>ðŸ“¤ Sent Transfers</h2>
-        <div class="form-group transfer-status-filter">
-          <label>Status</label>
-          <select id="trStatusFilter" onchange="window.refreshSentTransfersList()">
-            <option value="">All</option>
-            <option value="PENDING">Pending</option>
-            <option value="ACCEPTED">Accepted</option>
-            <option value="REJECTED">Rejected</option>
-          </select>
-        </div>
-      </div>
-      <div class="table-container show-desktop">
-        <table class="table-stack-mobile transfer-history-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>From</th>
-              <th>To</th>
-              <th>Amount</th>
-              <th>Memo</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="trSentListBody">
-            <tr><td colspan="7" class="empty-state">Loadingâ€¦</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div id="trSentMobileList" class="show-mobile data-card-list"></div>
     </div>
   `;
 }
@@ -353,8 +319,6 @@ export async function initTransferFundsPage() {
   window.onTransferDestFilterChange = onTransferDestFilterChange;
   window.onCrossTeamToggle = onCrossTeamToggle;
   window.executeFundsTransfer = executeFundsTransfer;
-  window.refreshSentTransfersList = refreshSentTransfersList;
-  window.cancelSentTransfer = cancelSentTransfer;
   window.executeBudgetPayments = executeBudgetPayments;
 
   // Pay Approved Budget card
@@ -364,7 +328,6 @@ export async function initTransferFundsPage() {
   if (payDateEl) payDateEl.value = new Date().toISOString().split('T')[0];
 
   onTransferBucketChange();
-  await refreshSentTransfersList();
 }
 
 function onTransferDestFilterChange() {
@@ -407,7 +370,7 @@ async function refreshSentTransfersList() {
       mobileHtml += `
         <article class="data-card data-card--compact">
           <div class="data-card-top">
-            <span class="data-card-title">${escapeHtml(dest?.name || 'â€”')}</span>
+            <span class="data-card-title">${escapeHtml(dest?.name || '—')}</span>
             <span class="badge ${badge.class}">${badge.label}</span>
           </div>
           <div class="data-card-row">
@@ -416,7 +379,7 @@ async function refreshSentTransfersList() {
           </div>
           <div class="data-card-row">
             <span class="data-card-row-label">From</span>
-            <span class="data-card-row-value">${escapeHtml(src?.name || 'â€”')}</span>
+            <span class="data-card-row-value">${escapeHtml(src?.name || '—')}</span>
           </div>
           <div class="data-card-row">
             <span class="data-card-row-label">Date</span>
@@ -430,13 +393,13 @@ async function refreshSentTransfersList() {
       return `
         <tr>
           <td data-label="Date">${escapeHtml(t.date)}</td>
-          <td data-label="From">${escapeHtml(src?.name || 'â€”')}</td>
-          <td data-label="To">${escapeHtml(dest?.name || 'â€”')}</td>
+          <td data-label="From">${escapeHtml(src?.name || '—')}</td>
+          <td data-label="To">${escapeHtml(dest?.name || '—')}</td>
           <td data-label="Amount">${amountStr}</td>
           <td data-label="Memo">${escapeHtml(t.description || '')}</td>
           <td data-label="Status"><span class="badge ${badge.class}">${badge.label}</span></td>
           <td data-label="Actions" class="action-buttons">
-            ${canCancel ? `<button type="button" class="danger small" onclick="window.cancelSentTransfer('${t.id}')">Cancel</button>` : 'â€”'}
+            ${canCancel ? `<button type="button" class="danger small" onclick="window.cancelSentTransfer('${t.id}')">Cancel</button>` : '—'}
           </td>
         </tr>
       `;
@@ -481,7 +444,7 @@ function onTransferBucketChange() {
     srcCurrencyEl.textContent = `Currency: ${srcBucket.currency}`;
     if (amountLabel) amountLabel.textContent = `(${srcBucket.currency})`;
   } else {
-    srcCurrencyEl.textContent = 'Currency: â€”';
+    srcCurrencyEl.textContent = 'Currency: —';
     if (amountLabel) amountLabel.textContent = '(USD)';
   }
 
@@ -489,7 +452,7 @@ function onTransferBucketChange() {
     destCurrencyEl.textContent = `Currency: ${destBucket.currency}`;
     if (convertedCurrencyLabel) convertedCurrencyLabel.textContent = `(${destBucket.currency})`;
   } else {
-    destCurrencyEl.textContent = 'Currency: â€”';
+    destCurrencyEl.textContent = 'Currency: —';
     if (convertedCurrencyLabel) convertedCurrencyLabel.textContent = '';
   }
 
@@ -501,7 +464,7 @@ function onTransferBucketChange() {
       if (rateInput) rateInput.value = '1';
       if (rateLabel) rateLabel.textContent = 'Exchange Rate (1 USD = 1 USD)';
       if (convertedInput) convertedInput.value = '';
-      if (convertedLabel) convertedLabel.textContent = 'Same currency â€” no conversion needed';
+      if (convertedLabel) convertedLabel.textContent = 'Same currency — no conversion needed';
     } else if (srcCurr === 'USD') {
       const destRate = getLatestUsdRate(exchangeRatesCache, destCurr);
       if (rateLabel) rateLabel.textContent = `Exchange Rate (1 USD = ? ${destCurr})`;
@@ -537,7 +500,7 @@ function onTransferBucketChange() {
   } else {
     if (rateInput && !rateInput.value) rateInput.value = '';
     if (convertedInput) convertedInput.value = '';
-    if (convertedLabel) convertedLabel.textContent = 'â€”';
+    if (convertedLabel) convertedLabel.textContent = '—';
   }
 }
 
@@ -741,7 +704,7 @@ async function executeFundsTransfer(e) {
 
   const btn = document.getElementById('trSubmitBtn');
   btn.disabled = true;
-  btn.textContent = 'Sendingâ€¦';
+  btn.textContent = 'Sending…';
 
   try {
     if (flow.status === TRANSFER_STATUS.ACCEPTED) {
@@ -758,10 +721,10 @@ async function executeFundsTransfer(e) {
       if (crossTeam) {
         const approvalReq = await createTransferApprovalRequest(saved);
         if (!approvalReq) {
-          showToast('Transfer sent â€” approval tracking needs a request alias in My Profile', 'warning');
+          showToast('Transfer sent — approval tracking needs a request alias in My Profile', 'warning');
         }
       }
-      showToast(crossTeam ? 'Cross-team transfer sent â€” awaiting OHF approval' : 'Transfer sent â€” waiting for confirmation', 'success');
+      showToast(crossTeam ? 'Cross-team transfer sent — awaiting OHF approval' : 'Transfer sent — waiting for confirmation', 'success');
     } else {
       showToast(`Transferred ${amount.toFixed(2)} ${srcCurr} successfully`, 'success');
     }
@@ -892,7 +855,7 @@ async function onPayTeamChange() {
     if (rowsEl) rowsEl.innerHTML = '<p class="empty-state">Select a team to see its budgets ready for payment.</p>';
     return;
   }
-  rowsEl.innerHTML = '<p class="empty-state">Loadingâ€¦</p>';
+  rowsEl.innerHTML = '<p class="empty-state">Loading…</p>';
   try {
     const [budgets, destBuckets] = await Promise.all([loadPayBudgets(teamId), loadPayDestBuckets(teamId)]);
     await loadPaySourceBuckets();
@@ -916,7 +879,7 @@ function renderPayBudgetRows() {
     let lastTeam = null;
     payDestBucketsCache.forEach(b => {
       if (b.team_id !== lastTeam) {
-        html += `<option disabled>â€” ${escapeHtml(payTeamName(b.team_id) || 'Team')} â€”</option>`;
+        html += `<option disabled>— ${escapeHtml(payTeamName(b.team_id) || 'Team')} —</option>`;
         lastTeam = b.team_id;
       }
       html += `<option value="${b.id}" ${b.id === selected ? 'selected' : ''}>${escapeHtml(b.name)} (${b.currency})</option>`;
@@ -932,10 +895,21 @@ function renderPayBudgetRows() {
     return html;
   };
 
-  rowsEl.innerHTML = payBudgetsCache.map(b => {
-    const approved = Number(b.approved_amount ?? b.total_amount ?? 0);
-    const paid = Number(b.paid_amount ?? 0);
-    const remaining = Math.max(0, approved - paid);
+  // Only budgets that still have an amount left to pay
+  const payable = payBudgetsCache
+    .map(b => {
+      const approved = Number(b.approved_amount ?? b.total_amount ?? 0);
+      const paid = Number(b.paid_amount ?? 0);
+      return { b, approved, paid, remaining: Math.max(0, approved - paid) };
+    })
+    .filter(x => x.remaining > 0.005);
+
+  if (!payable.length) {
+    rowsEl.innerHTML = '<p class="empty-state">No budgets with a remaining amount awaiting payment for this team.</p>';
+    return;
+  }
+
+  rowsEl.innerHTML = payable.map(({ b, approved, paid, remaining }) => {
     return `
       <div class="pay-budget-row" data-budget-id="${b.id}" data-remaining="${remaining}" style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; background: var(--bg-secondary, rgba(0,0,0,0.03));">
         <div style="font-weight:600; margin-bottom:10px;">${escapeHtml(b.name)} <span class="form-hint">(${escapeHtml(b.budget_type || '')})</span></div>
@@ -973,13 +947,13 @@ window.onPayProofChange = async function(input) {
   if (!file) return;
   const label = document.getElementById('payProofLabel');
   try {
-    if (label) label.textContent = `â³ Uploading ${file.name}â€¦`;
+    if (label) label.textContent = `⏳ Uploading ${file.name}…`;
     const { objectKey } = await uploadReceipt(file);
     payProof = { key: objectKey, name: file.name };
-    if (label) label.textContent = `ðŸ“Ž ${file.name} (uploaded)`;
+    if (label) label.textContent = `📎 ${file.name} (uploaded)`;
   } catch (err) {
     payProof = { key: null, name: null };
-    if (label) label.textContent = 'ðŸ“Ž Upload failed â€” click to retry';
+    if (label) label.textContent = '📎 Upload failed — click to retry';
     showToast(err.message || 'Upload failed', 'error');
   }
 };
@@ -1103,10 +1077,10 @@ window.executeBudgetPayments = async function() {
         .eq('id', p.budgetId);
       if (paidErr) throw new Error('Transfer created but payment could not be recorded on the budget: ' + paidErr.message);
     }
-    showToast(`Payment transfer${payments.length > 1 ? 's' : ''} sent â€” the team lead will confirm receipt.`, 'success');
+    showToast(`Payment transfer${payments.length > 1 ? 's' : ''} sent — the team lead will confirm receipt.`, 'success');
     payProof = { key: null, name: null };
     const proofLabel = document.getElementById('payProofLabel');
-    if (proofLabel) proofLabel.textContent = 'ðŸ“Ž Click to upload proof of funds transfer';
+    if (proofLabel) proofLabel.textContent = '📎 Click to upload proof of funds transfer';
     const memoEl = document.getElementById('payMemo');
     if (memoEl) memoEl.value = '';
     await onPayTeamChange();
@@ -1124,7 +1098,7 @@ window.executeBudgetPayments = async function() {
 export async function acceptTransferFromDashboard(transferId) {
   try {
     await acceptTransfer(transferId);
-    showToast('Transfer accepted â€” balances updated', 'success');
+    showToast('Transfer accepted — balances updated', 'success');
     return true;
   } catch (err) {
     showToast(err.message || 'Accept failed', 'error');

@@ -244,3 +244,7 @@ Calculates real-time financial integrity for every budget.
 ### Context-Based Views
 - **users.allowed_views**: (TEXT[]) Array of allowed view contexts (team, manager, admin).
 - **users.default_login_view**: (TEXT) The default UI context for the user ('team', 'manager', 'admin'). Defaults to 'team'.
+ 
+ # # #   r e p o r t _ l o g s  
+ T r a c k s   b a c k g r o u n d   g e n e r a t i o n   o f   P D F / C S V   r e p o r t s .   I n c l u d e s   t e a m _ i d ,   b u d g e t _ i d ,   f i l t e r s   ( J S O N ) ,   s e c t i o n s   ( J S O N ) ,   s t a t u s ,   f i l e _ u r l ,   e r r o r _ m e s s a g e ,   a n d   n a m e .  
+ 

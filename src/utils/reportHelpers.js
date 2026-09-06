@@ -100,10 +100,41 @@ export function categoryStatusBadge(budgeted, actual) {
 }
 
 /** Aggregate actual spend by expense category label. */
-export function aggregateSpendByCategory(filteredExpenses, teamCategories) {
+export function aggregateSpendByCategory(filteredExpenses, teamCategories, includeSubcategory = false) {
   const map = new Map();
+  
+  function getGroupKey(catId, subId, fallbackName) {
+    if (!catId) return fallbackName || 'Unknown';
+    let resolvedCatName = 'Unknown';
+    let resolvedSubName = '';
+    if (teamCategories) {
+      const matchedCat = teamCategories.find(c => c.id === catId);
+      if (matchedCat) {
+        resolvedCatName = matchedCat.name;
+        if (subId && matchedCat.subcategories) {
+          const matchedSub = matchedCat.subcategories.find(s => s.id === subId);
+          if (matchedSub) resolvedSubName = matchedSub.name;
+        }
+      }
+    }
+    if (includeSubcategory) {
+      return resolvedCatName + (resolvedSubName ? ` / ${resolvedSubName}` : '');
+    } else {
+      return resolvedCatName;
+    }
+  }
+
   filteredExpenses.forEach(exp => {
-    const label = getExpenseCategoryLabel(exp, teamCategories);
+    let label;
+    let cId = exp.category_id;
+    let sId = exp.subcategory_id;
+    
+    if (!cId) {
+      label = getGroupKey(null, null, exp.vendor_info || 'Unknown');
+    } else {
+      label = getGroupKey(cId, sId, exp.vendor_info);
+    }
+    
     const prev = map.get(label) || { actual: 0, count: 0 };
     prev.actual += parseFloat(exp.usd_amount) || 0;
     prev.count += 1;

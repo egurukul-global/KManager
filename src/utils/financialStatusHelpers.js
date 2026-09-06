@@ -159,7 +159,7 @@ export function computeBucketStatusRow(bucket, fromDate, toDate, income, expense
 }
 
 export function filterBucketsByScope(buckets, scope, userId) {
-  const active = (buckets || []).filter(b => !b.is_deleted);
+  const active = (buckets || []).filter(b => !b.is_deleted && (b.is_active !== false || (parseFloat(b.balance) || 0) > 0));
   if (scope === 'all') return active;
   if (scope === 'personal') return active.filter(b => !!b.owner_user_id);
   return active.filter(b => !b.owner_user_id);

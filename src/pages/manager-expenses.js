@@ -7,6 +7,8 @@ import { showToast, showConfirm } from '../components/toasts.js';
 import { formatUsdDisplay } from '../utils/currency.js';
 
 let pendingReviewsCache = [];
+let mgrAttachmentsCache = [];
+let mgrTeamCategoriesCache = [];
 
 export function getManagerExpensesPage() {
   return `
@@ -15,7 +17,7 @@ export function getManagerExpensesPage() {
     <div class="card">
       <div class="filter-section">
         <div class="form-stack">
-          <div class="form-grid-row form-grid-row--filter-main">
+          <div class="form-grid-row" style="grid-template-columns: repeat(2, 1fr); width: 100%;">
             <div class="form-group">
               <label>Search</label>
               <input type="text" id="mgrExpSearch" placeholder="Search item..." oninput="window.refreshManagerExpenseList()">
@@ -24,9 +26,23 @@ export function getManagerExpensesPage() {
               <label>Team</label>
               <select id="mgrExpTeamFilter" onchange="window.reloadManagerExpensesFromServer()"><option value="">All Teams</option></select>
             </div>
+          </div>
+          <div class="form-grid-row form-grid-row--filter-main" style="grid-template-columns: repeat(4, 1fr); width: 100%; margin-top: 12px;">
             <div class="form-group">
               <label>Budget</label>
               <select id="mgrExpBudgetFilter" onchange="window.refreshManagerExpenseList()"><option value="">All Budgets</option></select>
+            </div>
+            <div class="form-group">
+              <label>Category</label>
+              <select id="mgrExpCategoryFilter" onchange="window.updateMgrSubcategoryFilter()"><option value="">All Categories</option></select>
+            </div>
+            <div class="form-group">
+              <label>Subcategory</label>
+              <select id="mgrExpSubcategoryFilter" onchange="window.refreshManagerExpenseList()"><option value="">All Subcategories</option></select>
+            </div>
+            <div class="form-group">
+              <label>Bucket</label>
+              <select id="mgrExpBucketFilter" onchange="window.refreshManagerExpenseList()"><option value="">All Buckets</option></select>
             </div>
           </div>
           <div class="form-grid-row form-grid-row--filter-dates" style="grid-template-columns: repeat(4, 1fr); width: 100%;">
@@ -68,6 +84,7 @@ export function getManagerExpensesPage() {
               <th>Team</th>
               <th>Item</th>
               <th>Category</th>
+              <th>Subcategory</th>
               <th>Local</th>
               <th>USD</th>
               <th>Receipt</th>
@@ -76,7 +93,7 @@ export function getManagerExpensesPage() {
             </tr>
           </thead>
           <tbody id="mgrExpensesTableBody">
-            <tr><td colspan="10" style="text-align:center;">Loading...</td></tr>
+            <tr><td colspan="11" style="text-align:center;">Loading...</td></tr>
           </tbody>
         </table>
       </div>
@@ -109,6 +126,9 @@ window.resetManagerExpenseFilters = function() {
   document.getElementById('mgrExpSearch').value = '';
   document.getElementById('mgrExpTeamFilter').value = '';
   document.getElementById('mgrExpBudgetFilter').value = '';
+  const cEl = document.getElementById('mgrExpCategoryFilter'); if(cEl) cEl.value = '';
+  const sEl = document.getElementById('mgrExpSubcategoryFilter'); if(sEl) sEl.value = '';
+  const buckEl = document.getElementById('mgrExpBucketFilter'); if(buckEl) buckEl.value = '';
   document.getElementById('mgrExpDateFrom').value = '';
   document.getElementById('mgrExpDateTo').value = '';
   document.getElementById('mgrExpFilterReceipt').value = '';
@@ -119,6 +139,23 @@ window.resetManagerExpenseFilters = function() {
 
 window.reloadManagerExpensesFromServer = async function() {
   await loadPendingExpenses();
+};
+
+window.updateMgrSubcategoryFilter = function() {
+  const catId = document.getElementById('mgrExpCategoryFilter')?.value;
+  const subcatSel = document.getElementById('mgrExpSubcategoryFilter');
+  if (subcatSel) {
+    subcatSel.innerHTML = '<option value="">All Subcategories</option>';
+    if (catId && mgrTeamCategoriesCache.length > 0) {
+      const cat = mgrTeamCategoriesCache.find(c => c.id === catId);
+      if (cat && cat.subcategories) {
+        cat.subcategories.forEach(sub => {
+          subcatSel.innerHTML += `<option value="${sub.id}">${escapeHtml(sub.name)}</option>`;
+        });
+      }
+    }
+  }
+  window.refreshManagerExpenseList();
 };
 
 window.refreshManagerExpenseList = function() {
@@ -155,7 +192,7 @@ async function loadPendingExpenses() {
 
   let query = supabaseClient
     .from('expenses')
-    .select('id, date, item, usd_amount, local_amount, currency, receipt_url, budget_id, category_id, bucket_id, is_reviewed, is_submitted, team_id, teams(name), budget_plans(name), categories(name), vendor_info')
+    .select('id, date, item, usd_amount, local_amount, currency, receipt_url, budget_id, category_id, subcategory_id, bucket_id, is_reviewed, is_submitted, team_id, teams(name), budget_plans(name), category_master(name), subcategory_master(name), buckets(name), vendor_info')
     .eq('is_deleted', false)
     .order('date', { ascending: false });
     
@@ -167,7 +204,7 @@ async function loadPendingExpenses() {
     if (teamIds.length > 0) {
       query = query.in('team_id', teamIds);
     } else {
-      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">No teams assigned to you.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">No teams assigned to you.</td></tr>';
       return;
     }
   }
@@ -175,19 +212,56 @@ async function loadPendingExpenses() {
   const { data, error } = await query;
   if (error) {
     console.error(error);
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:red;">Error loading expenses.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:red;">Error loading expenses.</td></tr>';
     return;
   }
   
   pendingReviewsCache = data || [];
+
+  // Load receipt attachments (child records) for the loaded expenses —
+  // some expenses store receipts ONLY here, not in expenses.receipt_url.
+  mgrAttachmentsCache = [];
+  const expIds = (data || []).map(e => e.id);
+  if (expIds.length) {
+    const { data: atts, error: attErr } = await supabaseClient
+      .from('expense_attachments')
+      .select('id, expense_id, file_url, is_deleted')
+      .in('expense_id', expIds);
+    if (!attErr) mgrAttachmentsCache = atts || [];
+  }
+  
+  if (mgrTeamCategoriesCache.length === 0) {
+    try {
+      const catModule = await import('../utils/categoryMaster.js');
+      mgrTeamCategoriesCache = await catModule.loadCategoryMaster() || [];
+    } catch (e) {
+      console.error(e);
+      mgrTeamCategoriesCache = [];
+    }
+  }
   
   // Populate dropdowns once
   const budSel = document.getElementById('mgrExpBudgetFilter');
   if (budSel && budSel.options.length <= 1) {
-    const buds = [...new Set(pendingReviewsCache.map(e => e.budget_id))];
+    const buds = [...new Set(pendingReviewsCache.map(e => e.budget_id).filter(Boolean))];
     buds.forEach(bid => {
       const name = pendingReviewsCache.find(e => e.budget_id === bid)?.budget_plans?.name || 'Unknown';
       budSel.innerHTML += `<option value="${bid}">${escapeHtml(name)}</option>`;
+    });
+  }
+  const catSel = document.getElementById('mgrExpCategoryFilter');
+  if (catSel && catSel.options.length <= 1 && mgrTeamCategoriesCache.length > 0) {
+    mgrTeamCategoriesCache.forEach(c => {
+      catSel.innerHTML += `<option value="${c.id}">${escapeHtml(c.name)}</option>`;
+    });
+  }
+  // Subcategories are populated dynamically when a category is selected
+  const bucketSel = document.getElementById('mgrExpBucketFilter');
+  if (bucketSel && bucketSel.options.length <= 1) {
+    const bucks = [...new Set(pendingReviewsCache.map(e => e.bucket_id).filter(Boolean))];
+    bucks.forEach(bid => {
+      const name = pendingReviewsCache.find(e => e.bucket_id === bid)?.buckets?.name || 'Unknown';
+      bucketSel.innerHTML += `<option value="${bid}">${escapeHtml(name)}</option>`;
     });
   }
   
@@ -200,7 +274,7 @@ function renderManagerExpenses() {
   if (!tbody) return;
   
   if (pendingReviewsCache.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">No pending reviews.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">No pending reviews.</td></tr>';
     if(countEl) countEl.textContent = '';
     return;
   }
@@ -218,32 +292,45 @@ function renderManagerExpenses() {
   if (q) filtered = filtered.filter(e => (e.item||'').toLowerCase().includes(q) || (e.teams?.name||'').toLowerCase().includes(q));
   if (tId) filtered = filtered.filter(e => e.team_id === tId);
   if (bId) filtered = filtered.filter(e => e.budget_id === bId);
+  const cId = document.getElementById('mgrExpCategoryFilter')?.value || '';
+  const sId = document.getElementById('mgrExpSubcategoryFilter')?.value || '';
+  const buckId = document.getElementById('mgrExpBucketFilter')?.value || '';
+  if (cId) filtered = filtered.filter(e => e.category_id === cId);
+  if (sId) filtered = filtered.filter(e => e.subcategory_id === sId);
+  if (buckId) filtered = filtered.filter(e => e.bucket_id === buckId);
   if (dFrom) filtered = filtered.filter(e => e.date >= dFrom);
   if (dTo) filtered = filtered.filter(e => e.date <= dTo);
   
-  if (receipt === 'yes') filtered = filtered.filter(e => e.receipt_url);
-  if (receipt === 'no') filtered = filtered.filter(e => !e.receipt_url);
+  const hasReceipt = (e) => {
+    if (e.receipt_url) return true;
+    return (mgrAttachmentsCache || []).some(a => a.expense_id === e.id && !a.is_deleted && a.file_url);
+  };
+  if (receipt === 'yes') filtered = filtered.filter(hasReceipt);
+  if (receipt === 'no') filtered = filtered.filter(e => !hasReceipt(e));
   if (status === 'reviewed') filtered = filtered.filter(e => e.is_reviewed);
   if (status === 'pending') filtered = filtered.filter(e => !e.is_reviewed);
 
   if(countEl) countEl.textContent = `(${filtered.length})`;
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;">No expenses match filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">No expenses match filters.</td></tr>';
     return;
   }
 
   tbody.innerHTML = filtered.map(exp => {
+    // Merge receipt_url + child attachment records (same as team view)
+    const keys = [exp.receipt_url].filter(Boolean);
+    const childAttachments = (mgrAttachmentsCache || [])
+      .filter(a => a.expense_id === exp.id && !a.is_deleted && a.file_url)
+      .map(a => a.file_url);
+    const allKeys = [...new Set([...keys, ...childAttachments])];
     let receiptLink = '<span style="color:#999;">-</span>';
-    if (exp.receipt_url) {
-      if (exp.receipt_url.startsWith('http')) {
-        receiptLink = `<a href="${escapeHtmlAttr(exp.receipt_url)}" target="_blank" style="color:var(--primary);text-decoration:underline;">View</a>`;
-      } else {
-        receiptLink = `<span class="receipt-cell" data-receipt-stored="${escapeHtmlAttr(exp.receipt_url)}">.</span>`;
-      }
+    if (allKeys.length) {
+      receiptLink = `<span class="receipt-cell" data-receipt-stored="${allKeys.join(',').replace(/"/g, '&quot;')}">…</span>`;
     }
     
-    const catLabel = exp.vendor_info && exp.vendor_info.startsWith('budget_cat:') ? exp.vendor_info.replace('budget_cat:', '') : (exp.categories?.name || exp.category_id || '-');
+    const catName = exp.category_master?.name || (exp.vendor_info && exp.vendor_info.startsWith('budget_cat:') ? exp.vendor_info.replace('budget_cat:', '') : null);
+    const subName = exp.subcategory_master?.name || null;
     const statusPill = exp.is_reviewed 
       ? `<span class="status-pill success" style="font-size:0.7em;">Reviewed</span>` 
       : `<span class="status-pill info" style="font-size:0.7em;">Pending Review</span>`;
@@ -254,7 +341,8 @@ function renderManagerExpenses() {
         <td>${escapeHtml(exp.date)}</td>
         <td>${escapeHtml(exp.teams?.name || 'Unknown')}</td>
         <td>${escapeHtml(exp.item)}</td>
-        <td>${escapeHtml(catLabel)}</td>
+        <td>${escapeHtml(catName || '-')}</td>
+        <td>${escapeHtml(subName || '-')}</td>
         <td>${(exp.local_amount || 0).toLocaleString()} ${exp.currency || ''}</td>
         <td style="font-weight:bold;">${formatUsdDisplay(exp.usd_amount)}</td>
         <td>${receiptLink}</td>

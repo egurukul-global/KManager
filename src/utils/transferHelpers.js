@@ -32,6 +32,7 @@ export function isMemberBucket(bucket) {
 import { isFinanceGlobalAdmin } from './appRoles.js';
 
 export function filterBucketsForTransferSource(buckets, state) {
+  buckets = buckets.filter(b => b.is_active !== false);
   const lead = isTeamLeadAccess(state) || hasAnyGlobalFinanceRole();
   return buckets.filter(b => {
     if (b.is_org_level) {
@@ -44,6 +45,7 @@ export function filterBucketsForTransferSource(buckets, state) {
 }
 
 export function filterBucketsForTransferDest(buckets, state, { showMembers = false, showTeam = false } = {}) {
+  buckets = buckets.filter(b => b.is_active !== false);
   const lead = isTeamLeadAccess(state);
   const globalAdmin = hasAnyGlobalFinanceRole();
   const operational = buckets.filter(isOperationalBucket);

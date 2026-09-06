@@ -64,6 +64,8 @@ export const FINANCE_MENU_KEYS = [
   { key: 'reconciliation-overview', label: 'Reconciliation Overview' },
   { key: 'reconciliation-approval', label: 'Reconciliation Approval' },
   { key: 'expense-reports', label: 'Expense Reports' },
+  { key: 'team-report', label: 'Team Report' },
+  { key: 'spending-pattern', label: 'Spending Pattern' },
   { key: 'my-finances', label: 'My Finances' },
   { key: 'team-mgmt', label: 'Teams' },
   { key: 'role-assignments', label: 'Role Assignments' },
